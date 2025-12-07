@@ -10,6 +10,7 @@ class CellType(Enum):
     INICIO = 1
     PASILLO = 2
     HABITACION = 3
+    SALIDA = 4
 
 class Direction(Enum):
     N = "N"
@@ -27,9 +28,9 @@ class Cell:
             self.exits = set()
 
 class DungeonBoard:
-    def __init__(self, size=100, view_size=10, cell_size=60):
+    def __init__(self, size=100, view_size=7, cell_size=90):
         self.size = size
-        self.view_size = view_size  # Vista de 10x10
+        self.view_size = view_size  # Vista de 7x7
         self.cell_size = cell_size
         self.board = [[Cell(CellType.EMPTY) for _ in range(size)] for _ in range(size)]
         
@@ -39,10 +40,14 @@ class DungeonBoard:
         # Guardar centro y estado de interacción
         self.current_position = (center, center)
         
+        # Generar posición de salida aleatoria y calcular camino principal
+        self.exit_position = self.generate_exit_position(center)
+        self.main_path = self.calculate_main_path((center, center), self.exit_position)
+        
         # Scroll suave: cámara flotante que se interpola hacia la posición del jugador
         self.camera_offset_row = float(center - view_size // 2)
         self.camera_offset_col = float(center - view_size // 2)
-        self.camera_speed = 0.05  # Factor de interpolación (0-1), mayor = más rápido
+        self.camera_speed = 0.03  # Factor de interpolación (0-1), mayor = más rápido
         
         pygame.init()
         self.width = view_size * cell_size
@@ -91,8 +96,62 @@ class DungeonBoard:
         self.camera_offset_row = max(0, min(self.camera_offset_row, self.size - self.view_size))
         self.camera_offset_col = max(0, min(self.camera_offset_col, self.size - self.view_size))
         
-        # Retornar redondeado para usarlo en índices
-        return int(round(self.camera_offset_row)), int(round(self.camera_offset_col))
+        # Retornar valores flotantes para scroll suave en píxeles
+        return self.camera_offset_row, self.camera_offset_col
+    
+    def generate_exit_position(self, center):
+        """Genera una posición aleatoria para la celda de salida, alejada del centro."""
+        # Elegir una distancia aleatoria entre 15 y 30 celdas del centro
+        min_distance = 15
+        max_distance = 30
+        
+        # Generar posiciones candidatas
+        attempts = 0
+        while attempts < 100:
+            # Ángulo aleatorio
+            angle = random.uniform(0, 2 * math.pi)
+            distance = random.uniform(min_distance, max_distance)
+            
+            row = center + int(distance * math.cos(angle))
+            col = center + int(distance * math.sin(angle))
+            
+            # Verificar que está dentro del tablero con margen
+            if 5 <= row < self.size - 5 and 5 <= col < self.size - 5:
+                return (row, col)
+            attempts += 1
+        
+        # Fallback: posición fija si no se encontró después de 100 intentos
+        return (center + 20, center + 20)
+    
+    def calculate_main_path(self, start, end):
+        """Calcula un camino sin lazos desde start hasta end usando búsqueda en anchura (BFS).
+        Retorna un conjunto de tuplas (row, col) que forman el camino principal."""
+        from collections import deque
+        
+        queue = deque([(start, [start])])
+        visited = {start}
+        
+        while queue:
+            (current_row, current_col), path = queue.popleft()
+            
+            # Si llegamos al destino, retornamos el camino
+            if (current_row, current_col) == end:
+                return set(path)
+            
+            # Explorar vecinos en las 4 direcciones
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                next_row = current_row + dr
+                next_col = current_col + dc
+                next_pos = (next_row, next_col)
+                
+                # Verificar límites y si ya fue visitado
+                if (0 <= next_row < self.size and 0 <= next_col < self.size 
+                    and next_pos not in visited):
+                    visited.add(next_pos)
+                    queue.append((next_pos, path + [next_pos]))
+        
+        # Si no se encontró camino (no debería pasar), retornar solo start y end
+        return {start, end}
     
     def center_camera_instantly(self, target_row, target_col):
         """Centra la cámara instantáneamente en la posición objetivo (sin interpolación)."""
@@ -106,26 +165,35 @@ class DungeonBoard:
         self.screen.fill((255, 255, 255))
         
         # Primero: actualizar el viewport (mueve la cámara)
-        offset_row, offset_col = self.get_view_offset()
+        offset_row_float, offset_col_float = self.get_view_offset()
         
-        # Segundo: dibujar solo la vista de 10x10
-        for row in range(self.view_size):
-            for col in range(self.view_size):
-                board_row = offset_row + row
-                board_col = offset_col + col
+        # Calcular offset de píxeles para scroll suave
+        offset_row_int = int(offset_row_float)
+        offset_col_int = int(offset_col_float)
+        pixel_offset_y = int((offset_row_float - offset_row_int) * self.cell_size)
+        pixel_offset_x = int((offset_col_float - offset_col_int) * self.cell_size)
+        
+        # Dibujar una celda extra en cada dirección para scroll suave
+        for row in range(-1, self.view_size + 1):
+            for col in range(-1, self.view_size + 1):
+                board_row = offset_row_int + row
+                board_col = offset_col_int + col
                 if 0 <= board_row < self.size and 0 <= board_col < self.size:
-                    self.draw_cell(board_row, board_col, row, col)
+                    # Ajustar la posición de dibujo con el offset de píxeles
+                    view_row = row
+                    view_col = col
+                    self.draw_cell(board_row, board_col, view_row, view_col, pixel_offset_x, pixel_offset_y)
 
         # Dibujar aberturas (pasajes) conectadas en negro entre celdas.
         # Se hace después de dibujar todas las celdas para sobreescribir bordes.
-        self.draw_openings(offset_row, offset_col)
+        self.draw_openings(offset_row_int, offset_col_int, pixel_offset_x, pixel_offset_y)
 
         # Tercero: dibujar monigote en la posición actual (después del viewport)
-        self.draw_player(offset_row, offset_col)
+        self.draw_player(offset_row_float, offset_col_float)
         
         pygame.display.flip()
     
-    def draw_player(self, offset_row, offset_col):
+    def draw_player(self, offset_row_float, offset_col_float):
         """Dibuja un monigote en la posición actual del jugador (con interpolación si está animando)."""
         # Si está animando, interpolar entre from_pos y to_pos
         if self.player_animating:
@@ -146,9 +214,9 @@ class DungeonBoard:
         else:
             player_row, player_col = self.current_position
         
-        # Coordenadas relativas a la vista
-        view_row = player_row - offset_row
-        view_col = player_col - offset_col
+        # Coordenadas relativas a la vista (con scroll suave)
+        view_row = player_row - offset_row_float
+        view_col = player_col - offset_col_float
         
         # Dibujar siempre (incluso si está entre celdas durante la animación)
         x = view_col * self.cell_size
@@ -249,11 +317,11 @@ class DungeonBoard:
         pygame.draw.circle(self.screen, (10, 10, 10), (head_x - head_r//2, eye_y), max(1, head_r//4))
         pygame.draw.circle(self.screen, (10, 10, 10), (head_x + head_r//2, eye_y), max(1, head_r//4))
     
-    def draw_cell(self, board_row, board_col, view_row, view_col):
+    def draw_cell(self, board_row, board_col, view_row, view_col, pixel_offset_x=0, pixel_offset_y=0):
         """Dibuja una celda del tablero en las coordenadas de la vista."""
         cell = self.board[board_row][board_col]
-        x = view_col * self.cell_size
-        y = view_row * self.cell_size
+        x = view_col * self.cell_size - pixel_offset_x
+        y = view_row * self.cell_size - pixel_offset_y
         
         # Color / textura based on type
         if cell.cell_type == CellType.EMPTY:
@@ -285,6 +353,13 @@ class DungeonBoard:
             pygame.draw.rect(self.screen, (120, 120, 120), (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra en las paredes
             self.draw_stone_in_walls(board_row, board_col, x, y, cell)
+        elif cell.cell_type == CellType.SALIDA:
+            # Celda de salida: fondo dorado brillante con marco especial
+            pygame.draw.rect(self.screen, (255, 215, 0), (x, y, self.cell_size, self.cell_size))
+            # Marco dorado más oscuro
+            pygame.draw.rect(self.screen, (218, 165, 32), (x, y, self.cell_size, self.cell_size), 5)
+            # Dibujar símbolo de salida (escaleras o portal)
+            self.draw_exit_symbol(x, y)
         
         # Para pasillos, habitaciones e inicio: dibujar camino desde el centro hacia las salidas
         if cell.cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.INICIO]:
@@ -534,14 +609,14 @@ class DungeonBoard:
                         neighbor_mid_y_U = nr * self.cell_size + 1.2*self.cell_size // 2
                         pygame.draw.line(self.screen, (0, 0, 0), (neighbor_x + self.cell_size - 0.05*self.cell_size, neighbor_mid_y_D), (neighbor_x + self.cell_size - 0.05*self.cell_size, neighbor_mid_y_U), 2)
 
-    def draw_openings(self, offset_row: int, offset_col: int):
+    def draw_openings(self, offset_row: int, offset_col: int, pixel_offset_x: int = 0, pixel_offset_y: int = 0):
         """Dibuja las aberturas negras entre celdas conectadas (sobre los bordes).
 
         Se limita el área de la apertura entre las dos 'líneas' de la salida,
         más ancha y más corta para no solapa las líneas de salida.
         """
-        for view_r in range(self.view_size):
-            for view_c in range(self.view_size):
+        for view_r in range(-1, self.view_size + 1):
+            for view_c in range(-1, self.view_size + 1):
                 board_r = offset_row + view_r
                 board_c = offset_col + view_c
                 if not (0 <= board_r < self.size and 0 <= board_c < self.size):
@@ -550,8 +625,8 @@ class DungeonBoard:
                 if cell.cell_type == CellType.EMPTY:
                     continue
 
-                x = view_c * self.cell_size
-                y = view_r * self.cell_size
+                x = view_c * self.cell_size - pixel_offset_x
+                y = view_r * self.cell_size - pixel_offset_y
 
                 # Posiciones de las dos líneas de la salida (consistentes con draw_cell)
                 mid_x_L = x + 0.8*self.cell_size // 2
@@ -760,8 +835,10 @@ class DungeonBoard:
             mortar_color = (25, 25, 25)
             pygame.draw.line(self.screen, mortar_color, (x1, y1), (x2, y2), 2)
     
-    def generate_random_exits(self, exclude_direction: Direction, cell_type: CellType) -> set:
+    def generate_random_exits(self, exclude_direction: Direction, cell_type: CellType, current_pos: tuple) -> set:
         """Genera salidas aleatorias según el tipo de celda, excepto la dirección de entrada.
+        Respeta el camino principal: si la celda está en el camino, asegura que tenga
+        salida hacia la siguiente celda del camino.
         
         PASILLO: 1 salida 10%, 2 salidas 30%, 3 salidas 40%, 4 salidas 20%
         HABITACION: 1 salida 50%, 2 salidas 30%, 3 salidas 15%, 4 salidas 5%
@@ -771,9 +848,28 @@ class DungeonBoard:
         opposite = self.get_opposite_direction(exclude_direction)
         exits.add(opposite)
         
-        # Las otras tres direcciones
+        # Verificar si esta celda está en el camino principal
+        required_direction = None
+        if current_pos in self.main_path:
+            # Encontrar la siguiente celda en el camino principal
+            current_row, current_col = current_pos
+            for dr, dc, direction in [(-1, 0, Direction.N), (1, 0, Direction.S), 
+                                       (0, -1, Direction.O), (0, 1, Direction.E)]:
+                next_pos = (current_row + dr, current_col + dc)
+                if next_pos in self.main_path and next_pos != current_pos:
+                    # Verificar si es la dirección hacia adelante en el camino
+                    # (no la dirección de entrada)
+                    if direction != opposite:
+                        required_direction = direction
+                        exits.add(required_direction)
+                        break
+        
+        # Las otras tres direcciones (excluyendo entrada, salida opuesta, y dirección requerida si existe)
         all_directions = {Direction.N, Direction.E, Direction.S, Direction.O}
-        other_directions = list(all_directions - {exclude_direction, opposite})
+        excluded = {exclude_direction, opposite}
+        if required_direction:
+            excluded.add(required_direction)
+        other_directions = list(all_directions - excluded)
         
         if cell_type == CellType.PASILLO:
             # Para pasillo: decidir cuántas salidas adicionales (1-3) basado en probabilidades
@@ -853,61 +949,86 @@ class DungeonBoard:
         # Si la celda ya existe (no es EMPTY): solo moverse si tiene la salida complementaria
         if target_cell.cell_type != CellType.EMPTY:
             if opposite in target_cell.exits:
-                # Primero: centrar cámara instantáneamente en la nueva posición
-                self.center_camera_instantly(target_row, target_col)
-                
-                # Segundo: iniciar animación suave del muñeco desde posición antigua a nueva
+                # Iniciar animación suave del muñeco desde posición antigua a nueva
                 self.player_anim_from_pos = self.current_position
                 self.player_anim_to_pos = (target_row, target_col)
                 self.player_animating = True
                 self.player_anim_start_time = pygame.time.get_ticks()
                 self.player_walk_until = pygame.time.get_ticks() + self.player_walk_duration
                 
-                # Actualizar posición lógica
+                # Actualizar posición lógica (la cámara se moverá suavemente hacia esta posición)
                 self.current_position = (target_row, target_col)
             # si existe pero no tiene la salida complementaria, no se puede mover
             return
 
         # Si la celda es EMPTY, crearla
-        # 75% PASILLO, 25% HABITACION
-        cell_type = CellType.PASILLO if random.random() < 0.75 else CellType.HABITACION
-        exits = self.generate_random_exits(direction, cell_type)
+        # Verificar si es la posición de salida
+        if (target_row, target_col) == self.exit_position:
+            # Crear celda SALIDA con solo la salida de entrada
+            exits = {opposite}
+            self.board[target_row][target_col] = Cell(CellType.SALIDA, exits)
+        else:
+            # 75% PASILLO, 25% HABITACION
+            cell_type = CellType.PASILLO if random.random() < 0.75 else CellType.HABITACION
+            exits = self.generate_random_exits(direction, cell_type, (target_row, target_col))
         
-        # Comprobar celdas adyacentes: si existe una vecina con salida hacia aquí, mantener esa salida
-        delta = {
-            Direction.N: (-1, 0),
-            Direction.S: (1, 0),
-            Direction.E: (0, 1),
-            Direction.O: (0, -1),
-        }
-        
-        for dir_ in [Direction.N, Direction.E, Direction.S, Direction.O]:
-            dr, dc = delta[dir_]
-            neighbor_row = target_row + dr
-            neighbor_col = target_col + dc
+            # Comprobar celdas adyacentes: si existe una vecina con salida hacia aquí, mantener esa salida
+            delta = {
+                Direction.N: (-1, 0),
+                Direction.S: (1, 0),
+                Direction.E: (0, 1),
+                Direction.O: (0, -1),
+            }
             
-            if 0 <= neighbor_row < self.size and 0 <= neighbor_col < self.size:
-                neighbor = self.board[neighbor_row][neighbor_col]
-                if neighbor.cell_type != CellType.EMPTY:
-                    opposite = self.get_opposite_direction(dir_)
-                    # Si la vecina tiene salida hacia aquí, mantener esa salida en la nueva celda
-                    if opposite in neighbor.exits:
-                        exits.add(dir_)
+            for dir_ in [Direction.N, Direction.E, Direction.S, Direction.O]:
+                dr, dc = delta[dir_]
+                neighbor_row = target_row + dr
+                neighbor_col = target_col + dc
+                
+                if 0 <= neighbor_row < self.size and 0 <= neighbor_col < self.size:
+                    neighbor = self.board[neighbor_row][neighbor_col]
+                    if neighbor.cell_type != CellType.EMPTY:
+                        opposite_dir = self.get_opposite_direction(dir_)
+                        # Si la vecina tiene salida hacia aquí, mantener esa salida en la nueva celda
+                        if opposite_dir in neighbor.exits:
+                            exits.add(dir_)
+            
+            self.board[target_row][target_col] = Cell(cell_type, exits)
         
-        self.board[target_row][target_col] = Cell(cell_type, exits)
-        
-        # Primero: centrar cámara instantáneamente en la nueva posición
-        self.center_camera_instantly(target_row, target_col)
-        
-        # Segundo: iniciar animación suave del muñeco desde posición antigua a nueva
+        # Iniciar animación suave del muñeco desde posición antigua a nueva
         self.player_anim_from_pos = self.current_position
         self.player_anim_to_pos = (target_row, target_col)
         self.player_animating = True
         self.player_anim_start_time = pygame.time.get_ticks()
         self.player_walk_until = pygame.time.get_ticks() + self.player_walk_duration
         
-        # Actualizar posición lógica
+        # Actualizar posición lógica (la cámara se moverá suavemente hacia esta posición)
         self.current_position = (target_row, target_col)
+    
+    def draw_exit_symbol(self, x: int, y: int):
+        """Dibuja un símbolo de escaleras/portal en el centro de la celda de salida."""
+        center_x = x + self.cell_size // 2
+        center_y = y + self.cell_size // 2
+        
+        # Dibujar escaleras ascendentes (líneas diagonales)
+        step_count = 5
+        step_width = int(self.cell_size * 0.6)
+        step_height = int(self.cell_size * 0.5)
+        step_w = step_width // step_count
+        step_h = step_height // step_count
+        
+        start_x = center_x - step_width // 2
+        start_y = center_y + step_height // 2
+        
+        for i in range(step_count):
+            # Línea horizontal de cada escalón
+            y_pos = start_y - i * step_h
+            x_start = start_x + i * step_w
+            x_end = x_start + step_w
+            pygame.draw.line(self.screen, (139, 69, 19), (x_start, y_pos), (x_end, y_pos), 3)
+            # Línea vertical de cada escalón
+            if i < step_count - 1:
+                pygame.draw.line(self.screen, (139, 69, 19), (x_end, y_pos), (x_end, y_pos - step_h), 3)
     
     def draw_fountain(self, x: int, y: int):
         """Dibuja una fuente en la esquina superior izquierda de una celda."""
