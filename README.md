@@ -31,6 +31,8 @@ source .venv/bin/activate  # En macOS/Linux
 pip install pygame
 ```
 
+**Nota**: El entorno virtual (`.venv`) no está incluido en el repositorio. Cada usuario debe crear su propio entorno virtual localmente siguiendo los pasos anteriores.
+
 ## Cómo jugar
 
 ```bash
