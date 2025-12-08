@@ -44,18 +44,34 @@ class DungeonBoard:
         self.exit_position = self.generate_exit_position(center)
         self.main_path = self.calculate_main_path((center, center), self.exit_position)
         
+        # Generar todas las celdas del camino principal
+        self.generate_main_path_cells()
+        
+        # Sistema de niebla de guerra: rastrear celdas visitadas
+        self.visited_cells = set()
+        self.visited_cells.add((center, center))  # La celda inicial está visitada
+        
         # Scroll suave: cámara flotante que se interpola hacia la posición del jugador
         self.camera_offset_row = float(center - view_size // 2)
         self.camera_offset_col = float(center - view_size // 2)
         self.camera_speed = 0.03  # Factor de interpolación (0-1), mayor = más rápido
         
         pygame.init()
+        pygame.mixer.init()
         self.width = view_size * cell_size
         self.height = view_size * cell_size
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("Dungeon 2D")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.Font(None, 24)
+        
+        # Cargar y reproducir música de fondo
+        try:
+            pygame.mixer.music.load("adagio.mp3")
+            pygame.mixer.music.set_volume(0.5)  # Volumen al 50%
+            pygame.mixer.music.play(-1)  # -1 = loop infinito
+        except pygame.error as e:
+            print(f"No se pudo cargar la música: {e}")
         # Paleta y parámetros para el sprite del jugador (guerrero)
         self.player_palette = {
             "armor": (90, 90, 90),
@@ -79,6 +95,9 @@ class DungeonBoard:
         self.player_anim_from_pos = self.current_position  # (row, col) de origen
         self.player_anim_to_pos = self.current_position    # (row, col) de destino
         self.player_anim_duration = 450  # ms para movimiento suave
+        
+        # Debug mode
+        self.debug_mode = False
     
     def get_view_offset(self):
         """Interpola la cámara hacia la posición del jugador y retorna el offset redondeado."""
@@ -124,34 +143,172 @@ class DungeonBoard:
         return (center + 20, center + 20)
     
     def calculate_main_path(self, start, end):
-        """Calcula un camino sin lazos desde start hasta end usando búsqueda en anchura (BFS).
+        """Calcula un camino tortuoso sin lazos desde start hasta end.
+        Usa random walk con preferencia hacia el objetivo pero permitiendo desviaciones.
         Retorna un conjunto de tuplas (row, col) que forman el camino principal."""
-        from collections import deque
-        
-        queue = deque([(start, [start])])
+        path = [start]
+        current = start
         visited = {start}
         
-        while queue:
-            (current_row, current_col), path = queue.popleft()
+        max_attempts = 10000  # Evitar loops infinitos
+        attempts = 0
+        
+        while current != end and attempts < max_attempts:
+            attempts += 1
+            current_row, current_col = current
+            end_row, end_col = end
             
-            # Si llegamos al destino, retornamos el camino
-            if (current_row, current_col) == end:
-                return set(path)
-            
-            # Explorar vecinos en las 4 direcciones
+            # Calcular direcciones posibles
+            directions = []
             for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 next_row = current_row + dr
                 next_col = current_col + dc
                 next_pos = (next_row, next_col)
                 
-                # Verificar límites y si ya fue visitado
+                # Verificar límites y que no hayamos visitado
                 if (0 <= next_row < self.size and 0 <= next_col < self.size 
                     and next_pos not in visited):
-                    visited.add(next_pos)
-                    queue.append((next_pos, path + [next_pos]))
+                    # Calcular distancia al objetivo
+                    dist = abs(end_row - next_row) + abs(end_col - next_col)
+                    directions.append((next_pos, dist, dr, dc))
+            
+            if not directions:
+                # Si no hay opciones, retroceder
+                if len(path) > 1:
+                    path.pop()
+                    current = path[-1]
+                else:
+                    break
+                continue
+            
+            # 70% de probabilidad de ir hacia el objetivo, 30% aleatorio (más tortuoso)
+            if random.random() < 0.70:
+                # Elegir la dirección que más se acerque al objetivo
+                directions.sort(key=lambda x: x[1])
+                next_pos = directions[0][0]
+            else:
+                # Movimiento aleatorio para hacer el camino más tortuoso
+                next_pos = random.choice(directions)[0]
+            
+            visited.add(next_pos)
+            path.append(next_pos)
+            current = next_pos
         
-        # Si no se encontró camino (no debería pasar), retornar solo start y end
-        return {start, end}
+        # Si no llegamos al final, usar BFS como fallback
+        if current != end:
+            from collections import deque
+            queue = deque([(start, [start])])
+            visited_bfs = {start}
+            
+            while queue:
+                (curr_row, curr_col), bfs_path = queue.popleft()
+                if (curr_row, curr_col) == end:
+                    return set(bfs_path)
+                
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    next_row = curr_row + dr
+                    next_col = curr_col + dc
+                    next_pos = (next_row, next_col)
+                    
+                    if (0 <= next_row < self.size and 0 <= next_col < self.size 
+                        and next_pos not in visited_bfs):
+                        visited_bfs.add(next_pos)
+                        queue.append((next_pos, bfs_path + [next_pos]))
+        
+        return set(path)
+    
+    def generate_main_path_cells(self):
+        """Genera todas las celdas del camino principal desde el inicio hasta la salida."""
+        if not self.main_path:
+            return
+        
+        # Reconstruir el camino ordenado desde inicio hasta salida
+        start = self.current_position
+        path_ordered = [start]
+        current = start
+        visited = {start}
+        
+        # Seguir el camino encontrando vecinos adyacentes
+        while current != self.exit_position and len(visited) < len(self.main_path):
+            row, col = current
+            found_next = False
+            
+            # Buscar el siguiente vecino en el camino
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                neighbor = (row + dr, col + dc)
+                if neighbor in self.main_path and neighbor not in visited:
+                    path_ordered.append(neighbor)
+                    visited.add(neighbor)
+                    current = neighbor
+                    found_next = True
+                    break
+            
+            if not found_next:
+                break
+        
+        # Generar cada celda del camino
+        for i in range(len(path_ordered)):
+            pos = path_ordered[i]
+            row, col = pos
+            
+            # Saltar la celda inicial (ya existe)
+            if pos == start:
+                continue
+            
+            # Determinar las posiciones anterior y siguiente
+            prev_pos = path_ordered[i-1] if i > 0 else None
+            next_pos = path_ordered[i+1] if i < len(path_ordered) - 1 else None
+            
+            # Crear el conjunto de salidas
+            exits = set()
+            
+            # Agregar salida desde donde se viene
+            if prev_pos:
+                entry_dir = self.get_direction_between(prev_pos, pos)
+                opposite = self.get_opposite_direction(entry_dir)
+                exits.add(opposite)
+            
+            # Si es la salida, solo tiene la entrada
+            if pos == self.exit_position:
+                self.board[row][col] = Cell(CellType.SALIDA, exits)
+            else:
+                # Agregar salida hacia donde se va
+                if next_pos:
+                    exit_dir = self.get_direction_between(pos, next_pos)
+                    exits.add(exit_dir)
+                
+                # Determinar tipo de celda: 75% PASILLO, 25% HABITACION
+                cell_type = CellType.PASILLO if random.random() < 0.75 else CellType.HABITACION
+                
+                # Posibilidad de agregar salidas adicionales (menos probable para mantener camino claro)
+                all_directions = {Direction.N, Direction.E, Direction.S, Direction.O}
+                remaining = list(all_directions - exits)
+                
+                if cell_type == CellType.PASILLO:
+                    # 20% de probabilidad de agregar 1 salida extra
+                    if remaining and random.random() < 0.20:
+                        exits.add(random.choice(remaining))
+                else:  # HABITACION
+                    # 10% de probabilidad de agregar 1 salida extra
+                    if remaining and random.random() < 0.10:
+                        exits.add(random.choice(remaining))
+                
+                self.board[row][col] = Cell(cell_type, exits)
+    
+    def get_direction_between(self, from_pos, to_pos):
+        """Retorna la dirección desde from_pos hacia to_pos."""
+        from_row, from_col = from_pos
+        to_row, to_col = to_pos
+        
+        if to_row < from_row:
+            return Direction.N
+        elif to_row > from_row:
+            return Direction.S
+        elif to_col > from_col:
+            return Direction.E
+        elif to_col < from_col:
+            return Direction.O
+        return None
     
     def center_camera_instantly(self, target_row, target_col):
         """Centra la cámara instantáneamente en la posición objetivo (sin interpolación)."""
@@ -191,6 +348,10 @@ class DungeonBoard:
         # Tercero: dibujar monigote en la posición actual (después del viewport)
         self.draw_player(offset_row_float, offset_col_float)
         
+        # Debug: mostrar información de navegación solo si está activado
+        if self.debug_mode:
+            self.draw_debug_info()
+        
         pygame.display.flip()
     
     def draw_player(self, offset_row_float, offset_col_float):
@@ -228,6 +389,51 @@ class DungeonBoard:
         # Dibujar un sprite de guerrero procedimental escalable
         sprite_size = int(self.cell_size * 0.6)
         self.draw_warrior_sprite(center_x, center_y, sprite_size)
+    
+    def draw_debug_info(self):
+        """Muestra información de debug para ayudar a encontrar la salida."""
+        current_row, current_col = self.current_position
+        exit_row, exit_col = self.exit_position
+        
+        # Calcular distancia Manhattan
+        distance = abs(exit_row - current_row) + abs(exit_col - current_col)
+        
+        # Calcular dirección aproximada
+        delta_row = exit_row - current_row
+        delta_col = exit_col - current_col
+        
+        direction_text = ""
+        if abs(delta_row) > abs(delta_col):
+            direction_text = "Sur" if delta_row > 0 else "Norte"
+        else:
+            direction_text = "Este" if delta_col > 0 else "Oeste"
+        
+        # Verificar si estás en el camino principal
+        on_path = self.current_position in self.main_path
+        
+        # Crear textos
+        texts = [
+            f"Posición: ({current_row}, {current_col})",
+            f"Salida: ({exit_row}, {exit_col})",
+            f"Distancia: {distance} celdas",
+            f"Dirección: {direction_text}",
+            f"En camino: {'SÍ' if on_path else 'NO'}"
+        ]
+        
+        # Dibujar fondo semi-transparente
+        info_height = len(texts) * 25 + 20
+        info_surface = pygame.Surface((250, info_height))
+        info_surface.set_alpha(200)
+        info_surface.fill((0, 0, 0))
+        self.screen.blit(info_surface, (10, 10))
+        
+        # Dibujar textos
+        y_offset = 20
+        for text in texts:
+            color = (0, 255, 0) if "En camino: SÍ" in text else (255, 255, 255)
+            text_surface = self.font.render(text, True, color)
+            self.screen.blit(text_surface, (20, y_offset))
+            y_offset += 25
 
     def draw_warrior_sprite(self, cx: int, cy: int, size: int):
         """Dibuja un sprite de guerrero sencillo (procedimental) centrado en (cx, cy).
@@ -323,6 +529,11 @@ class DungeonBoard:
         x = view_col * self.cell_size - pixel_offset_x
         y = view_row * self.cell_size - pixel_offset_y
         
+        # Si la celda no ha sido visitada, dibujar niebla negra
+        if (board_row, board_col) not in self.visited_cells:
+            pygame.draw.rect(self.screen, (0, 0, 0), (x, y, self.cell_size, self.cell_size))
+            return
+        
         # Color / textura based on type
         if cell.cell_type == CellType.EMPTY:
             # Pared negra (EMPTY debe verse negra)
@@ -330,29 +541,49 @@ class DungeonBoard:
             # Borde visible en gris para las celdas vacías
             pygame.draw.rect(self.screen, (90, 90, 90), (x, y, self.cell_size, self.cell_size), 3)
         elif cell.cell_type == CellType.INICIO:
-            # Inicio es como una habitación: fondo negro con piedra
-            pygame.draw.rect(self.screen, (0, 0, 0), (x, y, self.cell_size, self.cell_size))
+            # Calcular número de antorchas para iluminación
+            torch_count = self.count_torches(board_row, board_col, cell)
+            brightness = min(50, torch_count * 12)  # 12 puntos de brillo por antorcha, máximo 50
+            floor_color = (brightness, brightness, brightness)
+            
+            # Inicio es como una habitación: fondo con iluminación
+            pygame.draw.rect(self.screen, floor_color, (x, y, self.cell_size, self.cell_size))
             # Marco del inicio en gris
             pygame.draw.rect(self.screen, (120, 120, 120), (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra en las paredes
             self.draw_stone_in_walls(board_row, board_col, x, y, cell)
+            # Dibujar antorchas en las paredes
+            self.draw_torches(board_row, board_col, x, y, cell)
             # Dibujar fuente en la esquina superior izquierda
             self.draw_fountain(x, y)
         elif cell.cell_type == CellType.PASILLO:
-            # Suelo del pasillo: el área entre las líneas y el centro debe ser negra
-            floor_color = (0, 0, 0)
+            # Calcular número de antorchas para iluminación
+            torch_count = self.count_torches(board_row, board_col, cell)
+            brightness = min(50, torch_count * 12)  # 12 puntos de brillo por antorcha, máximo 50
+            floor_color = (brightness, brightness, brightness)
+            
+            # Suelo del pasillo: el área entre las líneas y el centro con iluminación
             pygame.draw.rect(self.screen, floor_color, (x, y, self.cell_size, self.cell_size))
             # Marco del pasillo ligeramente grueso
             pygame.draw.rect(self.screen, (120, 120, 120), (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra solo en las 'paredes' dentro de la celda
             self.draw_stone_in_walls(board_row, board_col, x, y, cell)
+            # Dibujar antorchas en las paredes
+            self.draw_torches(board_row, board_col, x, y, cell)
         elif cell.cell_type == CellType.HABITACION:
-            # Habitación como mazmorra: fondo negro con piedra en las paredes
-            pygame.draw.rect(self.screen, (0, 0, 0), (x, y, self.cell_size, self.cell_size))
+            # Calcular número de antorchas para iluminación
+            torch_count = self.count_torches(board_row, board_col, cell)
+            brightness = min(50, torch_count * 12)  # 12 puntos de brillo por antorcha, máximo 50
+            floor_color = (brightness, brightness, brightness)
+            
+            # Habitación como mazmorra: fondo con iluminación
+            pygame.draw.rect(self.screen, floor_color, (x, y, self.cell_size, self.cell_size))
             # Marco de la habitación en gris
             pygame.draw.rect(self.screen, (120, 120, 120), (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra en las paredes
             self.draw_stone_in_walls(board_row, board_col, x, y, cell)
+            # Dibujar antorchas en las paredes
+            self.draw_torches(board_row, board_col, x, y, cell)
         elif cell.cell_type == CellType.SALIDA:
             # Celda de salida: fondo dorado brillante con marco especial
             pygame.draw.rect(self.screen, (255, 215, 0), (x, y, self.cell_size, self.cell_size))
@@ -471,11 +702,8 @@ class DungeonBoard:
                 if neighbor.cell_type != CellType.EMPTY and opposite in neighbor.exits:
                     connected = True
 
-            # Las salidas son rojo si apuntan a EMPTY, gris oscuro si no conectadas
-            if neighbor_empty:
-                exit_color = (255, 0, 0)
-            else:
-                exit_color = (150, 150, 150)
+            # Las salidas son gris oscuro
+            exit_color = (150, 150, 150)
 
             pygame.draw.line(self.screen, exit_color, (mid_x_L, y), (mid_x_L, y + 0.1*self.cell_size), 4)
             pygame.draw.line(self.screen, exit_color, (mid_x_R, y), (mid_x_R, y + 0.1*self.cell_size), 4)
@@ -510,11 +738,8 @@ class DungeonBoard:
                 if neighbor.cell_type != CellType.EMPTY and opposite in neighbor.exits:
                     connected = True
 
-            # Las salidas son rojo si apuntan a EMPTY, gris oscuro si no conectadas
-            if neighbor_empty:
-                exit_color = (255, 0, 0)
-            else:
-                exit_color = (150, 150, 150)
+            # Las salidas son gris oscuro
+            exit_color = (150, 150, 150)
 
             pygame.draw.line(self.screen, exit_color, (mid_x_L, y + self.cell_size), (mid_x_L, y + 0.8*self.cell_size), 4)
             pygame.draw.line(self.screen, exit_color, (mid_x_R, y + self.cell_size), (mid_x_R, y + 0.8*self.cell_size), 4)
@@ -547,11 +772,8 @@ class DungeonBoard:
                 if neighbor.cell_type != CellType.EMPTY and opposite in neighbor.exits:
                     connected = True
 
-            # Las salidas son rojo si apuntan a EMPTY, gris oscuro si no conectadas
-            if neighbor_empty:
-                exit_color = (255, 0, 0)
-            else:
-                exit_color = (150, 150, 150)
+            # Las salidas son gris oscuro
+            exit_color = (150, 150, 150)
 
             pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_D), (x + 0.8*self.cell_size, mid_y_D), 4)
             pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_U), (x + 0.8*self.cell_size, mid_y_U), 4)
@@ -584,11 +806,8 @@ class DungeonBoard:
                 if neighbor.cell_type != CellType.EMPTY and opposite in neighbor.exits:
                     connected = True
 
-            # Las salidas son rojo si apuntan a EMPTY, gris oscuro si no conectadas
-            if neighbor_empty:
-                exit_color = (255, 0, 0)
-            else:
-                exit_color = (150, 150, 150)
+            # Las salidas son gris oscuro
+            exit_color = (150, 150, 150)
 
             pygame.draw.line(self.screen, exit_color, (x, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 4)
             pygame.draw.line(self.screen, exit_color, (x, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 4)
@@ -759,6 +978,10 @@ class DungeonBoard:
         seed = board_row * 100000 + board_col
         rnd = random.Random(seed + 7)
 
+        # Calcular brillo base según número de antorchas
+        torch_count = self.count_torches(board_row, board_col, cell)
+        wall_brightness = 60 + min(60, torch_count * 15)  # Base 60, aumenta 15 por antorcha
+
         size = self.cell_size
         wall_thickness = max(6, int(size * 0.28))
         gap_w = max(8, int(size * 0.36))
@@ -804,7 +1027,7 @@ class DungeonBoard:
 
         all_rects = top_rects + bottom_rects + left_rects + right_rects
 
-        base_stone = (120, 120, 120)
+        base_stone = (wall_brightness, wall_brightness, wall_brightness)
         for (rx, ry, rw, rh) in all_rects:
             # rellenar esa rect con piedras pequeñas — más denso
             area = max(1, rw * rh)
@@ -864,11 +1087,37 @@ class DungeonBoard:
                         exits.add(required_direction)
                         break
         
-        # Las otras tres direcciones (excluyendo entrada, salida opuesta, y dirección requerida si existe)
+        # Verificar celdas adyacentes: no generar salidas hacia celdas que existen pero no tienen la salida complementaria
+        current_row, current_col = current_pos
+        forbidden_directions = set()
+        delta = {
+            Direction.N: (-1, 0),
+            Direction.S: (1, 0),
+            Direction.E: (0, 1),
+            Direction.O: (0, -1),
+        }
+        
+        for direction in [Direction.N, Direction.E, Direction.S, Direction.O]:
+            if direction == exclude_direction or direction == opposite or direction == required_direction:
+                continue
+            dr, dc = delta[direction]
+            neighbor_row = current_row + dr
+            neighbor_col = current_col + dc
+            
+            if 0 <= neighbor_row < self.size and 0 <= neighbor_col < self.size:
+                neighbor = self.board[neighbor_row][neighbor_col]
+                # Si la celda vecina existe y NO tiene la salida complementaria, no generar salida hacia ella
+                if neighbor.cell_type != CellType.EMPTY:
+                    opposite_dir = self.get_opposite_direction(direction)
+                    if opposite_dir not in neighbor.exits:
+                        forbidden_directions.add(direction)
+        
+        # Las otras direcciones (excluyendo entrada, salida opuesta, dirección requerida y direcciones prohibidas)
         all_directions = {Direction.N, Direction.E, Direction.S, Direction.O}
         excluded = {exclude_direction, opposite}
         if required_direction:
             excluded.add(required_direction)
+        excluded.update(forbidden_directions)
         other_directions = list(all_directions - excluded)
         
         if cell_type == CellType.PASILLO:
@@ -958,6 +1207,8 @@ class DungeonBoard:
                 
                 # Actualizar posición lógica (la cámara se moverá suavemente hacia esta posición)
                 self.current_position = (target_row, target_col)
+                # Marcar la celda como visitada
+                self.visited_cells.add((target_row, target_col))
             # si existe pero no tiene la salida complementaria, no se puede mover
             return
 
@@ -1004,6 +1255,95 @@ class DungeonBoard:
         
         # Actualizar posición lógica (la cámara se moverá suavemente hacia esta posición)
         self.current_position = (target_row, target_col)
+        # Marcar la celda como visitada
+        self.visited_cells.add((target_row, target_col))
+    
+    def count_torches(self, board_row, board_col, cell):
+        """Cuenta cuántas antorchas se dibujarán realmente en esta celda.
+        Calcula primero cuántas antorchas aleatorias hay, luego limita por paredes disponibles."""
+        seed = board_row * 100000 + board_col
+        rnd = random.Random(seed)
+        
+        # Generar entre 0 y 4 antorchas de forma aleatoria
+        # 30% de probabilidad por cada antorcha potencial
+        desired_torches = 0
+        for _ in range(4):
+            if rnd.random() < 0.3:
+                desired_torches += 1
+        
+        # Contar cuántas paredes sin salida hay disponibles
+        available_walls = 0
+        if Direction.N not in cell.exits:
+            available_walls += 1
+        if Direction.S not in cell.exits:
+            available_walls += 1
+        if Direction.E not in cell.exits:
+            available_walls += 1
+        if Direction.O not in cell.exits:
+            available_walls += 1
+        
+        # Retornar el mínimo entre antorchas deseadas y paredes disponibles
+        return min(desired_torches, available_walls)
+    
+    def draw_torches(self, board_row, board_col, x, y, cell):
+        """Dibuja antorchas animadas. Las antorchas se posicionan en las paredes sin salida,
+        pero su cantidad es independiente del número de salidas."""
+        # Usar seed para posiciones deterministas
+        seed = board_row * 100000 + board_col
+        rnd = random.Random(seed)
+        
+        # Animación de la llama (parpadeo)
+        t = pygame.time.get_ticks()
+        flicker = abs(math.sin(t * 0.003 + seed)) * 0.3 + 0.7  # Oscila entre 0.7 y 1.0
+        
+        # Tamaño de la antorcha
+        torch_size = max(8, int(self.cell_size * 0.15))
+        
+        wall_thickness = int(self.cell_size * 0.28)
+        
+        # Obtener el número de antorchas que debe tener esta celda
+        num_torches = self.count_torches(board_row, board_col, cell)
+        
+        # Crear lista de posibles ubicaciones (paredes sin salidas)
+        possible_positions = []
+        
+        if Direction.N not in cell.exits:
+            possible_positions.append(('N', x + self.cell_size // 2 + rnd.randint(-20, 20), y + wall_thickness // 2))
+        if Direction.S not in cell.exits:
+            possible_positions.append(('S', x + self.cell_size // 2 + rnd.randint(-20, 20), y + self.cell_size - wall_thickness // 2))
+        if Direction.E not in cell.exits:
+            possible_positions.append(('E', x + self.cell_size - wall_thickness // 2, y + self.cell_size // 2 + rnd.randint(-20, 20)))
+        if Direction.O not in cell.exits:
+            possible_positions.append(('O', x + wall_thickness // 2, y + self.cell_size // 2 + rnd.randint(-20, 20)))
+        
+        # Dibujar antorchas en las primeras N posiciones disponibles
+        for i in range(min(num_torches, len(possible_positions))):
+            _, torch_x, torch_y = possible_positions[i]
+            self.draw_single_torch(torch_x, torch_y, torch_size, flicker)
+    
+    def draw_single_torch(self, x, y, size, flicker):
+        """Dibuja una antorcha individual con llama animada."""
+        # Soporte de madera (marrón oscuro)
+        stick_width = max(2, size // 4)
+        stick_height = size
+        pygame.draw.rect(self.screen, (101, 67, 33), 
+                        (x - stick_width // 2, y, stick_width, stick_height))
+        
+        # Llama (naranja/amarillo con parpadeo)
+        flame_radius = int(size * 0.6 * flicker)
+        flame_y = y - size // 3
+        
+        # Llama exterior (naranja)
+        pygame.draw.circle(self.screen, (255, 140, 0), (x, flame_y), flame_radius)
+        # Llama interior (amarillo brillante)
+        inner_radius = max(2, int(flame_radius * 0.6))
+        pygame.draw.circle(self.screen, (255, 220, 100), (x, flame_y), inner_radius)
+        
+        # Resplandor sutil (opcional - círculo semi-transparente)
+        glow_surface = pygame.Surface((flame_radius * 3, flame_radius * 3), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surface, (255, 180, 50, 40), 
+                          (flame_radius * 1.5, flame_radius * 1.5), flame_radius * 1.5)
+        self.screen.blit(glow_surface, (x - flame_radius * 1.5, flame_y - flame_radius * 1.5))
     
     def draw_exit_symbol(self, x: int, y: int):
         """Dibuja un símbolo de escaleras/portal en el centro de la celda de salida."""
@@ -1057,20 +1397,24 @@ class DungeonBoard:
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
-                    # Expect an arrow key to move in that direction
-                    dir_map = {
-                        pygame.K_UP: Direction.N,
-                        pygame.K_DOWN: Direction.S,
-                        pygame.K_RIGHT: Direction.E,
-                        pygame.K_LEFT: Direction.O,
-                        pygame.K_w: Direction.N,
-                        pygame.K_s: Direction.S,
-                        pygame.K_d: Direction.E,
-                        pygame.K_a: Direction.O,
-                    }
+                    # Toggle debug mode con F3
+                    if event.key == pygame.K_F3:
+                        self.debug_mode = not self.debug_mode
+                    else:
+                        # Expect an arrow key to move in that direction
+                        dir_map = {
+                            pygame.K_UP: Direction.N,
+                            pygame.K_DOWN: Direction.S,
+                            pygame.K_RIGHT: Direction.E,
+                            pygame.K_LEFT: Direction.O,
+                            pygame.K_w: Direction.N,
+                            pygame.K_s: Direction.S,
+                            pygame.K_d: Direction.E,
+                            pygame.K_a: Direction.O,
+                        }
 
-                    if event.key in dir_map:
-                        self.place_cell_in_direction(dir_map[event.key])
+                        if event.key in dir_map:
+                            self.place_cell_in_direction(dir_map[event.key])
             self.draw()
             self.clock.tick(60)
         
