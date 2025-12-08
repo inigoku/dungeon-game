@@ -27,11 +27,26 @@ class Cell:
         if self.exits is None:
             self.exits = set()
 
+# Constantes de configuración
+DEFAULT_BOARD_SIZE = 101
+DEFAULT_VIEW_SIZE = 7
+DEFAULT_CELL_SIZE = 90
+
 class DungeonBoard:
-    def __init__(self, size=100, view_size=7, cell_size=90):
+    def __init__(self, size=DEFAULT_BOARD_SIZE, view_size=DEFAULT_VIEW_SIZE, cell_size=DEFAULT_CELL_SIZE):
         self.size = size
-        self.view_size = view_size  # Vista de 7x7
+        self.initial_view_size = view_size  # Vista inicial de 7x7
+        self.view_size = view_size
+        self.base_cell_size = cell_size  # Tamaño base de celda
         self.cell_size = cell_size
+        
+        # Sistema de zoom: 5 niveles de 7x7 hasta el tamaño completo del tablero
+        self.zoom_levels = [7, 11, 21, 51, size]  # 5 niveles de zoom
+        self.current_zoom_index = 0  # Empieza en el más cercano (7x7)
+        
+        # Tamaño fijo de ventana
+        self.fixed_window_size = view_size * cell_size  # 630x630 pixels
+        
         self.board = [[Cell(CellType.EMPTY) for _ in range(size)] for _ in range(size)]
         
         # Set central cell as INICIO
@@ -58,20 +73,33 @@ class DungeonBoard:
         
         pygame.init()
         pygame.mixer.init()
-        self.width = view_size * cell_size
-        self.height = view_size * cell_size
+        self.width = self.fixed_window_size
+        self.height = self.fixed_window_size
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("Dungeon 2D")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.Font(None, 24)
         
-        # Cargar y reproducir música de fondo
+        # Sistema de música: intro primero, luego loop de adagio
+        self.intro_played = False
+        self.music_volume = 0.5
+        
+        # Cargar y reproducir intro
         try:
-            pygame.mixer.music.load("adagio.mp3")
-            pygame.mixer.music.set_volume(0.5)  # Volumen al 50%
-            pygame.mixer.music.play(-1)  # -1 = loop infinito
+            pygame.mixer.music.load("sound/intro.mp3")
+            pygame.mixer.music.set_volume(self.music_volume)
+            pygame.mixer.music.play(0)  # Reproducir una vez
         except pygame.error as e:
-            print(f"No se pudo cargar la música: {e}")
+            print(f"No se pudo cargar sound/intro.mp3: {e}")
+            # Si falla intro, intentar cargar directamente adagio
+            try:
+                pygame.mixer.music.load("sound/adagio.mp3")
+                pygame.mixer.music.set_volume(self.music_volume)
+                pygame.mixer.music.play(-1)
+                self.intro_played = True
+            except pygame.error as e2:
+                print(f"No se pudo cargar sound/adagio.mp3: {e2}")
+        
         # Paleta y parámetros para el sprite del jugador (guerrero)
         self.player_palette = {
             "armor": (90, 90, 90),
@@ -95,6 +123,50 @@ class DungeonBoard:
         self.player_anim_from_pos = self.current_position  # (row, col) de origen
         self.player_anim_to_pos = self.current_position    # (row, col) de destino
         self.player_anim_duration = 450  # ms para movimiento suave
+        
+        # Pantalla de título
+        self.showing_title = True
+        self.title_image = None
+        try:
+            self.title_image = pygame.image.load("titulo.png").convert()
+            # Escalar la imagen al tamaño de la ventana con alta calidad si es necesario
+            if self.title_image.get_size() != (self.width, self.height):
+                self.title_image = pygame.transform.smoothscale(self.title_image, (self.width, self.height))
+        except pygame.error as e:
+            print(f"No se pudo cargar titulo.png: {e}")
+            self.showing_title = False
+        
+        # Animación de inicio
+        self.intro_anim_active = False  # Se activará después de la pantalla de título
+        self.intro_anim_start_time = 0
+        self.intro_anim_stage = 0  # 0=caída, 1=mirar izquierda, 2=mirar derecha, 3=sacar armas, 4=completo
+        self.intro_show_weapons = False  # Las armas aparecen al final
+        
+        # Efectos de sonido ambientales
+        self.ambient_sounds = []
+        try:
+            drip_sound = pygame.mixer.Sound("sound/gota.mp3")
+            drip_sound.set_volume(0.5)
+            self.ambient_sounds.append(drip_sound)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/gota.mp3: {e}")
+        
+        try:
+            two_drips_sound = pygame.mixer.Sound("sound/dos-gotas.mp3")
+            two_drips_sound.set_volume(0.5)
+            self.ambient_sounds.append(two_drips_sound)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/dos-gotas.mp3: {e}")
+        
+        try:
+            bat_sound = pygame.mixer.Sound("sound/murcielago.mp3")
+            bat_sound.set_volume(0.6)
+            self.ambient_sounds.append(bat_sound)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/murcielago.mp3: {e}")
+        
+        self.last_ambient_sound_time = pygame.time.get_ticks()
+        self.next_ambient_sound_delay = random.randint(3000, 20000)  # 3-20 segundos (más aleatorio)
         
         # Debug mode
         self.debug_mode = False
@@ -268,14 +340,15 @@ class DungeonBoard:
                 opposite = self.get_opposite_direction(entry_dir)
                 exits.add(opposite)
             
+            # Agregar salida hacia donde se va (incluso si es hacia la salida)
+            if next_pos:
+                exit_dir = self.get_direction_between(pos, next_pos)
+                exits.add(exit_dir)
+            
             # Si es la salida, solo tiene la entrada
             if pos == self.exit_position:
                 self.board[row][col] = Cell(CellType.SALIDA, exits)
             else:
-                # Agregar salida hacia donde se va
-                if next_pos:
-                    exit_dir = self.get_direction_between(pos, next_pos)
-                    exits.add(exit_dir)
                 
                 # Determinar tipo de celda: 75% PASILLO, 25% HABITACION
                 cell_type = CellType.PASILLO if random.random() < 0.75 else CellType.HABITACION
@@ -319,6 +392,22 @@ class DungeonBoard:
         self.camera_offset_col = float(target_offset_col)
     
     def draw(self):
+        # Si estamos mostrando la pantalla de título
+        if self.showing_title:
+            if self.title_image:
+                self.screen.blit(self.title_image, (0, 0))
+            else:
+                # Si no se pudo cargar la imagen, mostrar texto
+                self.screen.fill((0, 0, 0))
+                title_font = pygame.font.Font(None, 72)
+                subtitle_font = pygame.font.Font(None, 36)
+                title_text = title_font.render("DUNGEON GAME", True, (255, 215, 0))
+                subtitle_text = subtitle_font.render("Press any key to start", True, (200, 200, 200))
+                self.screen.blit(title_text, (self.width // 2 - title_text.get_width() // 2, self.height // 2 - 50))
+                self.screen.blit(subtitle_text, (self.width // 2 - subtitle_text.get_width() // 2, self.height // 2 + 30))
+            pygame.display.flip()
+            return
+        
         self.screen.fill((255, 255, 255))
         
         # Primero: actualizar el viewport (mueve la cámara)
@@ -455,6 +544,34 @@ class DungeonBoard:
         sword_handle_col = self.player_palette.get("sword_handle", (180, 140, 80))
         sword_blade_col = self.player_palette.get("sword_blade", (200, 200, 200))
 
+        # Animación de introducción
+        intro_offset_y = 0
+        head_turn_offset = 0
+        
+        if self.intro_anim_active:
+            t_now = pygame.time.get_ticks()
+            elapsed = t_now - self.intro_anim_start_time
+            
+            # Stage 0: Caída (0-800ms)
+            if elapsed < 800:
+                fall_progress = elapsed / 800.0
+                intro_offset_y = int(-self.cell_size * (1.0 - fall_progress))
+            # Stage 1: Mirar izquierda (800-2800ms) - 2 segundos
+            elif elapsed < 2800:
+                head_turn_offset = -head_r // 2
+            # Stage 2: Mirar derecha (2800-4800ms) - 2 segundos
+            elif elapsed < 4800:
+                head_turn_offset = head_r // 2
+            # Stage 3: Sacar armas (4800-5300ms)
+            elif elapsed < 5300:
+                self.intro_show_weapons = True
+            # Stage 4: Completo
+            else:
+                self.intro_anim_active = False
+                self.intro_show_weapons = True
+        
+        cy += intro_offset_y
+        
         # Sombras / base
         shadow_w = int(body_w * 1.2)
         pygame.draw.ellipse(self.screen, (10, 10, 10), (cx - shadow_w//2, cy + body_h//2, shadow_w, max(4, s//6)))
@@ -490,24 +607,26 @@ class DungeonBoard:
         pygame.draw.rect(self.screen, trim_col, (cx - body_w//2 - arm_w, arm_y, arm_w, body_h//3), 1)
         pygame.draw.rect(self.screen, trim_col, (cx + body_w//2, arm_y, arm_w, body_h//3), 1)
 
-        # Escudo (izquierda) - se desplaza ligeramente con la fase
-        shield_r = max(8, s // 6)
-        shield_x = cx - body_w//2 - arm_w - shield_r//2 + int(-phase * 3)
-        shield_y = cy + int(phase * 2)
-        pygame.draw.circle(self.screen, shield_col, (shield_x, shield_y), shield_r)
-        pygame.draw.circle(self.screen, shield_trim, (shield_x, shield_y), shield_r, 2)
+        # Escudo y espada solo se muestran después de la intro
+        if self.intro_show_weapons:
+            # Escudo (izquierda) - se desplaza ligeramente con la fase
+            shield_r = max(8, s // 6)
+            shield_x = cx - body_w//2 - arm_w - shield_r//2 + int(-phase * 3)
+            shield_y = cy + int(phase * 2)
+            pygame.draw.circle(self.screen, shield_col, (shield_x, shield_y), shield_r)
+            pygame.draw.circle(self.screen, shield_trim, (shield_x, shield_y), shield_r, 2)
 
-        # Espada (derecha) - mango y hoja simple, se balancea con la fase
-        sword_h = max(12, s // 3)
-        sword_w = max(3, s // 30)
-        sword_x = cx + body_w//2 + arm_w + 2 + int(phase * 2)
-        sword_y1 = cy - body_h//8 + int(-phase * 2)
-        sword_y2 = sword_y1 - sword_h + int(phase * 4)
-        pygame.draw.line(self.screen, sword_handle_col, (sword_x, sword_y1), (sword_x, sword_y1 + 6), sword_w + 2)
-        pygame.draw.line(self.screen, sword_blade_col, (sword_x, sword_y1), (sword_x, sword_y2), sword_w)
+            # Espada (derecha) - mango y hoja simple, se balancea con la fase
+            sword_h = max(12, s // 3)
+            sword_w = max(3, s // 30)
+            sword_x = cx + body_w//2 + arm_w + 2 + int(phase * 2)
+            sword_y1 = cy - body_h//8 + int(-phase * 2)
+            sword_y2 = sword_y1 - sword_h + int(phase * 4)
+            pygame.draw.line(self.screen, sword_handle_col, (sword_x, sword_y1), (sword_x, sword_y1 + 6), sword_w + 2)
+            pygame.draw.line(self.screen, sword_blade_col, (sword_x, sword_y1), (sword_x, sword_y2), sword_w)
 
         # Cabeza y casco
-        head_x = cx
+        head_x = cx + head_turn_offset
         head_y = cy - body_h//2 + head_r
         # Cara
         pygame.draw.circle(self.screen, skin_col, (head_x, head_y), head_r)
@@ -543,7 +662,7 @@ class DungeonBoard:
         elif cell.cell_type == CellType.INICIO:
             # Calcular número de antorchas para iluminación
             torch_count = self.count_torches(board_row, board_col, cell)
-            brightness = min(50, torch_count * 12)  # 12 puntos de brillo por antorcha, máximo 50
+            brightness = 10 + min(130, torch_count * 31)  # Base 10, 31 por antorcha, máximo 140
             floor_color = (brightness, brightness, brightness)
             
             # Inicio es como una habitación: fondo con iluminación
@@ -559,7 +678,7 @@ class DungeonBoard:
         elif cell.cell_type == CellType.PASILLO:
             # Calcular número de antorchas para iluminación
             torch_count = self.count_torches(board_row, board_col, cell)
-            brightness = min(50, torch_count * 12)  # 12 puntos de brillo por antorcha, máximo 50
+            brightness = 10 + min(130, torch_count * 31)  # Base 10, 31 por antorcha, máximo 140
             floor_color = (brightness, brightness, brightness)
             
             # Suelo del pasillo: el área entre las líneas y el centro con iluminación
@@ -573,7 +692,7 @@ class DungeonBoard:
         elif cell.cell_type == CellType.HABITACION:
             # Calcular número de antorchas para iluminación
             torch_count = self.count_torches(board_row, board_col, cell)
-            brightness = min(50, torch_count * 12)  # 12 puntos de brillo por antorcha, máximo 50
+            brightness = 10 + min(130, torch_count * 31)  # Base 10, 31 por antorcha, máximo 140
             floor_color = (brightness, brightness, brightness)
             
             # Habitación como mazmorra: fondo con iluminación
@@ -585,15 +704,20 @@ class DungeonBoard:
             # Dibujar antorchas en las paredes
             self.draw_torches(board_row, board_col, x, y, cell)
         elif cell.cell_type == CellType.SALIDA:
-            # Celda de salida: fondo dorado brillante con marco especial
-            pygame.draw.rect(self.screen, (255, 215, 0), (x, y, self.cell_size, self.cell_size))
-            # Marco dorado más oscuro
-            pygame.draw.rect(self.screen, (218, 165, 32), (x, y, self.cell_size, self.cell_size), 5)
-            # Dibujar símbolo de salida (escaleras o portal)
-            self.draw_exit_symbol(x, y)
+            # Celda de salida: se dibuja como habitación normal
+            torch_count = self.count_torches(board_row, board_col, cell)
+            brightness = 10 + min(130, torch_count * 31)
+            room_color = (brightness, brightness, brightness)
+            pygame.draw.rect(self.screen, room_color, (x, y, self.cell_size, self.cell_size))
+            # Dibujar piedras en las paredes
+            self.draw_stone_in_walls(board_row, board_col, x, y, cell)
+            # Dibujar antorchas en las paredes
+            self.draw_torches(board_row, board_col, x, y, cell)
+            # Dibujar escalera de caracol en una esquina
+            self.draw_spiral_stairs(x, y)
         
-        # Para pasillos, habitaciones e inicio: dibujar camino desde el centro hacia las salidas
-        if cell.cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.INICIO]:
+        # Para pasillos, habitaciones, inicio y salida: dibujar camino desde el centro hacia las salidas
+        if cell.cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.INICIO, CellType.SALIDA]:
             # Para habitaciones e inicio, la zona central es mucho más ancha
             if cell.cell_type in [CellType.HABITACION, CellType.INICIO]:
                 center_x_L = x + 0.15*self.cell_size
@@ -882,8 +1006,18 @@ class DungeonBoard:
                     if opposite not in neighbor.exits:
                         # no conectada
                         continue
+                    
+                    # Solo dibujar la apertura si ambas celdas han sido visitadas
+                    if (board_r, board_c) not in self.visited_cells or (nr, nc) not in self.visited_cells:
+                        continue
 
-                    # Conectada: dibujar apertura negra más ancha y corta
+                    # Conectada: dibujar apertura con promedio de luminosidad de ambas celdas
+                    # Calcular el brillo promedio entre esta celda y la vecina
+                    brightness_current = self.get_cell_brightness(board_r, board_c)
+                    brightness_neighbor = self.get_cell_brightness(nr, nc)
+                    avg_brightness = (brightness_current + brightness_neighbor) // 2
+                    opening_color = (avg_brightness, avg_brightness, avg_brightness)
+                    
                     # Los rects deben respetar las líneas perpendiculares para que sea invisible la transición
                     if dir_ == Direction.N:
                         # Norte: rect horizontal entre mid_x_L y mid_x_R, pero respetando las líneas verticales
@@ -891,29 +1025,39 @@ class DungeonBoard:
                         ry = int(y - open_thickness // 2)
                         rw = int(mid_x_R - mid_x_L) - 4
                         rh = int(open_thickness)
-                        pygame.draw.rect(self.screen, (0, 0, 0), (rx, ry, rw, rh))
+                        pygame.draw.rect(self.screen, opening_color, (rx, ry, rw, rh))
                     elif dir_ == Direction.S:
                         # Sur: rect horizontal entre mid_x_L y mid_x_R, respetando líneas verticales
                         rx = int(mid_x_L) + 2
                         ry = int(y + self.cell_size - open_thickness // 2)
                         rw = int(mid_x_R - mid_x_L) - 4
                         rh = int(open_thickness)
-                        pygame.draw.rect(self.screen, (0, 0, 0), (rx, ry, rw, rh))
+                        pygame.draw.rect(self.screen, opening_color, (rx, ry, rw, rh))
                     elif dir_ == Direction.E:
                         # Este: rect vertical entre mid_y_D y mid_y_U, respetando líneas horizontales
                         rx = int(x + self.cell_size - open_thickness // 2)
                         ry = int(mid_y_D) + 2
                         rw = int(open_thickness)
                         rh = int(mid_y_U - mid_y_D) - 4
-                        pygame.draw.rect(self.screen, (0, 0, 0), (rx, ry, rw, rh))
+                        pygame.draw.rect(self.screen, opening_color, (rx, ry, rw, rh))
                     elif dir_ == Direction.O:
                         # Oeste: rect vertical entre mid_y_D y mid_y_U, respetando líneas horizontales
                         rx = int(x - open_thickness // 2)
                         ry = int(mid_y_D) + 2
                         rw = int(open_thickness)
                         rh = int(mid_y_U - mid_y_D) - 4
-                        pygame.draw.rect(self.screen, (0, 0, 0), (rx, ry, rw, rh))
+                        pygame.draw.rect(self.screen, opening_color, (rx, ry, rw, rh))
 
+    def get_cell_brightness(self, board_row: int, board_col: int) -> int:
+        """Calcula el brillo de una celda basándose en su número de antorchas."""
+        cell = self.board[board_row][board_col]
+        if cell.cell_type == CellType.EMPTY:
+            return 0
+        else:
+            # INICIO, PASILLO, HABITACION, SALIDA: todas usan el mismo sistema de iluminación
+            torch_count = self.count_torches(board_row, board_col, cell)
+            return 10 + min(130, torch_count * 31)
+    
     def get_opposite_direction(self, direction: Direction) -> Direction:
         """Retorna la dirección opuesta."""
         opposites = {
@@ -980,7 +1124,7 @@ class DungeonBoard:
 
         # Calcular brillo base según número de antorchas
         torch_count = self.count_torches(board_row, board_col, cell)
-        wall_brightness = 60 + min(60, torch_count * 15)  # Base 60, aumenta 15 por antorcha
+        wall_brightness = 20 + min(120, torch_count * 30)  # Base 20, aumenta 30 por antorcha
 
         size = self.cell_size
         wall_thickness = max(6, int(size * 0.28))
@@ -1170,6 +1314,10 @@ class DungeonBoard:
         Si la celda destino está fuera del tablero o no existe salida en la celda
         actual, no hace nada.
         """
+        # Bloquear movimiento durante la animación de introducción
+        if self.intro_anim_active:
+            return
+        
         current_row, current_col = self.current_position
         current_cell = self.board[current_row][current_col]
         
@@ -1265,10 +1413,10 @@ class DungeonBoard:
         rnd = random.Random(seed)
         
         # Generar entre 0 y 4 antorchas de forma aleatoria
-        # 30% de probabilidad por cada antorcha potencial
+        # 10% de probabilidad por cada antorcha potencial
         desired_torches = 0
         for _ in range(4):
-            if rnd.random() < 0.3:
+            if rnd.random() < 0.1:
                 desired_torches += 1
         
         # Contar cuántas paredes sin salida hay disponibles
@@ -1345,30 +1493,40 @@ class DungeonBoard:
                           (flame_radius * 1.5, flame_radius * 1.5), flame_radius * 1.5)
         self.screen.blit(glow_surface, (x - flame_radius * 1.5, flame_y - flame_radius * 1.5))
     
-    def draw_exit_symbol(self, x: int, y: int):
-        """Dibuja un símbolo de escaleras/portal en el centro de la celda de salida."""
-        center_x = x + self.cell_size // 2
-        center_y = y + self.cell_size // 2
+    def draw_spiral_stairs(self, x: int, y: int):
+        """Dibuja una escalera de caracol en una esquina de la celda."""
+        # Posición en la esquina superior derecha
+        corner_x = x + int(self.cell_size * 0.75)
+        corner_y = y + int(self.cell_size * 0.25)
         
-        # Dibujar escaleras ascendentes (líneas diagonales)
-        step_count = 5
-        step_width = int(self.cell_size * 0.6)
-        step_height = int(self.cell_size * 0.5)
-        step_w = step_width // step_count
-        step_h = step_height // step_count
+        # Radio de la escalera de caracol
+        radius = int(self.cell_size * 0.15)
         
-        start_x = center_x - step_width // 2
-        start_y = center_y + step_height // 2
+        # Círculo central (poste)
+        pygame.draw.circle(self.screen, (100, 80, 60), (corner_x, corner_y), radius // 3)
         
-        for i in range(step_count):
-            # Línea horizontal de cada escalón
-            y_pos = start_y - i * step_h
-            x_start = start_x + i * step_w
-            x_end = x_start + step_w
-            pygame.draw.line(self.screen, (139, 69, 19), (x_start, y_pos), (x_end, y_pos), 3)
-            # Línea vertical de cada escalón
-            if i < step_count - 1:
-                pygame.draw.line(self.screen, (139, 69, 19), (x_end, y_pos), (x_end, y_pos - step_h), 3)
+        # Dibujar escalones en espiral (6 escalones)
+        num_steps = 6
+        for i in range(num_steps):
+            angle = (i * 360 / num_steps) * (math.pi / 180)
+            # Radio del escalón (crece ligeramente hacia arriba)
+            step_radius = radius * (0.6 + 0.4 * (i / num_steps))
+            
+            # Punto inicial y final del escalón
+            x1 = corner_x + int(step_radius * 0.3 * math.cos(angle))
+            y1 = corner_y + int(step_radius * 0.3 * math.sin(angle))
+            x2 = corner_x + int(step_radius * math.cos(angle))
+            y2 = corner_y + int(step_radius * math.sin(angle))
+            
+            # Color más claro para escalones superiores
+            brightness = 120 + int(30 * (i / num_steps))
+            step_color = (brightness, brightness - 20, brightness - 40)
+            
+            # Dibujar el escalón como línea gruesa
+            pygame.draw.line(self.screen, step_color, (x1, y1), (x2, y2), max(2, int(self.cell_size * 0.04)))
+        
+        # Círculo exterior (sombra/borde)
+        pygame.draw.circle(self.screen, (80, 60, 40), (corner_x, corner_y), radius, 2)
     
     def draw_fountain(self, x: int, y: int):
         """Dibuja una fuente en la esquina superior izquierda de una celda."""
@@ -1390,16 +1548,94 @@ class DungeonBoard:
         # Borde del agua
         pygame.draw.circle(self.screen, (150, 200, 255), (center_x, center_y), water_radius, 2)
     
+    def zoom_in(self):
+        """Aumenta el zoom (reduce view_size) - acerca la vista."""
+        if self.current_zoom_index > 0:
+            self.current_zoom_index -= 1
+            self.view_size = self.zoom_levels[self.current_zoom_index]
+            # Ajustar el tamaño de las celdas para mantener ventana fija
+            self.cell_size = self.fixed_window_size // self.view_size
+            # Recentrar la cámara en la posición actual
+            self.update_camera_target()
+    
+    def zoom_out(self):
+        """Reduce el zoom (aumenta view_size) - aleja la vista."""
+        if self.current_zoom_index < len(self.zoom_levels) - 1:
+            self.current_zoom_index += 1
+            self.view_size = self.zoom_levels[self.current_zoom_index]
+            # Ajustar el tamaño de las celdas para mantener ventana fija
+            self.cell_size = self.fixed_window_size // self.view_size
+            # Recentrar la cámara en la posición actual
+            self.update_camera_target()
+    
+    def update_camera_target(self):
+        """Actualiza el objetivo de la cámara después de cambiar el zoom, centrando en el personaje."""
+        player_row, player_col = self.current_position
+        
+        # Calcular el offset para centrar al jugador en la nueva vista
+        # Asegurar que no se sale de los límites del tablero
+        if self.view_size >= self.size:
+            # Si la vista es más grande que el tablero, centrar el tablero
+            target_offset_row = 0
+            target_offset_col = 0
+        else:
+            # Centrar en el jugador
+            target_offset_row = player_row - self.view_size // 2
+            target_offset_col = player_col - self.view_size // 2
+            
+            # Asegurar que no sobrepasa los límites
+            target_offset_row = max(0, min(target_offset_row, self.size - self.view_size))
+            target_offset_col = max(0, min(target_offset_col, self.size - self.view_size))
+        
+        # Actualizar inmediatamente sin interpolación para que el zoom sea instantáneo
+        self.camera_offset_row = float(target_offset_row)
+        self.camera_offset_col = float(target_offset_col)
+    
     def run(self):
         running = True
         while running:
+            # Verificar si la intro ha terminado y cambiar a adagio en loop
+            if not self.intro_played and not pygame.mixer.music.get_busy():
+                try:
+                    pygame.mixer.music.load("sound/adagio.mp3")
+                    pygame.mixer.music.set_volume(self.music_volume)
+                    pygame.mixer.music.play(-1)  # -1 = loop infinito
+                    self.intro_played = True
+                except pygame.error as e:
+                    print(f"No se pudo cargar sound/adagio.mp3: {e}")
+                    self.intro_played = True  # Evitar intentos repetidos
+            
+            # Reproducir sonidos ambientales aleatorios (solo durante el juego, no en pantalla de título)
+            if not self.showing_title and self.ambient_sounds:
+                current_time = pygame.time.get_ticks()
+                if current_time - self.last_ambient_sound_time > self.next_ambient_sound_delay:
+                    # Reproducir un sonido aleatorio
+                    sound = random.choice(self.ambient_sounds)
+                    sound.play()
+                    self.last_ambient_sound_time = current_time
+                    # Próximo sonido en 5-15 segundos
+                    self.next_ambient_sound_delay = random.randint(5000, 15000)
+            
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
+                    # Si estamos en la pantalla de título, cualquier tecla inicia el juego
+                    if self.showing_title:
+                        self.showing_title = False
+                        self.intro_anim_active = True
+                        self.intro_anim_start_time = pygame.time.get_ticks()
+                        continue
+                    
                     # Toggle debug mode con F3
                     if event.key == pygame.K_F3:
                         self.debug_mode = not self.debug_mode
+                    # Zoom in con Z
+                    elif event.key == pygame.K_z:
+                        self.zoom_in()
+                    # Zoom out con X
+                    elif event.key == pygame.K_x:
+                        self.zoom_out()
                     else:
                         # Expect an arrow key to move in that direction
                         dir_map = {

@@ -40,7 +40,3 @@ Thumbs.db
 # Game specific
 *.pyc
 
-# Audio files (too large for git)
-*.mp3
-*.wav
-*.ogg
