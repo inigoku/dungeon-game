@@ -54,6 +54,7 @@ class DungeonBoard:
         self.board[center][center] = Cell(CellType.INICIO , {Direction.N, Direction.E, Direction.S, Direction.O})
         # Guardar centro y estado de interacción
         self.current_position = (center, center)
+        self.start_position = (center, center)  # Posición inicial para calcular distancia
         
         # Generar posición de salida aleatoria y calcular camino principal
         self.exit_position = self.generate_exit_position(center)
@@ -80,15 +81,38 @@ class DungeonBoard:
         self.clock = pygame.time.Clock()
         self.font = pygame.font.Font(None, 24)
         
-        # Sistema de música: intro primero, luego loop de adagio
+        # Sistema de música: intro primero, luego loop de adagio, y cthulhu en la salida
         self.intro_played = False
+        self.cthulhu_played = False
         self.music_volume = 0.5
+        self.intro_playing = False  # Flag para saber si la intro está sonando
+        
+        # Sistema de fade de música
+        self.fading_out = False
+        self.fading_in = False
+        self.fade_start_time = 0
+        self.fade_duration = 1000  # 1 segundo de fade
+        self.fade_from_volume = 0.5
+        self.fade_to_volume = 0.0
+        self.pending_music_load = None  # Música a cargar después del fade out
+        
+        # Sistema de subtítulos para intro.mp3
+        self.showing_subtitles = False
+        self.subtitle_text = ""
+        self.subtitle_start_time = 0
+        self.subtitle_duration = 0
         
         # Cargar y reproducir intro
         try:
             pygame.mixer.music.load("sound/intro.mp3")
             pygame.mixer.music.set_volume(self.music_volume)
             pygame.mixer.music.play(0)  # Reproducir una vez
+            self.intro_playing = True  # La intro está sonando
+            # Activar subtítulos de intro
+            self.showing_subtitles = True
+            self.subtitle_text = "Explora la mazmorra... encuentra la salida..."
+            self.subtitle_start_time = pygame.time.get_ticks()
+            self.subtitle_duration = 8000  # 8 segundos de duración
         except pygame.error as e:
             print(f"No se pudo cargar sound/intro.mp3: {e}")
             # Si falla intro, intentar cargar directamente adagio
@@ -136,6 +160,9 @@ class DungeonBoard:
             print(f"No se pudo cargar titulo.png: {e}")
             self.showing_title = False
         
+        # Confirmación de salida
+        self.asking_exit_confirmation = False
+        
         # Animación de inicio
         self.intro_anim_active = False  # Se activará después de la pantalla de título
         self.intro_anim_start_time = 0
@@ -164,6 +191,24 @@ class DungeonBoard:
             self.ambient_sounds.append(bat_sound)
         except pygame.error as e:
             print(f"No se pudo cargar sound/murcielago.mp3: {e}")
+        
+        # Sonidos de pasos
+        self.footstep_sounds = []
+        try:
+            step1 = pygame.mixer.Sound("sound/paso1.mp3")
+            step1.set_volume(0.4)
+            self.footstep_sounds.append(step1)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/paso1.mp3: {e}")
+        
+        try:
+            step2 = pygame.mixer.Sound("sound/paso2.mp3")
+            step2.set_volume(0.4)
+            self.footstep_sounds.append(step2)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/paso2.mp3: {e}")
+        
+        self.last_footstep_index = 0  # Para alternar entre paso1 y paso2
         
         self.last_ambient_sound_time = pygame.time.get_ticks()
         self.next_ambient_sound_delay = random.randint(3000, 20000)  # 3-20 segundos (más aleatorio)
@@ -441,6 +486,13 @@ class DungeonBoard:
         if self.debug_mode:
             self.draw_debug_info()
         
+        # Dibujar subtítulos si están activos
+        self.draw_subtitles()
+        
+        # Mostrar diálogo de confirmación de salida si está activo
+        if self.asking_exit_confirmation:
+            self.draw_exit_confirmation()
+        
         pygame.display.flip()
     
     def draw_player(self, offset_row_float, offset_col_float):
@@ -523,6 +575,118 @@ class DungeonBoard:
             text_surface = self.font.render(text, True, color)
             self.screen.blit(text_surface, (20, y_offset))
             y_offset += 25
+    
+    def update_fade(self):
+        """Actualiza el fade de música si está activo."""
+        current_time = pygame.time.get_ticks()
+        elapsed = current_time - self.fade_start_time
+        
+        if self.fading_out:
+            if elapsed >= self.fade_duration:
+                # Fade out completado
+                pygame.mixer.music.set_volume(0.0)
+                self.fading_out = False
+                
+                # Cargar la siguiente música si hay una pendiente
+                if self.pending_music_load:
+                    music_file, loop = self.pending_music_load
+                    try:
+                        pygame.mixer.music.load(music_file)
+                        pygame.mixer.music.play(-1 if loop else 0)
+                        self.start_fade_in(self.music_volume)
+                    except pygame.error as e:
+                        print(f"No se pudo cargar {music_file}: {e}")
+                    self.pending_music_load = None
+            else:
+                # Interpolar volumen
+                t = elapsed / self.fade_duration
+                volume = self.fade_from_volume + (self.fade_to_volume - self.fade_from_volume) * t
+                pygame.mixer.music.set_volume(volume)
+        
+        elif self.fading_in:
+            if elapsed >= self.fade_duration:
+                # Fade in completado
+                pygame.mixer.music.set_volume(self.fade_to_volume)
+                self.fading_in = False
+            else:
+                # Interpolar volumen
+                t = elapsed / self.fade_duration
+                volume = self.fade_from_volume + (self.fade_to_volume - self.fade_from_volume) * t
+                pygame.mixer.music.set_volume(volume)
+    
+    def start_fade_out(self, next_music_file=None, loop=False):
+        """Inicia un fade out de la música actual."""
+        self.fading_out = True
+        self.fade_start_time = pygame.time.get_ticks()
+        self.fade_from_volume = pygame.mixer.music.get_volume()
+        self.fade_to_volume = 0.0
+        self.pending_music_load = (next_music_file, loop)
+    
+    def start_fade_in(self, target_volume=0.5):
+        """Inicia un fade in de la música actual."""
+        self.fading_in = True
+        self.fade_start_time = pygame.time.get_ticks()
+        self.fade_from_volume = 0.0
+        self.fade_to_volume = target_volume
+        pygame.mixer.music.set_volume(0.0)
+    
+    def draw_subtitles(self):
+        """Dibuja los subtítulos en la parte inferior de la pantalla."""
+        if not self.showing_subtitles:
+            return
+        
+        # Verificar si los subtítulos han expirado
+        current_time = pygame.time.get_ticks()
+        if current_time - self.subtitle_start_time > self.subtitle_duration:
+            self.showing_subtitles = False
+            return
+        
+        # Crear fondo semi-transparente para los subtítulos
+        subtitle_height = 80
+        subtitle_bg = pygame.Surface((self.width, subtitle_height))
+        subtitle_bg.set_alpha(160)
+        subtitle_bg.fill((0, 0, 0))
+        self.screen.blit(subtitle_bg, (0, self.height - subtitle_height))
+        
+        # Renderizar el texto del subtítulo
+        font = pygame.font.Font(None, 32)
+        text_surface = font.render(self.subtitle_text, True, (255, 255, 255))
+        text_rect = text_surface.get_rect(center=(self.width // 2, self.height - subtitle_height // 2))
+        self.screen.blit(text_surface, text_rect)
+    
+    def draw_exit_confirmation(self):
+        """Dibuja el diálogo de confirmación de salida."""
+        # Fondo oscuro semi-transparente
+        overlay = pygame.Surface((self.width, self.height))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Caja de diálogo
+        dialog_width = 400
+        dialog_height = 150
+        dialog_x = (self.width - dialog_width) // 2
+        dialog_y = (self.height - dialog_height) // 2
+        
+        # Fondo de la caja
+        pygame.draw.rect(self.screen, (40, 40, 40), (dialog_x, dialog_y, dialog_width, dialog_height))
+        # Borde
+        pygame.draw.rect(self.screen, (200, 200, 200), (dialog_x, dialog_y, dialog_width, dialog_height), 3)
+        
+        # Texto
+        title_font = pygame.font.Font(None, 48)
+        subtitle_font = pygame.font.Font(None, 32)
+        
+        title_text = title_font.render("¿Salir del juego?", True, (255, 255, 255))
+        subtitle_text = subtitle_font.render("S = Sí  /  N = No", True, (200, 200, 200))
+        
+        title_x = dialog_x + (dialog_width - title_text.get_width()) // 2
+        title_y = dialog_y + 30
+        subtitle_x = dialog_x + (dialog_width - subtitle_text.get_width()) // 2
+        subtitle_y = dialog_y + 90
+        
+        self.screen.blit(title_text, (title_x, title_y))
+        self.screen.blit(subtitle_text, (subtitle_x, subtitle_y))
 
     def draw_warrior_sprite(self, cx: int, cy: int, size: int):
         """Dibuja un sprite de guerrero sencillo (procedimental) centrado en (cx, cy).
@@ -1346,6 +1510,12 @@ class DungeonBoard:
         # Si la celda ya existe (no es EMPTY): solo moverse si tiene la salida complementaria
         if target_cell.cell_type != CellType.EMPTY:
             if opposite in target_cell.exits:
+                # Reproducir sonido de paso alternando entre paso1 y paso2
+                if self.footstep_sounds:
+                    footstep = self.footstep_sounds[self.last_footstep_index % len(self.footstep_sounds)]
+                    footstep.play()
+                    self.last_footstep_index += 1
+                
                 # Iniciar animación suave del muñeco desde posición antigua a nueva
                 self.player_anim_from_pos = self.current_position
                 self.player_anim_to_pos = (target_row, target_col)
@@ -1394,6 +1564,12 @@ class DungeonBoard:
             
             self.board[target_row][target_col] = Cell(cell_type, exits)
         
+        # Reproducir sonido de paso alternando entre paso1 y paso2
+        if self.footstep_sounds:
+            footstep = self.footstep_sounds[self.last_footstep_index % len(self.footstep_sounds)]
+            footstep.play()
+            self.last_footstep_index += 1
+        
         # Iniciar animación suave del muñeco desde posición antigua a nueva
         self.player_anim_from_pos = self.current_position
         self.player_anim_to_pos = (target_row, target_col)
@@ -1408,15 +1584,36 @@ class DungeonBoard:
     
     def count_torches(self, board_row, board_col, cell):
         """Cuenta cuántas antorchas se dibujarán realmente en esta celda.
-        Calcula primero cuántas antorchas aleatorias hay, luego limita por paredes disponibles."""
+        Solo aparecen en celdas del camino principal.
+        La probabilidad aumenta conforme se acerca a la salida."""
+        # Si no está en el camino principal, no hay antorchas
+        if (board_row, board_col) not in self.main_path:
+            return 0
+        
+        # Calcular distancia a la salida
+        exit_row, exit_col = self.exit_position
+        distance_to_exit = abs(exit_row - board_row) + abs(exit_col - board_col)
+        
+        # Calcular distancia total del camino (aproximada)
+        start_row, start_col = self.start_position
+        total_distance = abs(exit_row - start_row) + abs(exit_col - start_col)
+        
+        # Calcular probabilidad base que aumenta al acercarse a la salida
+        # En el inicio: ~10%, en la salida: ~40%
+        if total_distance > 0:
+            progress = 1.0 - (distance_to_exit / total_distance)  # 0 en inicio, 1 en salida
+        else:
+            progress = 0.5
+        
+        base_probability = 0.1 + (progress * 0.3)  # 10% a 40%
+        
         seed = board_row * 100000 + board_col
         rnd = random.Random(seed)
         
-        # Generar entre 0 y 4 antorchas de forma aleatoria
-        # 10% de probabilidad por cada antorcha potencial
+        # Generar entre 0 y 4 antorchas con probabilidad variable
         desired_torches = 0
         for _ in range(4):
-            if rnd.random() < 0.1:
+            if rnd.random() < base_probability:
                 desired_torches += 1
         
         # Contar cuántas paredes sin salida hay disponibles
@@ -1548,6 +1745,70 @@ class DungeonBoard:
         # Borde del agua
         pygame.draw.circle(self.screen, (150, 200, 255), (center_x, center_y), water_radius, 2)
     
+    def update_music_volume_by_distance(self):
+        """Actualizar volumen de música según distancia al inicio y al final"""
+        # Calcular distancias
+        start_row, start_col = self.start_position
+        exit_row, exit_col = self.exit_position
+        curr_row, curr_col = self.current_position
+        distance_from_start = ((curr_row - start_row)**2 + (curr_col - start_col)**2)**0.5
+        distance_to_exit = ((curr_row - exit_row)**2 + (curr_col - exit_col)**2)**0.5
+        
+        if self.intro_played and not self.cthulhu_played:  # Solo para adagio
+            # Volumen de adagio disminuye con la distancia al inicio
+            # Volumen máximo (0.5) en el inicio, mínimo (0.05) a distancia 5 o más
+            max_volume = 0.5
+            min_volume = 0.05
+            max_distance = 5.0
+            
+            # Interpolación lineal desde el inicio
+            volume = max_volume - (distance_from_start / max_distance) * (max_volume - min_volume)
+            volume = max(min_volume, min(max_volume, volume))  # Clamp entre min y max
+            
+            pygame.mixer.music.set_volume(volume)
+            
+            # Si estamos cerca de la salida, cambiar a cthulhu
+            if distance_to_exit <= 5.0 and not self.cthulhu_played:
+                try:
+                    pygame.mixer.music.load("sound/cthulhu.mp3")
+                    pygame.mixer.music.set_volume(min_volume)  # Empezar con volumen bajo
+                    pygame.mixer.music.play(-1)  # Loop
+                    self.cthulhu_played = True
+                except pygame.error as e:
+                    print(f"No se pudo cargar sound/cthulhu.mp3: {e}")
+        
+        elif self.cthulhu_played:  # Volumen de cthulhu aumenta al acercarse a la salida
+            # Si estamos en la celda de salida, volumen máximo (1.0)
+            if (curr_row, curr_col) == self.exit_position:
+                pygame.mixer.music.set_volume(1.0)
+            # Si volvemos cerca del inicio, regresar a adagio
+            elif distance_from_start <= 5.0:
+                try:
+                    pygame.mixer.music.load("sound/adagio.mp3")
+                    # Volumen según distancia al inicio
+                    max_volume = 0.5
+                    min_volume = 0.05
+                    max_distance = 5.0
+                    volume = max_volume - (distance_from_start / max_distance) * (max_volume - min_volume)
+                    volume = max(min_volume, min(max_volume, volume))
+                    pygame.mixer.music.set_volume(volume)
+                    pygame.mixer.music.play(-1)  # Loop
+                    self.cthulhu_played = False
+                except pygame.error as e:
+                    print(f"No se pudo cargar sound/adagio.mp3: {e}")
+            else:
+                # Volumen de cthulhu aumenta al acercarse a la salida
+                # Volumen mínimo (0.05) a distancia 5, máximo (1.0) en la salida
+                max_volume = 1.0
+                min_volume = 0.05
+                max_distance = 5.0
+                
+                # Interpolación lineal inversa (aumenta al acercarse)
+                volume = max_volume - (distance_to_exit / max_distance) * (max_volume - min_volume)
+                volume = max(min_volume, min(max_volume, volume))  # Clamp entre min y max
+                
+                pygame.mixer.music.set_volume(volume)
+    
     def zoom_in(self):
         """Aumenta el zoom (reduce view_size) - acerca la vista."""
         if self.current_zoom_index > 0:
@@ -1594,16 +1855,24 @@ class DungeonBoard:
     def run(self):
         running = True
         while running:
-            # Verificar si la intro ha terminado y cambiar a adagio en loop
-            if not self.intro_played and not pygame.mixer.music.get_busy():
+            # Actualizar fade de música si está activo
+            self.update_fade()
+            
+            # Verificar si la intro ha terminado de sonar (automáticamente)
+            if self.intro_playing and not pygame.mixer.music.get_busy() and not self.fading_out:
+                # La intro terminó naturalmente, pasar a adagio
+                self.intro_playing = False
+                self.intro_played = True
                 try:
                     pygame.mixer.music.load("sound/adagio.mp3")
                     pygame.mixer.music.set_volume(self.music_volume)
                     pygame.mixer.music.play(-1)  # -1 = loop infinito
-                    self.intro_played = True
                 except pygame.error as e:
                     print(f"No se pudo cargar sound/adagio.mp3: {e}")
-                    self.intro_played = True  # Evitar intentos repetidos
+            
+            # Actualizar volumen de música según distancia (solo durante el juego, no durante fade)
+            if not self.showing_title and not self.intro_anim_active and not self.fading_out and not self.fading_in:
+                self.update_music_volume_by_distance()
             
             # Reproducir sonidos ambientales aleatorios (solo durante el juego, no en pantalla de título)
             if not self.showing_title and self.ambient_sounds:
@@ -1620,11 +1889,32 @@ class DungeonBoard:
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
+                    # Si estamos pidiendo confirmación de salida
+                    if self.asking_exit_confirmation:
+                        if event.key == pygame.K_s:  # Sí, salir
+                            running = False
+                        elif event.key == pygame.K_n or event.key == pygame.K_ESCAPE:  # No, cancelar
+                            self.asking_exit_confirmation = False
+                        continue
+                    
                     # Si estamos en la pantalla de título, cualquier tecla inicia el juego
                     if self.showing_title:
                         self.showing_title = False
                         self.intro_anim_active = True
                         self.intro_anim_start_time = pygame.time.get_ticks()
+                        continue
+                    
+                    # Si la intro está sonando, cualquier tecla hace fade out/in a adagio
+                    if self.intro_playing and not self.fading_out:
+                        self.intro_playing = False
+                        self.intro_played = True
+                        self.showing_subtitles = False  # Ocultar subtítulos
+                        self.start_fade_out("sound/adagio.mp3", loop=True)
+                        continue
+                    
+                    # Tecla ESC para salir (con confirmación)
+                    if event.key == pygame.K_ESCAPE:
+                        self.asking_exit_confirmation = True
                         continue
                     
                     # Toggle debug mode con F3
