@@ -1790,6 +1790,11 @@ class DungeonBoard:
                 self.music_channel.play(self.music_sounds['cthulhu'], loops=-1)
                 self.music_channel.set_volume(min_volume)  # Empezar con volumen bajo
                 self.cthulhu_played = True
+                # Mostrar subtítulos de Cthulhu
+                self.showing_subtitles = True
+                self.subtitle_text = "PH'NGLUI MGLW'NAFH CTHULHU R'LYEH WGAH'NAGL FHTAGN"
+                self.subtitle_start_time = pygame.time.get_ticks()
+                self.subtitle_duration = 8000  # 8 segundos
         
         elif self.cthulhu_played:  # Volumen de cthulhu aumenta al acercarse a la salida
             # Si estamos en la celda de salida, volumen máximo (1.0)
