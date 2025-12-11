@@ -1,13 +1,15 @@
+# main.py - Entry point for web version
 import asyncio
+import pygame
 import sys
 
-# Importar el juego
-from dungeon import DungeonBoard
+# Import game after pygame init
+import dungeon
 
 async def main():
-    """Punto de entrada principal para la versión web."""
-    dungeon = DungeonBoard()
-    await dungeon.run()
+    """Main entry point for Pygbag web version."""
+    game = dungeon.DungeonBoard()
+    await game.run()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# Run the game
+asyncio.run(main())
