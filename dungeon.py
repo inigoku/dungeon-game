@@ -82,7 +82,27 @@ class DungeonBoard:
         self.clock = pygame.time.Clock()
         self.font = pygame.font.Font(None, 24)
         
+        # Canal dedicado para música (compatible con web)
+        self.music_channel = pygame.mixer.Channel(0)
+        self.music_channel.set_volume(0.5)
+        
+        # Cargar archivos de música como Sound objects
+        self.music_sounds = {}
+        try:
+            self.music_sounds['intro'] = pygame.mixer.Sound("sound/intro.ogg")
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/intro.ogg: {e}")
+        try:
+            self.music_sounds['adagio'] = pygame.mixer.Sound("sound/adagio.ogg")
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/adagio.ogg: {e}")
+        try:
+            self.music_sounds['cthulhu'] = pygame.mixer.Sound("sound/cthulhu.ogg")
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/cthulhu.ogg: {e}")
+        
         # Sistema de música: intro primero, luego loop de adagio, y cthulhu en la salida
+        self.current_music = None
         self.intro_played = False
         self.cthulhu_played = False
         self.music_volume = 0.5
@@ -103,27 +123,23 @@ class DungeonBoard:
         self.subtitle_start_time = 0
         self.subtitle_duration = 0
         
-        # Cargar y reproducir intro
-        try:
-            pygame.mixer.music.load("sound/intro.ogg")
-            pygame.mixer.music.set_volume(self.music_volume)
-            pygame.mixer.music.play(0)  # Reproducir una vez
-            self.intro_playing = True  # La intro está sonando
+        # Reproducir intro
+        if 'intro' in self.music_sounds:
+            self.current_music = 'intro'
+            self.music_channel.play(self.music_sounds['intro'])
+            self.music_channel.set_volume(self.music_volume)
+            self.intro_playing = True
             # Activar subtítulos de intro
             self.showing_subtitles = True
             self.subtitle_text = "Explora la mazmorra... encuentra la salida..."
             self.subtitle_start_time = pygame.time.get_ticks()
             self.subtitle_duration = 8000  # 8 segundos de duración
-        except pygame.error as e:
-            print(f"No se pudo cargar sound/intro.ogg: {e}")
-            # Si falla intro, intentar cargar directamente adagio
-            try:
-                pygame.mixer.music.load("sound/adagio.ogg")
-                pygame.mixer.music.set_volume(self.music_volume)
-                pygame.mixer.music.play(-1)
-                self.intro_played = True
-            except pygame.error as e2:
-                print(f"No se pudo cargar sound/adagio.ogg: {e2}")
+        elif 'adagio' in self.music_sounds:
+            # Si no hay intro, reproducir adagio directamente
+            self.current_music = 'adagio'
+            self.music_channel.play(self.music_sounds['adagio'], loops=-1)
+            self.music_channel.set_volume(self.music_volume)
+            self.intro_played = True
         
         # Paleta y parámetros para el sprite del jugador (guerrero)
         self.player_palette = {
@@ -585,43 +601,42 @@ class DungeonBoard:
         if self.fading_out:
             if elapsed >= self.fade_duration:
                 # Fade out completado
-                pygame.mixer.music.set_volume(0.0)
+                self.music_channel.set_volume(0.0)
                 self.fading_out = False
                 
                 # Cargar la siguiente música si hay una pendiente
                 if self.pending_music_load:
-                    music_file, loop = self.pending_music_load
-                    try:
-                        pygame.mixer.music.load(music_file)
-                        pygame.mixer.music.play(-1 if loop else 0)
+                    music_name, loop = self.pending_music_load
+                    if music_name in self.music_sounds:
+                        self.music_channel.stop()
+                        self.current_music = music_name
+                        self.music_channel.play(self.music_sounds[music_name], loops=-1 if loop else 0)
                         self.start_fade_in(self.music_volume)
-                    except pygame.error as e:
-                        print(f"No se pudo cargar {music_file}: {e}")
                     self.pending_music_load = None
             else:
                 # Interpolar volumen
                 t = elapsed / self.fade_duration
                 volume = self.fade_from_volume + (self.fade_to_volume - self.fade_from_volume) * t
-                pygame.mixer.music.set_volume(volume)
+                self.music_channel.set_volume(volume)
         
         elif self.fading_in:
             if elapsed >= self.fade_duration:
                 # Fade in completado
-                pygame.mixer.music.set_volume(self.fade_to_volume)
+                self.music_channel.set_volume(self.fade_to_volume)
                 self.fading_in = False
             else:
                 # Interpolar volumen
                 t = elapsed / self.fade_duration
                 volume = self.fade_from_volume + (self.fade_to_volume - self.fade_from_volume) * t
-                pygame.mixer.music.set_volume(volume)
+                self.music_channel.set_volume(volume)
     
-    def start_fade_out(self, next_music_file=None, loop=False):
+    def start_fade_out(self, next_music_name=None, loop=False):
         """Inicia un fade out de la música actual."""
         self.fading_out = True
         self.fade_start_time = pygame.time.get_ticks()
-        self.fade_from_volume = pygame.mixer.music.get_volume()
+        self.fade_from_volume = self.music_channel.get_volume()
         self.fade_to_volume = 0.0
-        self.pending_music_load = (next_music_file, loop)
+        self.pending_music_load = (next_music_name, loop)
     
     def start_fade_in(self, target_volume=0.5):
         """Inicia un fade in de la música actual."""
@@ -629,7 +644,7 @@ class DungeonBoard:
         self.fade_start_time = pygame.time.get_ticks()
         self.fade_from_volume = 0.0
         self.fade_to_volume = target_volume
-        pygame.mixer.music.set_volume(0.0)
+        self.music_channel.set_volume(0.0)
     
     def draw_subtitles(self):
         """Dibuja los subtítulos en la parte inferior de la pantalla."""
@@ -1766,37 +1781,33 @@ class DungeonBoard:
             volume = max_volume - (distance_from_start / max_distance) * (max_volume - min_volume)
             volume = max(min_volume, min(max_volume, volume))  # Clamp entre min y max
             
-            pygame.mixer.music.set_volume(volume)
+            self.music_channel.set_volume(volume)
             
             # Si estamos cerca de la salida, cambiar a cthulhu
-            if distance_to_exit <= 5.0 and not self.cthulhu_played:
-                try:
-                    pygame.mixer.music.load("sound/cthulhu.ogg")
-                    pygame.mixer.music.set_volume(min_volume)  # Empezar con volumen bajo
-                    pygame.mixer.music.play(-1)  # Loop
-                    self.cthulhu_played = True
-                except pygame.error as e:
-                    print(f"No se pudo cargar sound/cthulhu.ogg: {e}")
+            if distance_to_exit <= 5.0 and not self.cthulhu_played and 'cthulhu' in self.music_sounds:
+                self.music_channel.stop()
+                self.current_music = 'cthulhu'
+                self.music_channel.play(self.music_sounds['cthulhu'], loops=-1)
+                self.music_channel.set_volume(min_volume)  # Empezar con volumen bajo
+                self.cthulhu_played = True
         
         elif self.cthulhu_played:  # Volumen de cthulhu aumenta al acercarse a la salida
             # Si estamos en la celda de salida, volumen máximo (1.0)
             if (curr_row, curr_col) == self.exit_position:
-                pygame.mixer.music.set_volume(1.0)
+                self.music_channel.set_volume(1.0)
             # Si volvemos cerca del inicio, regresar a adagio
-            elif distance_from_start <= 5.0:
-                try:
-                    pygame.mixer.music.load("sound/adagio.ogg")
-                    # Volumen según distancia al inicio
-                    max_volume = 0.5
-                    min_volume = 0.05
-                    max_distance = 5.0
-                    volume = max_volume - (distance_from_start / max_distance) * (max_volume - min_volume)
-                    volume = max(min_volume, min(max_volume, volume))
-                    pygame.mixer.music.set_volume(volume)
-                    pygame.mixer.music.play(-1)  # Loop
-                    self.cthulhu_played = False
-                except pygame.error as e:
-                    print(f"No se pudo cargar sound/adagio.ogg: {e}")
+            elif distance_from_start <= 5.0 and 'adagio' in self.music_sounds:
+                self.music_channel.stop()
+                self.current_music = 'adagio'
+                self.music_channel.play(self.music_sounds['adagio'], loops=-1)
+                # Volumen según distancia al inicio
+                max_volume = 0.5
+                min_volume = 0.05
+                max_distance = 5.0
+                volume = max_volume - (distance_from_start / max_distance) * (max_volume - min_volume)
+                volume = max(min_volume, min(max_volume, volume))
+                self.music_channel.set_volume(volume)
+                self.cthulhu_played = False
             else:
                 # Volumen de cthulhu aumenta al acercarse a la salida
                 # Volumen mínimo (0.05) a distancia 5, máximo (1.0) en la salida
@@ -1808,7 +1819,7 @@ class DungeonBoard:
                 volume = max_volume - (distance_to_exit / max_distance) * (max_volume - min_volume)
                 volume = max(min_volume, min(max_volume, volume))  # Clamp entre min y max
                 
-                pygame.mixer.music.set_volume(volume)
+                self.music_channel.set_volume(volume)
     
     def zoom_in(self):
         """Aumenta el zoom (reduce view_size) - acerca la vista."""
@@ -1860,16 +1871,14 @@ class DungeonBoard:
             self.update_fade()
             
             # Verificar si la intro ha terminado de sonar (automáticamente)
-            if self.intro_playing and not pygame.mixer.music.get_busy() and not self.fading_out:
+            if self.intro_playing and not self.music_channel.get_busy() and not self.fading_out:
                 # La intro terminó naturalmente, pasar a adagio
                 self.intro_playing = False
                 self.intro_played = True
-                try:
-                    pygame.mixer.music.load("sound/adagio.ogg")
-                    pygame.mixer.music.set_volume(self.music_volume)
-                    pygame.mixer.music.play(-1)  # -1 = loop infinito
-                except pygame.error as e:
-                    print(f"No se pudo cargar sound/adagio.ogg: {e}")
+                if 'adagio' in self.music_sounds:
+                    self.current_music = 'adagio'
+                    self.music_channel.play(self.music_sounds['adagio'], loops=-1)
+                    self.music_channel.set_volume(self.music_volume)
             
             # Actualizar volumen de música según distancia (solo durante el juego, no durante fade)
             if not self.showing_title and not self.intro_anim_active and not self.fading_out and not self.fading_in:
@@ -1910,7 +1919,7 @@ class DungeonBoard:
                         self.intro_playing = False
                         self.intro_played = True
                         self.showing_subtitles = False  # Ocultar subtítulos
-                        self.start_fade_out("sound/adagio.ogg", loop=True)
+                        self.start_fade_out('adagio', loop=True)
                         continue
                     
                     # Tecla ESC para salir (con confirmación)
