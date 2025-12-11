@@ -2,6 +2,7 @@ import pygame
 import random
 import math
 import sys
+import asyncio
 from enum import Enum
 from dataclasses import dataclass
 
@@ -1852,7 +1853,7 @@ class DungeonBoard:
         self.camera_offset_row = float(target_offset_row)
         self.camera_offset_col = float(target_offset_col)
     
-    def run(self):
+    async def run(self):
         running = True
         while running:
             # Actualizar fade de música si está activo
@@ -1943,10 +1944,12 @@ class DungeonBoard:
                             self.place_cell_in_direction(dir_map[event.key])
             self.draw()
             self.clock.tick(60)
+            await asyncio.sleep(0)  # Yield control to browser
         
         pygame.quit()
         sys.exit()
 
 if __name__ == "__main__":
+    import asyncio
     dungeon = DungeonBoard()
-    dungeon.run()
+    asyncio.run(dungeon.run())

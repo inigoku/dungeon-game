@@ -40,3 +40,9 @@ Thumbs.db
 # Game specific
 *.pyc
 
+# Pygbag build artifacts
+build/
+*.zip
+web/
+*.apk
+

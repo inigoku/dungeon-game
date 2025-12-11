@@ -2,6 +2,8 @@
 
 Un juego de exploración de mazmorras en 2D construido con Pygame, con sistema de audio dinámico, niebla de guerra y efectos atmosféricos.
 
+**🎮 [Juega ahora en tu navegador](https://inigoku.github.io/dungeon-game/)** (sin instalación requerida)
+
 ## Características
 
 ### Exploración
@@ -37,12 +39,22 @@ Un juego de exploración de mazmorras en 2D construido con Pygame, con sistema d
 - **Modo debug**: F3 para información de navegación
 - **Iluminación progresiva**: Las antorchas aumentan en densidad hacia la salida
 
-## Requisitos
+## Jugar en el Navegador
 
-- Python 3.13+
+El juego está disponible para jugar directamente en tu navegador sin necesidad de instalación:
+
+**🎮 [https://inigoku.github.io/dungeon-game/](https://inigoku.github.io/dungeon-game/)**
+
+La versión web utiliza Pygbag para ejecutar Pygame en el navegador mediante WebAssembly.
+
+## Instalación Local
+
+### Requisitos
+
+- Python 3.11+
 - Pygame 2.6.1+
 
-## Instalación
+### Instalación
 
 ```bash
 # Crear entorno virtual

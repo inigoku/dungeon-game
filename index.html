@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeon Explorer 2D</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        header {
+            text-align: center;
+            padding: 2rem 1rem 1rem;
+            max-width: 800px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin: 0 0 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle {
+            font-size: 1.1rem;
+            color: #aaa;
+            margin-bottom: 1rem;
+        }
+        
+        #game-container {
+            position: relative;
+            margin: 1rem auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+        }
+        
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 100;
+            background: rgba(0,0,0,0.8);
+            padding: 2rem;
+            border-radius: 10px;
+        }
+        
+        #loading h2 {
+            margin: 0 0 1rem;
+        }
+        
+        .loader {
+            border: 4px solid #333;
+            border-top: 4px solid #4ecdc4;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .controls {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1rem auto;
+            max-width: 600px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .controls h3 {
+            margin-top: 0;
+            color: #4ecdc4;
+        }
+        
+        .controls ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .controls li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .controls li:last-child {
+            border-bottom: none;
+        }
+        
+        .key {
+            background: rgba(78, 205, 196, 0.2);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-weight: bold;
+            color: #4ecdc4;
+        }
+        
+        footer {
+            margin-top: auto;
+            padding: 2rem 1rem;
+            text-align: center;
+            color: #666;
+        }
+        
+        footer a {
+            color: #4ecdc4;
+            text-decoration: none;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🏰 Dungeon Explorer 2D 🗡️</h1>
+        <p class="subtitle">Explora la mazmorra procedural y encuentra la salida</p>
+    </header>
+    
+    <div id="game-container">
+        <div id="loading">
+            <h2>Cargando juego...</h2>
+            <div class="loader"></div>
+        </div>
+        <canvas id="canvas"></canvas>
+    </div>
+    
+    <div class="controls">
+        <h3>⌨️ Controles</h3>
+        <ul>
+            <li><span class="key">W</span> / <span class="key">↑</span> - Mover al norte</li>
+            <li><span class="key">S</span> / <span class="key">↓</span> - Mover al sur</li>
+            <li><span class="key">D</span> / <span class="key">→</span> - Mover al este</li>
+            <li><span class="key">A</span> / <span class="key">←</span> - Mover al oeste</li>
+            <li><span class="key">Z</span> - Acercar zoom</li>
+            <li><span class="key">X</span> - Alejar zoom</li>
+            <li><span class="key">F3</span> - Toggle modo debug</li>
+            <li><span class="key">ESC</span> - Salir (con confirmación)</li>
+        </ul>
+    </div>
+    
+    <footer>
+        <p>Hecho con ❤️ usando Pygame | <a href="https://github.com/inigoku/dungeon-game" target="_blank">Ver código en GitHub</a></p>
+    </footer>
+    
+    <script src="https://cdn.jsdelivr.net/gh/pygame-web/pygbag@0.9.2/static/pythons.js"></script>
+    <script>
+        // Configuración de Pygbag
+        async function loadGame() {
+            const loading = document.getElementById('loading');
+            
+            try {
+                await pygbag.load({
+                    archive: 'dungeon',
+                    canvas: document.getElementById('canvas'),
+                    MEMORY: 268435456, // 256MB
+                    callback: function() {
+                        loading.style.display = 'none';
+                    }
+                });
+            } catch (e) {
+                loading.innerHTML = '<h2>Error al cargar el juego</h2><p>' + e + '</p>';
+            }
+        }
+        
+        loadGame();
+    </script>
+</body>
+</html>
