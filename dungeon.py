@@ -256,6 +256,16 @@ class DungeonBoard:
         self.torch_thought_triggered = False  # Flag para el pensamiento de antorchas
         self.intro_thought_triggered = False  # Flag para el pensamiento de intro
         
+        # Sonido de sangre (usado para pensamientos)
+        self.blood_sound = None
+        try:
+            self.blood_sound = pygame.mixer.Sound("sound/sangre.ogg")
+            self.blood_sound.set_volume(0.7)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/sangre.ogg: {e}")
+        
+        self.blood_thought_triggered = False  # Flag para el pensamiento de sangre
+        
         # Sonidos de pasos
         self.footstep_sounds = []
         try:
@@ -1787,6 +1797,18 @@ class DungeonBoard:
                 if (target_row, target_col) == self.exit_position and not self.game_ended:
                     self.game_ended = True
                 
+                # Activar pensamiento de sangre si ve manchas por primera vez
+                if not self.blood_thought_triggered and self.blood_sound:
+                    # Verificar si hay manchas de sangre en esta celda
+                    if self.has_blood_stains(target_row, target_col):
+                        # Duración del audio de sangre (aproximada: 10 segundos = 10000ms)
+                        audio_duration = 10000
+                        self.trigger_thought(
+                            self.blood_sound,
+                            [("¿Es eso... sangre?!?", audio_duration)]
+                        )
+                        self.blood_thought_triggered = True
+                
                 # Activar pensamiento de antorchas si es la primera vez que entra en una celda con antorchas
                 if not self.torch_thought_triggered and self.torch_sound:
                     current_cell = self.board[target_row][target_col]
@@ -1901,6 +1923,23 @@ class DungeonBoard:
         
         # Retornar el mínimo entre antorchas deseadas y paredes disponibles
         return min(desired_torches, available_walls)
+    
+    def has_blood_stains(self, board_row, board_col):
+        """Verifica si una celda tiene manchas de sangre."""
+        exit_row, exit_col = self.exit_position
+        distance = abs(exit_row - board_row) + abs(exit_col - board_col)
+        
+        # Solo puede haber manchas en celdas a distancia 1-10 de la salida
+        if distance < 1 or distance > 10:
+            return False
+        
+        # Usar posición como semilla para reproducibilidad
+        seed = board_row * 100000 + board_col
+        rnd = random.Random(seed)
+        
+        # Probabilidad de manchas aumenta al acercarse (30% a dist 10, 100% a dist 1)
+        probability = 1.0 - ((distance - 1) / 9.0) * 0.7
+        return rnd.random() <= probability
     
     def draw_blood_stains(self, board_row, board_col, x, y):
         """Dibuja manchas de sangre en celdas cercanas a la salida."""
