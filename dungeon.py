@@ -209,6 +209,17 @@ class DungeonBoard:
         except pygame.error as e:
             print(f"No se pudo cargar sound/murcielago.ogg: {e}")
         
+        # Sonido de antorchas
+        self.torch_sound = None
+        try:
+            self.torch_sound = pygame.mixer.Sound("sound/antorchas.ogg")
+            self.torch_sound.set_volume(0.5)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/antorchas.ogg: {e}")
+        
+        # Rastrear celdas con antorchas ya visitadas
+        self.visited_torch_cells = set()
+        
         # Sonidos de pasos
         self.footstep_sounds = []
         try:
@@ -1597,6 +1608,16 @@ class DungeonBoard:
         self.current_position = (target_row, target_col)
         # Marcar la celda como visitada
         self.visited_cells.add((target_row, target_col))
+        
+        # Reproducir sonido de antorchas si es la primera vez que entra en una celda con antorchas
+        if self.torch_sound and (target_row, target_col) not in self.visited_torch_cells:
+            # Verificar si la celda tiene antorchas (debe estar en el camino principal)
+            if (target_row, target_col) in self.main_path:
+                cell = self.board[target_row][target_col]
+                num_torches = self.count_torches(target_row, target_col, cell)
+                if num_torches > 0:
+                    self.torch_sound.play()
+                    self.visited_torch_cells.add((target_row, target_col))
     
     def count_torches(self, board_row, board_col, cell):
         """Cuenta cuántas antorchas se dibujarán realmente en esta celda.
