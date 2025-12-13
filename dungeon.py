@@ -58,11 +58,37 @@ class DungeonBoard:
         self.start_position = (center, center)  # Posición inicial para calcular distancia
         
         # Generar posición de salida aleatoria y calcular camino principal
-        self.exit_position = self.generate_exit_position(center)
-        self.main_path = self.calculate_main_path((center, center), self.exit_position)
+        # Reintentar hasta conseguir conectividad
+        max_generation_attempts = 10
+        generation_attempt = 0
+        connectivity_verified = False
         
-        # Generar todas las celdas del camino principal
-        self.generate_main_path_cells()
+        while not connectivity_verified and generation_attempt < max_generation_attempts:
+            generation_attempt += 1
+            
+            # Limpiar el tablero excepto la celda de inicio
+            for row in range(self.size):
+                for col in range(self.size):
+                    if (row, col) != (center, center):
+                        self.board[row][col] = Cell(CellType.EMPTY, set())
+            
+            # Generar nueva posición de salida
+            self.exit_position = self.generate_exit_position(center)
+            
+            # Calcular camino principal
+            self.main_path = self.calculate_main_path((center, center), self.exit_position)
+            
+            # Generar todas las celdas del camino principal
+            self.generate_main_path_cells()
+            
+            # Verificar conectividad
+            connectivity_verified = self.check_connectivity((center, center), self.exit_position)
+            
+            if not connectivity_verified:
+                print(f"Intento {generation_attempt}: No hay conectividad, regenerando...")
+        
+        if not connectivity_verified:
+            print("Advertencia: No se pudo generar un mapa con conectividad garantizada después de 10 intentos")
         
         # Sistema de niebla de guerra: rastrear celdas visitadas
         self.visited_cells = set()
@@ -101,12 +127,11 @@ class DungeonBoard:
         except pygame.error as e:
             print(f"No se pudo cargar sound/cthulhu.ogg: {e}")
         
-        # Sistema de música: intro primero, luego loop de adagio, y cthulhu en la salida
+        # Sistema de música: adagio desde el principio, cthulhu en la salida
         self.current_music = None
-        self.intro_played = False
+        self.intro_sound = None  # intro.ogg se usará como pensamiento
         self.cthulhu_played = False
         self.music_volume = 0.5
-        self.intro_playing = False  # Flag para saber si la intro está sonando
         
         # Sistema de fade de música
         self.fading_out = False
@@ -117,25 +142,28 @@ class DungeonBoard:
         self.fade_to_volume = 0.0
         self.pending_music_load = None  # Música a cargar después del fade out
         
-        # Sistema de subtítulos para intro.ogg
+        # Sistema de subtítulos
         self.showing_subtitles = False
         self.subtitle_text = ""
         self.subtitle_start_time = 0
         self.subtitle_duration = 0
         
-        # Reproducir intro
+        # Sistema de pensamientos (sonido + subtítulos)
+        self.thought_active = False
+        self.thought_sound = None
+        self.thought_subtitles = []  # Lista de (texto, duración)
+        self.thought_current_subtitle_index = 0
+        self.thought_subtitle_start_time = 0
+        
+        # Guardar intro.ogg como pensamiento inicial
         if 'intro' in self.music_sounds:
-            self.current_music = 'intro'
-            self.music_channel.play(self.music_sounds['intro'])
+            self.intro_sound = self.music_sounds['intro']
+        
+        # Reproducir adagio desde el principio en loop
+        if 'adagio' in self.music_sounds:
+            self.current_music = 'adagio'
+            self.music_channel.play(self.music_sounds['adagio'], loops=-1)
             self.music_channel.set_volume(self.music_volume)
-            self.intro_playing = True
-            # Activar subtítulos de intro
-            self.showing_subtitles = True
-            self.subtitle_text = "Explora la mazmorra... encuentra la salida..."
-            self.subtitle_start_time = pygame.time.get_ticks()
-            self.subtitle_duration = 8000  # 8 segundos de duración
-        elif 'adagio' in self.music_sounds:
-            # Si no hay intro, reproducir adagio directamente
             self.current_music = 'adagio'
             self.music_channel.play(self.music_sounds['adagio'], loops=-1)
             self.music_channel.set_volume(self.music_volume)
@@ -186,39 +214,47 @@ class DungeonBoard:
         self.intro_anim_stage = 0  # 0=caída, 1=mirar izquierda, 2=mirar derecha, 3=sacar armas, 4=completo
         self.intro_show_weapons = False  # Las armas aparecen al final
         
-        # Efectos de sonido ambientales
-        self.ambient_sounds = []
+        # Efectos de sonido ambientales (con probabilidades ponderadas)
+        self.ambient_sounds = {}
         try:
             drip_sound = pygame.mixer.Sound("sound/gota.ogg")
             drip_sound.set_volume(0.5)
-            self.ambient_sounds.append(drip_sound)
+            self.ambient_sounds['gota'] = drip_sound
         except pygame.error as e:
             print(f"No se pudo cargar sound/gota.ogg: {e}")
         
         try:
             two_drips_sound = pygame.mixer.Sound("sound/dos-gotas.ogg")
             two_drips_sound.set_volume(0.5)
-            self.ambient_sounds.append(two_drips_sound)
+            self.ambient_sounds['dos-gotas'] = two_drips_sound
         except pygame.error as e:
             print(f"No se pudo cargar sound/dos-gotas.ogg: {e}")
         
         try:
             bat_sound = pygame.mixer.Sound("sound/murcielago.ogg")
             bat_sound.set_volume(0.6)
-            self.ambient_sounds.append(bat_sound)
+            self.ambient_sounds['murcielago'] = bat_sound
         except pygame.error as e:
             print(f"No se pudo cargar sound/murcielago.ogg: {e}")
         
-        # Sonido de antorchas
+        # Probabilidades para cada sonido (deben sumar 1.0)
+        # 40% gota, 40% dos-gotas, 20% murciélago
+        self.ambient_sound_weights = {
+            'gota': 0.40,
+            'dos-gotas': 0.40,
+            'murcielago': 0.20
+        }
+        
+        # Sonido de antorchas (usado para pensamientos)
         self.torch_sound = None
         try:
             self.torch_sound = pygame.mixer.Sound("sound/antorchas.ogg")
-            self.torch_sound.set_volume(0.5)
+            self.torch_sound.set_volume(0.7)
         except pygame.error as e:
             print(f"No se pudo cargar sound/antorchas.ogg: {e}")
         
-        # Rastrear celdas con antorchas ya visitadas
-        self.visited_torch_cells = set()
+        self.torch_thought_triggered = False  # Flag para el pensamiento de antorchas
+        self.intro_thought_triggered = False  # Flag para el pensamiento de intro
         
         # Sonidos de pasos
         self.footstep_sounds = []
@@ -240,6 +276,31 @@ class DungeonBoard:
         
         self.last_ambient_sound_time = pygame.time.get_ticks()
         self.next_ambient_sound_delay = random.randint(3000, 20000)  # 3-20 segundos (más aleatorio)
+        
+        # Sistema de final del juego con Cthulhu
+        self.game_ended = False
+        self.cthulhu_image = None
+        try:
+            original_image = pygame.image.load("cthlulhu.png")
+            # Escalar manteniendo la proporción para que quepa en la pantalla
+            original_width = original_image.get_width()
+            original_height = original_image.get_height()
+            
+            # Calcular escala para que quepa en la pantalla dejando espacio para subtítulos
+            max_width = self.width * 0.9
+            # Reservar 120px en la parte inferior para subtítulos
+            max_height = (self.height - 120) * 0.9
+            
+            scale_width = max_width / original_width
+            scale_height = max_height / original_height
+            scale = min(scale_width, scale_height)  # Usar la escala menor para mantener proporción
+            
+            new_width = int(original_width * scale)
+            new_height = int(original_height * scale)
+            
+            self.cthulhu_image = pygame.transform.smoothscale(original_image, (new_width, new_height))
+        except pygame.error as e:
+            print(f"No se pudo cargar cthlulhu.png: {e}")
         
         # Debug mode
         self.debug_mode = False
@@ -263,11 +324,41 @@ class DungeonBoard:
         # Retornar valores flotantes para scroll suave en píxeles
         return self.camera_offset_row, self.camera_offset_col
     
+    def check_connectivity(self, start, end):
+        """Verifica si hay un camino posible entre start y end usando BFS.
+        Retorna True si hay conectividad, False si no."""
+        from collections import deque
+        
+        queue = deque([start])
+        visited = {start}
+        
+        while queue:
+            curr_row, curr_col = queue.popleft()
+            
+            if (curr_row, curr_col) == end:
+                return True
+            
+            # Explorar vecinos
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                next_row = curr_row + dr
+                next_col = curr_col + dc
+                next_pos = (next_row, next_col)
+                
+                if (0 <= next_row < self.size and 0 <= next_col < self.size 
+                    and next_pos not in visited):
+                    visited.add(next_pos)
+                    queue.append(next_pos)
+        
+        return False
+    
     def generate_exit_position(self, center):
         """Genera una posición aleatoria para la celda de salida, alejada del centro."""
-        # Elegir una distancia aleatoria entre 15 y 30 celdas del centro
-        min_distance = 15
-        max_distance = 30
+        # Calcular distancia máxima desde el centro hasta el borde del tablero
+        max_distance_to_edge = center - 5  # Restamos margen de seguridad
+        
+        # Distancia entre 75% y 100% de la distancia al borde
+        min_distance = int(max_distance_to_edge * 0.75)
+        max_distance = max_distance_to_edge
         
         # Generar posiciones candidatas
         attempts = 0
@@ -284,8 +375,22 @@ class DungeonBoard:
                 return (row, col)
             attempts += 1
         
-        # Fallback: posición fija si no se encontró después de 100 intentos
-        return (center + 20, center + 20)
+        # Fallback: buscar una posición válida reduciendo gradualmente la distancia
+        for fallback_distance in range(max_distance, min_distance - 1, -5):
+            for fallback_angle in [0, math.pi/4, math.pi/2, 3*math.pi/4, math.pi, 5*math.pi/4, 3*math.pi/2, 7*math.pi/4]:
+                row = center + int(fallback_distance * math.cos(fallback_angle))
+                col = center + int(fallback_distance * math.sin(fallback_angle))
+                
+                # Asegurar que está dentro del tablero
+                row = max(5, min(self.size - 6, row))
+                col = max(5, min(self.size - 6, col))
+                
+                if 5 <= row < self.size - 5 and 5 <= col < self.size - 5:
+                    return (row, col)
+        
+        # Último fallback: posición segura garantizada dentro del tablero
+        safe_distance = min(min_distance, (self.size - center - 10) // 2)
+        return (center + safe_distance, center + safe_distance)
     
     def calculate_main_path(self, start, end):
         """Calcula un camino tortuoso sin lazos desde start hasta end.
@@ -481,7 +586,8 @@ class DungeonBoard:
             pygame.display.flip()
             return
         
-        self.screen.fill((255, 255, 255))
+        # Rellenar fondo negro (para que coincida con celdas EMPTY/no visitadas)
+        self.screen.fill((0, 0, 0))
         
         # Primero: actualizar el viewport (mueve la cámara)
         offset_row_float, offset_col_float = self.get_view_offset()
@@ -517,7 +623,14 @@ class DungeonBoard:
         # Dibujar subtítulos si están activos
         self.draw_subtitles()
         
-        # Mostrar diálogo de confirmación de salida si está activo
+        # Si el juego ha terminado, mostrar imagen de Cthulhu
+        if self.game_ended and self.cthulhu_image:
+            # Centrar la imagen en la pantalla
+            image_x = (self.width - self.cthulhu_image.get_width()) // 2
+            image_y = (self.height - self.cthulhu_image.get_height()) // 2
+            self.screen.blit(self.cthulhu_image, (image_x, image_y))
+        
+        # Mostrar diálogo de confirmación de salida si está activo (siempre encima de todo)
         if self.asking_exit_confirmation:
             self.draw_exit_confirmation()
         
@@ -668,18 +781,108 @@ class DungeonBoard:
             self.showing_subtitles = False
             return
         
+        # Dividir el texto en líneas que quepan en el ancho del juego
+        font = pygame.font.Font(None, 32)
+        max_width = self.width - 40  # Margen de 20px a cada lado
+        words = self.subtitle_text.split(' ')
+        lines = []
+        current_line = []
+        
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            test_surface = font.render(test_line, True, (255, 255, 255))
+            
+            if test_surface.get_width() <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                current_line = [word]
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        # Calcular altura necesaria para todas las líneas
+        line_height = 36
+        subtitle_height = max(80, len(lines) * line_height + 20)
+        
         # Crear fondo semi-transparente para los subtítulos
-        subtitle_height = 80
         subtitle_bg = pygame.Surface((self.width, subtitle_height))
         subtitle_bg.set_alpha(160)
         subtitle_bg.fill((0, 0, 0))
         self.screen.blit(subtitle_bg, (0, self.height - subtitle_height))
         
-        # Renderizar el texto del subtítulo
-        font = pygame.font.Font(None, 32)
-        text_surface = font.render(self.subtitle_text, True, (255, 255, 255))
-        text_rect = text_surface.get_rect(center=(self.width // 2, self.height - subtitle_height // 2))
-        self.screen.blit(text_surface, text_rect)
+        # Renderizar cada línea centrada
+        start_y = self.height - subtitle_height + 10
+        for i, line in enumerate(lines):
+            text_surface = font.render(line, True, (255, 255, 255))
+            text_rect = text_surface.get_rect(center=(self.width // 2, start_y + i * line_height + line_height // 2))
+            self.screen.blit(text_surface, text_rect)
+    
+    def trigger_thought(self, sound, subtitles):
+        """Inicia un pensamiento con sonido y subtítulos.
+        
+        Args:
+            sound: pygame.mixer.Sound a reproducir
+            subtitles: Lista de tuplas (texto, duración_ms)
+        """
+        # Si hay un pensamiento activo, detenerlo antes de comenzar el nuevo
+        if self.thought_active:
+            # Detener el sonido anterior si existe
+            if self.thought_sound:
+                self.thought_sound.stop()
+            
+            # Limpiar el estado anterior
+            self.thought_active = False
+            self.thought_sound = None
+            self.thought_subtitles = []
+            self.thought_current_subtitle_index = 0
+            self.showing_subtitles = False
+        
+        # Iniciar el nuevo pensamiento
+        self.thought_active = True
+        self.thought_sound = sound
+        self.thought_subtitles = subtitles
+        self.thought_current_subtitle_index = 0
+        self.thought_subtitle_start_time = pygame.time.get_ticks()
+        
+        # Reproducir el sonido
+        if sound:
+            sound.play()
+        
+        # Activar el primer subtítulo
+        if subtitles:
+            self.showing_subtitles = True
+            self.subtitle_text = subtitles[0][0]
+            self.subtitle_start_time = pygame.time.get_ticks()
+            self.subtitle_duration = subtitles[0][1]
+    
+    def update_thought(self):
+        """Actualiza el estado del pensamiento activo."""
+        if not self.thought_active:
+            return
+        
+        current_time = pygame.time.get_ticks()
+        
+        # Verificar si el subtítulo actual ha terminado
+        if current_time - self.subtitle_start_time > self.subtitle_duration:
+            self.thought_current_subtitle_index += 1
+            
+            # Verificar si hay más subtítulos
+            if self.thought_current_subtitle_index < len(self.thought_subtitles):
+                # Activar el siguiente subtítulo inmediatamente
+                subtitle_data = self.thought_subtitles[self.thought_current_subtitle_index]
+                self.showing_subtitles = True
+                self.subtitle_text = subtitle_data[0]
+                self.subtitle_start_time = current_time
+                self.subtitle_duration = subtitle_data[1]
+            else:
+                # No hay más subtítulos, terminar el pensamiento
+                self.showing_subtitles = False
+                self.thought_active = False
+                self.thought_sound = None
+                self.thought_subtitles = []
+                self.thought_current_subtitle_index = 0
     
     def draw_exit_confirmation(self):
         """Dibuja el diálogo de confirmación de salida."""
@@ -760,6 +963,21 @@ class DungeonBoard:
             else:
                 self.intro_anim_active = False
                 self.intro_show_weapons = True
+                
+                # Activar pensamiento de intro cuando el personaje entra en el calabozo
+                if not self.intro_thought_triggered and self.intro_sound:
+                    # Duración de intro.ogg (aproximada: 34 segundos = 34000ms)
+                    audio_duration = 34000
+                    self.trigger_thought(
+                        self.intro_sound,
+                        [("Usa los cursores para moverte.", 4000),
+                         ("Haz zoom con Z y X.", 4000),
+                         ("Explora la mazmorra... encuentra la salida...", 6000),
+                         ("Ten cuidado con lo que acecha en las sombras.", 6000),
+                         ("¡Buena suerte, valiente guerrero!", audio_duration - 20000),
+                         ]
+                    )
+                    self.intro_thought_triggered = True
         
         cy += intro_offset_y
         
@@ -878,6 +1096,8 @@ class DungeonBoard:
             pygame.draw.rect(self.screen, (120, 120, 120), (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra solo en las 'paredes' dentro de la celda
             self.draw_stone_in_walls(board_row, board_col, x, y, cell)
+            # Dibujar manchas de sangre si está cerca de la salida
+            self.draw_blood_stains(board_row, board_col, x, y)
             # Dibujar antorchas en las paredes
             self.draw_torches(board_row, board_col, x, y, cell)
         elif cell.cell_type == CellType.HABITACION:
@@ -892,6 +1112,8 @@ class DungeonBoard:
             pygame.draw.rect(self.screen, (120, 120, 120), (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra en las paredes
             self.draw_stone_in_walls(board_row, board_col, x, y, cell)
+            # Dibujar manchas de sangre si está cerca de la salida
+            self.draw_blood_stains(board_row, board_col, x, y)
             # Dibujar antorchas en las paredes
             self.draw_torches(board_row, board_col, x, y, cell)
         elif cell.cell_type == CellType.SALIDA:
@@ -902,6 +1124,8 @@ class DungeonBoard:
             pygame.draw.rect(self.screen, room_color, (x, y, self.cell_size, self.cell_size))
             # Dibujar piedras en las paredes
             self.draw_stone_in_walls(board_row, board_col, x, y, cell)
+            # Dibujar manchas de sangre en la salida (siempre)
+            self.draw_blood_stains(board_row, board_col, x, y)
             # Dibujar antorchas en las paredes
             self.draw_torches(board_row, board_col, x, y, cell)
             # Dibujar escalera de caracol en una esquina
@@ -1509,6 +1733,10 @@ class DungeonBoard:
         if self.intro_anim_active:
             return
         
+        # Bloquear movimiento si el juego ha terminado
+        if self.game_ended:
+            return
+        
         current_row, current_col = self.current_position
         current_cell = self.board[current_row][current_col]
         
@@ -1554,6 +1782,23 @@ class DungeonBoard:
                 self.current_position = (target_row, target_col)
                 # Marcar la celda como visitada
                 self.visited_cells.add((target_row, target_col))
+                
+                # Verificar si entró en la celda final
+                if (target_row, target_col) == self.exit_position and not self.game_ended:
+                    self.game_ended = True
+                
+                # Activar pensamiento de antorchas si es la primera vez que entra en una celda con antorchas
+                if not self.torch_thought_triggered and self.torch_sound:
+                    current_cell = self.board[target_row][target_col]
+                    torch_count = self.count_torches(target_row, target_col, current_cell)
+                    if torch_count > 0:
+                        # Obtener duración del audio (aproximada: 6 segundos = 6000ms)
+                        audio_duration = 6000
+                        self.trigger_thought(
+                            self.torch_sound,
+                            [("Una antorcha encendida... ¡Interesante!", audio_duration)]
+                        )
+                        self.torch_thought_triggered = True
             # si existe pero no tiene la salida complementaria, no se puede mover
             return
 
@@ -1608,16 +1853,6 @@ class DungeonBoard:
         self.current_position = (target_row, target_col)
         # Marcar la celda como visitada
         self.visited_cells.add((target_row, target_col))
-        
-        # Reproducir sonido de antorchas si es la primera vez que entra en una celda con antorchas
-        if self.torch_sound and (target_row, target_col) not in self.visited_torch_cells:
-            # Verificar si la celda tiene antorchas (debe estar en el camino principal)
-            if (target_row, target_col) in self.main_path:
-                cell = self.board[target_row][target_col]
-                num_torches = self.count_torches(target_row, target_col, cell)
-                if num_torches > 0:
-                    self.torch_sound.play()
-                    self.visited_torch_cells.add((target_row, target_col))
     
     def count_torches(self, board_row, board_col, cell):
         """Cuenta cuántas antorchas se dibujarán realmente en esta celda.
@@ -1666,6 +1901,54 @@ class DungeonBoard:
         
         # Retornar el mínimo entre antorchas deseadas y paredes disponibles
         return min(desired_torches, available_walls)
+    
+    def draw_blood_stains(self, board_row, board_col, x, y):
+        """Dibuja manchas de sangre en celdas cercanas a la salida."""
+        exit_row, exit_col = self.exit_position
+        distance = abs(exit_row - board_row) + abs(exit_col - board_col)
+        
+        # Solo dibujar manchas en celdas a distancia 1-10 de la salida
+        if distance < 1 or distance > 10:
+            return
+        
+        # Usar posición como semilla para reproducibilidad
+        seed = board_row * 100000 + board_col
+        rnd = random.Random(seed)
+        
+        # Probabilidad de manchas aumenta al acercarse (30% a dist 10, 100% a dist 1)
+        probability = 1.0 - ((distance - 1) / 9.0) * 0.7
+        if rnd.random() > probability:
+            return
+        
+        # Color de sangre oscura
+        blood_colors = [
+            (80, 0, 0),    # Rojo muy oscuro
+            (100, 10, 10), # Rojo oscuro
+            (70, 5, 5),    # Casi negro rojizo
+        ]
+        
+        # Generar 2-5 manchas por celda
+        num_stains = rnd.randint(2, 5)
+        for i in range(num_stains):
+            # Posición aleatoria en el suelo (evitar bordes)
+            stain_x = x + int(rnd.uniform(0.2, 0.8) * self.cell_size)
+            stain_y = y + int(rnd.uniform(0.2, 0.8) * self.cell_size)
+            
+            # Tamaño aleatorio
+            size = rnd.randint(4, 12)
+            
+            # Color aleatorio de sangre
+            color = rnd.choice(blood_colors)
+            
+            # Dibujar mancha irregular (varios círculos superpuestos)
+            num_circles = rnd.randint(2, 4)
+            for j in range(num_circles):
+                offset_x = rnd.randint(-size//2, size//2)
+                offset_y = rnd.randint(-size//2, size//2)
+                circle_size = rnd.randint(size//2, size)
+                pygame.draw.circle(self.screen, color, 
+                                 (stain_x + offset_x, stain_y + offset_y), 
+                                 circle_size)
     
     def draw_torches(self, board_row, board_col, x, y, cell):
         """Dibuja antorchas animadas. Las antorchas se posicionan en las paredes sin salida,
@@ -1791,7 +2074,7 @@ class DungeonBoard:
         distance_from_start = ((curr_row - start_row)**2 + (curr_col - start_col)**2)**0.5
         distance_to_exit = ((curr_row - exit_row)**2 + (curr_col - exit_col)**2)**0.5
         
-        if self.intro_played and not self.cthulhu_played:  # Solo para adagio
+        if self.current_music == 'adagio' and not self.cthulhu_played:  # Solo para adagio
             # Volumen de adagio disminuye con la distancia al inicio
             # Volumen máximo (0.5) en el inicio, mínimo (0.05) a distancia 5 o más
             max_volume = 0.5
@@ -1811,16 +2094,18 @@ class DungeonBoard:
                 self.music_channel.play(self.music_sounds['cthulhu'], loops=-1)
                 self.music_channel.set_volume(min_volume)  # Empezar con volumen bajo
                 self.cthulhu_played = True
-                # Mostrar subtítulos de Cthulhu
-                self.showing_subtitles = True
-                self.subtitle_text = "PH'NGLUI MGLW'NAFH CTHULHU R'LYEH WGAH'NAGL FHTAGN"
-                self.subtitle_start_time = pygame.time.get_ticks()
-                self.subtitle_duration = 8000  # 8 segundos
         
         elif self.cthulhu_played:  # Volumen de cthulhu aumenta al acercarse a la salida
-            # Si estamos en la celda de salida, volumen máximo (1.0)
+            # Si estamos en la celda de salida, volumen máximo (1.0) y mostrar subtítulo
             if (curr_row, curr_col) == self.exit_position:
                 self.music_channel.set_volume(1.0)
+                # Mostrar subtítulos de Cthulhu solo una vez al llegar a la salida
+                if not self.showing_subtitles and not hasattr(self, 'cthulhu_subtitle_shown'):
+                    self.showing_subtitles = True
+                    self.subtitle_text = "PH'NGLUI MGLW'NAFH CTHULHU R'LYEH WGAH'NAGL FHTAGN"
+                    self.subtitle_start_time = pygame.time.get_ticks()
+                    self.subtitle_duration = 8000  # 8 segundos
+                    self.cthulhu_subtitle_shown = True
             # Si volvemos cerca del inicio, regresar a adagio
             elif distance_from_start <= 5.0 and 'adagio' in self.music_sounds:
                 self.music_channel.stop()
@@ -1896,15 +2181,8 @@ class DungeonBoard:
             # Actualizar fade de música si está activo
             self.update_fade()
             
-            # Verificar si la intro ha terminado de sonar (automáticamente)
-            if self.intro_playing and not self.music_channel.get_busy() and not self.fading_out:
-                # La intro terminó naturalmente, pasar a adagio
-                self.intro_playing = False
-                self.intro_played = True
-                if 'adagio' in self.music_sounds:
-                    self.current_music = 'adagio'
-                    self.music_channel.play(self.music_sounds['adagio'], loops=-1)
-                    self.music_channel.set_volume(self.music_volume)
+            # Actualizar sistema de pensamientos
+            self.update_thought()
             
             # Actualizar volumen de música según distancia (solo durante el juego, no durante fade)
             if not self.showing_title and not self.intro_anim_active and not self.fading_out and not self.fading_in:
@@ -1914,9 +2192,20 @@ class DungeonBoard:
             if not self.showing_title and self.ambient_sounds:
                 current_time = pygame.time.get_ticks()
                 if current_time - self.last_ambient_sound_time > self.next_ambient_sound_delay:
-                    # Reproducir un sonido aleatorio
-                    sound = random.choice(self.ambient_sounds)
-                    sound.play()
+                    # Seleccionar un sonido según probabilidades ponderadas
+                    rand = random.random()
+                    cumulative = 0
+                    selected_sound = None
+                    
+                    for sound_name, weight in self.ambient_sound_weights.items():
+                        cumulative += weight
+                        if rand <= cumulative and sound_name in self.ambient_sounds:
+                            selected_sound = self.ambient_sounds[sound_name]
+                            break
+                    
+                    if selected_sound:
+                        selected_sound.play()
+                    
                     self.last_ambient_sound_time = current_time
                     # Próximo sonido en 5-15 segundos
                     self.next_ambient_sound_delay = random.randint(5000, 15000)
@@ -1938,14 +2227,6 @@ class DungeonBoard:
                         self.showing_title = False
                         self.intro_anim_active = True
                         self.intro_anim_start_time = pygame.time.get_ticks()
-                        continue
-                    
-                    # Si la intro está sonando, cualquier tecla hace fade out/in a adagio
-                    if self.intro_playing and not self.fading_out:
-                        self.intro_playing = False
-                        self.intro_played = True
-                        self.showing_subtitles = False  # Ocultar subtítulos
-                        self.start_fade_out('adagio', loop=True)
                         continue
                     
                     # Tecla ESC para salir (con confirmación)
