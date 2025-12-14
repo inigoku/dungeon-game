@@ -315,7 +315,7 @@ class DungeonBoard:
         # Debug mode
         self.debug_mode = False
         self.show_path = False  # F4 para mostrar el camino completo
-        self.auto_reveal_mode = True  # F2 para activar/desactivar revelación automática
+        self.auto_reveal_mode = False  # F2 para activar/desactivar revelación automática
     
     def get_view_offset(self):
         """Interpola la cámara hacia la posición del jugador y retorna el offset redondeado."""
