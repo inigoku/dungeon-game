@@ -1013,7 +1013,7 @@ class DungeonBoard:
                     audio_duration = 34000
                     self.trigger_thought(
                         self.intro_sound,
-                        [("Usa los cursores para moverte.", 4000),
+                        [("Usa A, W, S y D para moverte.", 4000),
                          ("Haz zoom con Z y X.", 4000),
                          ("Explora la mazmorra... encuentra la salida...", 6000),
                          ("Ten cuidado con lo que acecha en las sombras.", 6000),
