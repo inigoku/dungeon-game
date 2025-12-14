@@ -1068,11 +1068,40 @@ class DungeonBoard:
         x = view_col * self.cell_size - pixel_offset_x
         y = view_row * self.cell_size - pixel_offset_y
         
+        # Verificar si esta celda debe ser revelada por show_path
+        should_reveal_for_path = False
+        if self.show_path and (board_row, board_col) in self.main_path:
+            should_reveal_for_path = True
+        elif self.show_path:
+            # Verificar si es adyacente a alguna celda del camino
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                adj_row, adj_col = board_row + dr, board_col + dc
+                if (adj_row, adj_col) in self.main_path:
+                    # Verificar si hay una salida desde la celda del camino hacia esta celda
+                    adj_cell = self.board[adj_row][adj_col]
+                    # Determinar la dirección desde la celda adyacente hacia esta celda
+                    if dr == -1:  # vecino arriba mira hacia abajo (S)
+                        if Direction.S in adj_cell.exits:
+                            should_reveal_for_path = True
+                            break
+                    elif dr == 1:  # vecino abajo mira hacia arriba (N)
+                        if Direction.N in adj_cell.exits:
+                            should_reveal_for_path = True
+                            break
+                    elif dc == -1:  # vecino izquierda mira hacia derecha (E)
+                        if Direction.E in adj_cell.exits:
+                            should_reveal_for_path = True
+                            break
+                    elif dc == 1:  # vecino derecha mira hacia izquierda (W)
+                        if Direction.W in adj_cell.exits:
+                            should_reveal_for_path = True
+                            break
+        
         # Si la celda no ha sido visitada, dibujar niebla negra
-        # EXCEPCIÓN: Si show_path está activo y la celda está en main_path, mostrarla
+        # EXCEPCIÓN: Si show_path está activo y debe revelarse, mostrarla
         if (board_row, board_col) not in self.visited_cells:
-            if self.show_path and (board_row, board_col) in self.main_path:
-                # Mostrar celda del camino con un tinte azulado
+            if should_reveal_for_path:
+                # Mostrar celda revelada por el camino
                 pass  # Continuar con el renderizado normal pero con overlay
             else:
                 pygame.draw.rect(self.screen, (0, 0, 0), (x, y, self.cell_size, self.cell_size))
