@@ -1835,6 +1835,8 @@ class DungeonBoard:
                 self.current_position = (target_row, target_col)
                 # Marcar la celda como visitada
                 self.visited_cells.add((target_row, target_col))
+                # Revelar celdas adyacentes con salidas
+                self.reveal_adjacent_cells(target_row, target_col)
                 
                 # Verificar si entró en la celda final
                 if (target_row, target_col) == self.exit_position and not self.game_ended:
@@ -1918,6 +1920,26 @@ class DungeonBoard:
         self.current_position = (target_row, target_col)
         # Marcar la celda como visitada
         self.visited_cells.add((target_row, target_col))
+        # Revelar celdas adyacentes con salidas
+        self.reveal_adjacent_cells(target_row, target_col)
+    
+    def reveal_adjacent_cells(self, row, col):
+        """Revela las celdas adyacentes que tienen salidas conectadas desde la celda actual."""
+        current_cell = self.board[row][col]
+        
+        # Para cada dirección, si hay una salida, revelar la celda adyacente
+        direction_deltas = {
+            Direction.N: (-1, 0),
+            Direction.S: (1, 0),
+            Direction.E: (0, 1),
+            Direction.W: (0, -1)
+        }
+        
+        for direction, (dr, dc) in direction_deltas.items():
+            if direction in current_cell.exits:
+                adj_row, adj_col = row + dr, col + dc
+                if 0 <= adj_row < self.size and 0 <= adj_col < self.size:
+                    self.visited_cells.add((adj_row, adj_col))
     
     def count_torches(self, board_row, board_col, cell):
         """Cuenta cuántas antorchas se dibujarán realmente en esta celda.
