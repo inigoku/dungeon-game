@@ -314,6 +314,7 @@ class DungeonBoard:
         
         # Debug mode
         self.debug_mode = False
+        self.show_path = False  # F4 para mostrar el camino completo
     
     def get_view_offset(self):
         """Interpola la cámara hacia la posición del jugador y retorna el offset redondeado."""
@@ -1068,9 +1069,14 @@ class DungeonBoard:
         y = view_row * self.cell_size - pixel_offset_y
         
         # Si la celda no ha sido visitada, dibujar niebla negra
+        # EXCEPCIÓN: Si show_path está activo y la celda está en main_path, mostrarla
         if (board_row, board_col) not in self.visited_cells:
-            pygame.draw.rect(self.screen, (0, 0, 0), (x, y, self.cell_size, self.cell_size))
-            return
+            if self.show_path and (board_row, board_col) in self.main_path:
+                # Mostrar celda del camino con un tinte azulado
+                pass  # Continuar con el renderizado normal pero con overlay
+            else:
+                pygame.draw.rect(self.screen, (0, 0, 0), (x, y, self.cell_size, self.cell_size))
+                return
         
         # Color / textura based on type
         if cell.cell_type == CellType.EMPTY:
@@ -1140,6 +1146,14 @@ class DungeonBoard:
             self.draw_torches(board_row, board_col, x, y, cell)
             # Dibujar escalera de caracol en una esquina
             self.draw_spiral_stairs(x, y)
+        
+        # Marcar celdas del camino principal si show_path está activo
+        if self.show_path and (board_row, board_col) in self.main_path:
+            # Overlay azul semitransparente sobre la celda
+            overlay = pygame.Surface((self.cell_size, self.cell_size))
+            overlay.set_alpha(80)
+            overlay.fill((0, 100, 255))
+            self.screen.blit(overlay, (x, y))
         
         # Para pasillos, habitaciones, inicio y salida: dibujar camino desde el centro hacia las salidas
         if cell.cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.INICIO, CellType.SALIDA]:
@@ -2276,6 +2290,9 @@ class DungeonBoard:
                     # Toggle debug mode con F3
                     if event.key == pygame.K_F3:
                         self.debug_mode = not self.debug_mode
+                    # Toggle mostrar camino con F4
+                    elif event.key == pygame.K_F4:
+                        self.show_path = not self.show_path
                     # Zoom in con Z
                     elif event.key == pygame.K_z:
                         self.zoom_in()

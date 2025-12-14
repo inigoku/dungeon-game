@@ -58,7 +58,7 @@ Un juego de exploración de mazmorras en 2D construido con Pygame, con sistema d
 ### Controles e Interfaz
 - **Sistema de zoom**: Teclas Z (acercar) y X (alejar)
 - **Confirmación de salida**: Diálogo con ESC (S=Sí, N=No)
-- **Modo debug**: F3 para información de navegación
+- **Modo debug**: F3 para información de navegación, F4 para mostrar el camino completo
 - **Iluminación progresiva**: Las antorchas aumentan en densidad hacia la salida
 
 ## Jugar en el Navegador
@@ -119,6 +119,7 @@ python dungeon.py
 
 #### Sistema
 - **F3**: Toggle modo debug (muestra información de navegación)
+- **F4**: Toggle mostrar camino completo (resalta todas las celdas del camino principal hasta la salida)
 - **ESC**: Salir del juego (con confirmación)
 
 ## Estructura del proyecto
