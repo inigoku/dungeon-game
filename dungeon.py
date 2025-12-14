@@ -514,27 +514,27 @@ class DungeonBoard:
             
             # Saltar la celda inicial (ya existe)
             if pos == start:
+                # Actualizar las salidas de la celda inicial para conectar con vecinos del camino
+                exits = self.board[row][col].exits.copy()
+                for dr, dc, direction in [(-1, 0, Direction.N), (1, 0, Direction.S), 
+                                          (0, 1, Direction.E), (0, -1, Direction.O)]:
+                    neighbor = (row + dr, col + dc)
+                    if neighbor in self.main_path:
+                        exits.add(direction)
+                self.board[row][col] = Cell(self.board[row][col].cell_type, exits)
                 continue
             
-            # Determinar las posiciones anterior y siguiente
-            prev_pos = path_ordered[i-1] if i > 0 else None
-            next_pos = path_ordered[i+1] if i < len(path_ordered) - 1 else None
-            
-            # Crear el conjunto de salidas
+            # Crear el conjunto de salidas conectando con TODOS los vecinos del camino
             exits = set()
             
-            # Agregar salida desde donde se viene
-            if prev_pos:
-                entry_dir = self.get_direction_between(prev_pos, pos)
-                opposite = self.get_opposite_direction(entry_dir)
-                exits.add(opposite)
+            # Verificar cada dirección para conectar con vecinos del camino
+            for dr, dc, direction in [(-1, 0, Direction.N), (1, 0, Direction.S), 
+                                      (0, 1, Direction.E), (0, -1, Direction.O)]:
+                neighbor = (row + dr, col + dc)
+                if neighbor in self.main_path:
+                    exits.add(direction)
             
-            # Agregar salida hacia donde se va (incluso si es hacia la salida)
-            if next_pos:
-                exit_dir = self.get_direction_between(pos, next_pos)
-                exits.add(exit_dir)
-            
-            # Si es la salida, solo tiene la entrada
+            # Si es la salida, solo tiene las conexiones con el camino
             if pos == self.exit_position:
                 self.board[row][col] = Cell(CellType.SALIDA, exits)
             else:
