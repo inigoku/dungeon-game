@@ -1924,8 +1924,10 @@ class DungeonBoard:
         self.reveal_adjacent_cells(target_row, target_col)
     
     def reveal_adjacent_cells(self, row, col):
-        """Revela las celdas adyacentes que tienen salidas conectadas desde la celda actual."""
+        """Revela las celdas adyacentes que tienen salidas conectadas desde la celda actual.
+        Si la celda actual está en el camino principal, solo revela celdas adyacentes del camino."""
         current_cell = self.board[row][col]
+        is_current_in_path = (row, col) in self.main_path
         
         # Para cada dirección, si hay una salida, revelar la celda adyacente
         direction_deltas = {
@@ -1939,7 +1941,13 @@ class DungeonBoard:
             if direction in current_cell.exits:
                 adj_row, adj_col = row + dr, col + dc
                 if 0 <= adj_row < self.size and 0 <= adj_col < self.size:
-                    self.visited_cells.add((adj_row, adj_col))
+                    # Si la celda actual está en el camino, solo revelar si la adyacente también lo está
+                    if is_current_in_path:
+                        if (adj_row, adj_col) in self.main_path:
+                            self.visited_cells.add((adj_row, adj_col))
+                    else:
+                        # Si no está en el camino, revelar normalmente
+                        self.visited_cells.add((adj_row, adj_col))
     
     def count_torches(self, board_row, board_col, cell):
         """Cuenta cuántas antorchas se dibujarán realmente en esta celda.
