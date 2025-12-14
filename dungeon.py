@@ -59,12 +59,15 @@ class DungeonBoard:
         
         # Generar posición de salida aleatoria y calcular camino principal
         # Reintentar hasta conseguir conectividad
+        print("Generando mapa...")
         max_generation_attempts = 10
         generation_attempt = 0
         connectivity_verified = False
         
         while not connectivity_verified and generation_attempt < max_generation_attempts:
             generation_attempt += 1
+            if generation_attempt > 1:
+                print(f"Intento {generation_attempt}: Regenerando mapa...")
             
             # Limpiar el tablero excepto la celda de inicio
             for row in range(self.size):
@@ -83,12 +86,11 @@ class DungeonBoard:
             
             # Verificar conectividad
             connectivity_verified = self.check_connectivity((center, center), self.exit_position)
-            
-            if not connectivity_verified:
-                print(f"Intento {generation_attempt}: No hay conectividad, regenerando...")
         
         if not connectivity_verified:
             print("Advertencia: No se pudo generar un mapa con conectividad garantizada después de 10 intentos")
+        else:
+            print("Mapa generado exitosamente")
         
         # Sistema de niebla de guerra: rastrear celdas visitadas
         self.visited_cells = set()
