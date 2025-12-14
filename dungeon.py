@@ -315,6 +315,7 @@ class DungeonBoard:
         # Debug mode
         self.debug_mode = False
         self.show_path = False  # F4 para mostrar el camino completo
+        self.auto_reveal_mode = True  # F2 para activar/desactivar revelación automática
     
     def get_view_offset(self):
         """Interpola la cámara hacia la posición del jugador y retorna el offset redondeado."""
@@ -1925,10 +1926,11 @@ class DungeonBoard:
     
     def reveal_adjacent_cells(self, row, col):
         """Revela las celdas adyacentes que tienen salidas conectadas desde la celda actual.
-        - Si la celda adyacente está en el camino, solo se revela si hay conexión mutua.
-        - Si la celda adyacente NO está en el camino, se revela siempre que haya una salida."""
+        Solo funciona si auto_reveal_mode está activo."""
+        if not self.auto_reveal_mode:
+            return
+        
         current_cell = self.board[row][col]
-        is_current_in_path = (row, col) in self.main_path
         
         # Para cada dirección, si hay una salida, revelar la celda adyacente
         direction_deltas = {
@@ -1942,17 +1944,8 @@ class DungeonBoard:
             if direction in current_cell.exits:
                 adj_row, adj_col = row + dr, col + dc
                 if 0 <= adj_row < self.size and 0 <= adj_col < self.size:
-                    is_adjacent_in_path = (adj_row, adj_col) in self.main_path
-                    
-                    # Si ambas están en el camino, verificar que estén conectadas
-                    if is_current_in_path and is_adjacent_in_path:
-                        # Solo revelar si están conectadas (ambas tienen la salida correspondiente)
-                        self.visited_cells.add((adj_row, adj_col))
-                    # Si la adyacente NO está en el camino, revelarla (habitación lateral)
-                    elif not is_adjacent_in_path:
-                        self.visited_cells.add((adj_row, adj_col))
-                    # Si la actual NO está en el camino pero la adyacente SÍ, no revelar
-                    # (evita revelar el camino desde habitaciones laterales)
+                    # Revelar todas las celdas con salidas conectadas
+                    self.visited_cells.add((adj_row, adj_col))
     
     def count_torches(self, board_row, board_col, cell):
         """Cuenta cuántas antorchas se dibujarán realmente en esta celda.
@@ -2351,8 +2344,11 @@ class DungeonBoard:
                         self.asking_exit_confirmation = True
                         continue
                     
+                    # Toggle auto reveal mode con F2
+                    if event.key == pygame.K_F2:
+                        self.auto_reveal_mode = not self.auto_reveal_mode
                     # Toggle debug mode con F3
-                    if event.key == pygame.K_F3:
+                    elif event.key == pygame.K_F3:
                         self.debug_mode = not self.debug_mode
                     # Toggle mostrar camino con F4
                     elif event.key == pygame.K_F4:
