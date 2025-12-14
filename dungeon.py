@@ -1092,8 +1092,8 @@ class DungeonBoard:
                         if Direction.E in adj_cell.exits:
                             should_reveal_for_path = True
                             break
-                    elif dc == 1:  # vecino derecha mira hacia izquierda (W)
-                        if Direction.W in adj_cell.exits:
+                    elif dc == 1:  # vecino derecha mira hacia izquierda (O)
+                        if Direction.O in adj_cell.exits:
                             should_reveal_for_path = True
                             break
         
@@ -1932,7 +1932,7 @@ class DungeonBoard:
             Direction.N: (-1, 0),
             Direction.S: (1, 0),
             Direction.E: (0, 1),
-            Direction.W: (0, -1)
+            Direction.O: (0, -1)
         }
         
         for direction, (dr, dc) in direction_deltas.items():
