@@ -557,6 +557,35 @@ class DungeonBoard:
                         exits.add(random.choice(remaining))
                 
                 self.board[row][col] = Cell(cell_type, exits)
+        
+        # Post-procesamiento: asegurar que todas las conexiones entre celdas del camino sean bidireccionales
+        for pos in self.main_path:
+            row, col = pos
+            current_cell = self.board[row][col]
+            
+            # Para cada dirección, verificar si el vecino está en el camino
+            for dr, dc, direction in [(-1, 0, Direction.N), (1, 0, Direction.S), 
+                                      (0, 1, Direction.E), (0, -1, Direction.O)]:
+                neighbor = (row + dr, col + dc)
+                if neighbor in self.main_path:
+                    # Si el vecino está en el camino, ambas celdas deben tener salidas mutuas
+                    neighbor_cell = self.board[neighbor[0]][neighbor[1]]
+                    opposite_dir = self.get_opposite_direction(direction)
+                    
+                    # Si esta celda tiene salida hacia el vecino, el vecino debe tener salida de vuelta
+                    if direction in current_cell.exits and opposite_dir not in neighbor_cell.exits:
+                        # Añadir la salida faltante al vecino
+                        neighbor_exits = neighbor_cell.exits.copy()
+                        neighbor_exits.add(opposite_dir)
+                        self.board[neighbor[0]][neighbor[1]] = Cell(neighbor_cell.cell_type, neighbor_exits)
+                    
+                    # Si el vecino tiene salida hacia esta celda, esta debe tener salida de vuelta
+                    if opposite_dir in neighbor_cell.exits and direction not in current_cell.exits:
+                        # Añadir la salida faltante a esta celda
+                        current_exits = current_cell.exits.copy()
+                        current_exits.add(direction)
+                        self.board[row][col] = Cell(current_cell.cell_type, current_exits)
+                        current_cell = self.board[row][col]  # Actualizar referencia
     
     def get_direction_between(self, from_pos, to_pos):
         """Retorna la dirección desde from_pos hacia to_pos."""
