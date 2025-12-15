@@ -1824,6 +1824,12 @@ class DungeonBoard:
         if self.intro_anim_active:
             return
         
+        # Bloquear movimiento mientras se muestra la imagen de la losa
+        if self.exit_image_shown:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.exit_image_start_time < 10000:  # Durante los 10 segundos
+                return
+        
         # No bloquear movimiento (permitir continuar después de la imagen)
         
         current_row, current_col = self.current_position
