@@ -289,11 +289,12 @@ class DungeonBoard:
         self.last_ambient_sound_time = pygame.time.get_ticks()
         self.next_ambient_sound_delay = random.randint(3000, 20000)  # 3-20 segundos (más aleatorio)
         
-        # Sistema de final del juego con Cthulhu
-        self.game_ended = False
-        self.cthulhu_image = None
+        # Sistema de final del juego con imagen de losa
+        self.exit_image_shown = False
+        self.exit_image_start_time = 0
+        self.exit_image = None
         try:
-            original_image = pygame.image.load("cthlulhu.png")
+            original_image = pygame.image.load("losa.png")
             # Escalar manteniendo la proporción para que quepa en la pantalla
             original_width = original_image.get_width()
             original_height = original_image.get_height()
@@ -310,9 +311,9 @@ class DungeonBoard:
             new_width = int(original_width * scale)
             new_height = int(original_height * scale)
             
-            self.cthulhu_image = pygame.transform.smoothscale(original_image, (new_width, new_height))
+            self.exit_image = pygame.transform.smoothscale(original_image, (new_width, new_height))
         except pygame.error as e:
-            print(f"No se pudo cargar cthlulhu.png: {e}")
+            print(f"No se pudo cargar losa.png: {e}")
         
         # Debug mode
         self.debug_mode = False
@@ -666,12 +667,17 @@ class DungeonBoard:
         # Dibujar subtítulos si están activos
         self.draw_subtitles()
         
-        # Si el juego ha terminado, mostrar imagen de Cthulhu
-        if self.game_ended and self.cthulhu_image:
-            # Centrar la imagen en la pantalla
-            image_x = (self.width - self.cthulhu_image.get_width()) // 2
-            image_y = (self.height - self.cthulhu_image.get_height()) // 2
-            self.screen.blit(self.cthulhu_image, (image_x, image_y))
+        # Si se debe mostrar la imagen de la salida (10 segundos)
+        if self.exit_image_shown and self.exit_image:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.exit_image_start_time < 10000:  # 10 segundos
+                # Centrar la imagen en la pantalla
+                image_x = (self.width - self.exit_image.get_width()) // 2
+                image_y = (self.height - self.exit_image.get_height()) // 2
+                self.screen.blit(self.exit_image, (image_x, image_y))
+            else:
+                # Después de 10 segundos, dejar de mostrarla
+                self.exit_image_shown = False
         
         # Mostrar diálogo de confirmación de salida si está activo (siempre encima de todo)
         if self.asking_exit_confirmation:
@@ -1818,9 +1824,7 @@ class DungeonBoard:
         if self.intro_anim_active:
             return
         
-        # Bloquear movimiento si el juego ha terminado
-        if self.game_ended:
-            return
+        # No bloquear movimiento (permitir continuar después de la imagen)
         
         current_row, current_col = self.current_position
         current_cell = self.board[current_row][current_col]
@@ -1871,8 +1875,9 @@ class DungeonBoard:
                 self.reveal_adjacent_cells(target_row, target_col)
                 
                 # Verificar si entró en la celda final
-                if (target_row, target_col) == self.exit_position and not self.game_ended:
-                    self.game_ended = True
+                if (target_row, target_col) == self.exit_position and not self.exit_image_shown:
+                    self.exit_image_shown = True
+                    self.exit_image_start_time = pygame.time.get_ticks()
                 
                 # Activar pensamiento de sangre si ve manchas por primera vez
                 if not self.blood_thought_triggered and self.blood_sound:
