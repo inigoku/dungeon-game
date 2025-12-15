@@ -293,6 +293,7 @@ class DungeonBoard:
         self.exit_image_shown = False
         self.exit_image_start_time = 0
         self.exit_image = None
+        self.torches_extinguished = False  # Flag para apagar antorchas después de la losa
         try:
             original_image = pygame.image.load("losa.png")
             # Escalar manteniendo la proporción para que quepa en la pantalla
@@ -676,8 +677,10 @@ class DungeonBoard:
                 image_y = (self.height - self.exit_image.get_height()) // 2
                 self.screen.blit(self.exit_image, (image_x, image_y))
             else:
-                # Después de 10 segundos, dejar de mostrarla
+                # Después de 10 segundos, dejar de mostrarla y apagar antorchas
                 self.exit_image_shown = False
+                if not self.torches_extinguished:
+                    self.torches_extinguished = True
         
         # Mostrar diálogo de confirmación de salida si está activo (siempre encima de todo)
         if self.asking_exit_confirmation:
@@ -1993,6 +1996,10 @@ class DungeonBoard:
         """Cuenta cuántas antorchas se dibujarán realmente en esta celda.
         Solo aparecen en celdas del camino principal.
         La probabilidad aumenta conforme se acerca a la salida."""
+        # Si las antorchas están apagadas, no hay antorchas
+        if self.torches_extinguished:
+            return 0
+        
         # Si no está en el camino principal, no hay antorchas
         if (board_row, board_col) not in self.main_path:
             return 0
