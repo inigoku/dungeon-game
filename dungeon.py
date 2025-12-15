@@ -292,6 +292,7 @@ class DungeonBoard:
         # Sistema de final del juego con imagen de losa
         self.exit_image_shown = False
         self.exit_image_start_time = 0
+        self.exit_image_count = 0  # Contador de veces que se ha mostrado la imagen
         self.exit_image = None
         self.torches_extinguished = False  # Flag para apagar antorchas después de la losa
         try:
@@ -1887,6 +1888,7 @@ class DungeonBoard:
                 if (target_row, target_col) == self.exit_position and not self.exit_image_shown:
                     self.exit_image_shown = True
                     self.exit_image_start_time = pygame.time.get_ticks()
+                    self.exit_image_count += 1
                 
                 # Activar pensamiento de sangre si ve manchas por primera vez
                 if not self.blood_thought_triggered and self.blood_sound:
@@ -2388,9 +2390,16 @@ class DungeonBoard:
                         self.intro_anim_start_time = pygame.time.get_ticks()
                         continue
                     
-                    # Tecla ESC para salir (con confirmación)
+                    # Tecla ESC para salir (con confirmación) o cerrar imagen de losa
                     if event.key == pygame.K_ESCAPE:
-                        self.asking_exit_confirmation = True
+                        # Si la imagen de losa está mostrándose y es la segunda vez o más, cerrarla
+                        if self.exit_image_shown and self.exit_image_count >= 2:
+                            self.exit_image_shown = False
+                            if not self.torches_extinguished:
+                                self.torches_extinguished = True
+                        else:
+                            # Mostrar confirmación de salida
+                            self.asking_exit_confirmation = True
                         continue
                     
                     # Toggle auto reveal mode con F2
