@@ -9,6 +9,7 @@ from dataclasses import dataclass
 # Importar módulos refactorizados
 try:
     from services.lighting_system import LightingSystem
+    from rendering.decorations import DecorationRenderer
     REFACTORED_MODULES = True
 except ImportError:
     REFACTORED_MODULES = False
@@ -169,6 +170,7 @@ class DungeonBoard:
         # Sistema de iluminación (refactorizado)
         if REFACTORED_MODULES:
             self.lighting = LightingSystem()
+            self.decorations = DecorationRenderer(self.screen, self.cell_size)
         else:
             # Toggle para oscurecimiento de líneas (F5) - versión legacy
             self.lines_darkening_enabled = True
@@ -1450,19 +1452,35 @@ class DungeonBoard:
         
         # Dibujar manchas de sangre después de las líneas
         if cell.cell_type in [CellType.PASILLO, CellType.HABITACION]:
-            self.draw_blood_stains(board_row, board_col, x, y, brightness_factor)
+            if REFACTORED_MODULES:
+                self.decorations.draw_blood_stains(board_row, board_col, x, y, brightness_factor, self.exit_position)
+            else:
+                self.draw_blood_stains(board_row, board_col, x, y, brightness_factor)
         elif cell.cell_type == CellType.SALIDA:
-            self.draw_blood_stains(board_row, board_col, x, y, brightness_factor)
+            if REFACTORED_MODULES:
+                self.decorations.draw_blood_stains(board_row, board_col, x, y, brightness_factor, self.exit_position)
+            else:
+                self.draw_blood_stains(board_row, board_col, x, y, brightness_factor)
         
         # Dibujar fuente y escaleras después de la sangre
         if cell.cell_type == CellType.INICIO:
-            self.draw_fountain(x, y)
+            if REFACTORED_MODULES:
+                self.decorations.draw_fountain(x, y)
+            else:
+                self.draw_fountain(x, y)
         elif cell.cell_type == CellType.SALIDA:
-            self.draw_spiral_stairs(x, y)
+            if REFACTORED_MODULES:
+                self.decorations.draw_spiral_stairs(x, y)
+            else:
+                self.draw_spiral_stairs(x, y)
         
         # Dibujar antorchas al final (encima de todo)
         if cell.cell_type in [CellType.INICIO, CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
-            self.draw_torches(board_row, board_col, x, y, cell)
+            if REFACTORED_MODULES:
+                num_torches = self.count_torches(board_row, board_col, cell)
+                self.decorations.draw_torches(board_row, board_col, x, y, cell, num_torches)
+            else:
+                self.draw_torches(board_row, board_col, x, y, cell)
     
     def draw_exits(self, row, col, x, y, exits, cell_type, brightness_factor: float = 1.0):
         """Dibuja las salidas de una celda.
