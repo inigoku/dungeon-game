@@ -1,15 +1,66 @@
-# main.py - Entry point for web version
+#!/usr/bin/env python3
+"""
+Dungeon Game - Punto de entrada principal
+
+Este es el punto de entrada del juego compatible con web (Pygbag) y escritorio.
+Utiliza la arquitectura modular refactorizada cuando está disponible.
+
+Arquitectura modular:
+- models/: Estructuras de datos (Cell, CellType, Direction)
+- config.py: Constantes del juego
+- services/: Lógica de negocio (iluminación, audio, generación)
+- rendering/: Renderizado visual (decoraciones, efectos, celdas)
+
+La clase DungeonBoard en dungeon.py automáticamente detecta y usa
+los módulos refactorizados si están disponibles, cayendo a la versión
+legacy si hay algún problema.
+
+Uso:
+    # Escritorio
+    python main.py
+    
+    # Web (Pygbag)
+    pygbag main.py
+"""
+
 import asyncio
-import pygame
 import sys
 
-# Import game after pygame init
+# Importar el juego
 import dungeon
 
-async def main():
-    """Main entry point for Pygbag web version."""
-    game = dungeon.DungeonBoard()
-    await game.run()
 
-# Run the game
-asyncio.run(main())
+async def main():
+    """Punto de entrada principal del juego."""
+    try:
+        # Crear instancia del juego
+        # DungeonBoard automáticamente usa los módulos refactorizados
+        game = dungeon.DungeonBoard()
+        
+        # Mostrar información de arquitectura
+        if dungeon.REFACTORED_MODULES:
+            print("✅ Arquitectura modular activa")
+        else:
+            print("⚠️  Usando versión legacy")
+        
+        # Ejecutar el loop principal del juego
+        await game.run()
+        
+    except KeyboardInterrupt:
+        print("\n¡Juego interrumpido por el usuario!")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n❌ Error fatal: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    print("=" * 50)
+    print("🎮 Dungeon Game")
+    print("=" * 50)
+    
+    # Ejecutar el juego
+    asyncio.run(main())
+
