@@ -23,6 +23,13 @@
   - ✅ Texturas de piedra (draw_stone_texture)
   - ✅ Piedras en paredes (draw_stone_in_walls)
 
+### Fase 5: Renderizado de Celdas (Parcial)
+- ✅ `rendering/cell_renderer.py` - CellRenderer con helpers:
+  - ✅ draw_cell_background: Fondos según tipo de celda
+  - ✅ draw_cell_tunnels: Túneles/pasillos internos
+  - ✅ get_opposite_direction: Utilidad de direcciones
+- ⏳ Pendiente: Integración completa con draw_cell
+
 ### Integración Gradual
 - ✅ `dungeon.py` actualizado con importación condicional
 - ✅ Sistema de iluminación integrado vía property pattern
@@ -32,15 +39,14 @@
 
 ## 🔄 En Progreso
 
-- Ninguno actualmente
+- CellRenderer: Creado pero pendiente de integración completa
 
 ## 📋 Pendiente
 
-### Fase 5: Renderizado de Celdas (Próximo)
-- ⏳ `rendering/cell_renderer.py` - Renderizado completo de celdas
-  - ⏳ draw_cell: Renderizado principal
-  - ⏳ draw_exits: Dibujo de salidas
-  - ⏳ draw_openings: Aberturas entre celdas
+### Fase 5: Finalizar Renderizado de Celdas
+- ⏳ Integrar CellRenderer completamente en draw_cell
+- ⏳ Extraer draw_exits a CellRenderer
+- ⏳ Extraer draw_openings a CellRenderer
 
 ### Fase 6: Audio
 - ⏳ `services/audio_manager.py` - Gestión de sonidos y música
@@ -60,6 +66,7 @@
 python -c "from services.lighting_system import LightingSystem; print('✓ LightingSystem OK')"
 python -c "from rendering.decorations import DecorationRenderer; print('✓ DecorationRenderer OK')"
 python -c "from rendering.effects import EffectsRenderer; print('✓ EffectsRenderer OK')"
+python -c "from rendering.cell_renderer import CellRenderer; print('✓ CellRenderer OK')"
 
 # El juego funciona normalmente
 python dungeon.py
@@ -73,13 +80,14 @@ python dungeon.py
 1. **Sistema de iluminación desacoplado**: Toda la lógica de luz está aislada
 2. **Renderizado de decoraciones modular**: Antorchas, sangre, fuente y escaleras en módulo separado
 3. **Efectos visuales modulares**: Líneas quebradas y texturas de piedra aisladas
-4. **Fácil testing**: Cada componente se puede probar independientemente
-5. **Sin breaking changes**: El juego funciona exactamente igual
-6. **Migración segura**: Importación condicional previene errores
+4. **Helpers de renderizado de celdas**: Componentes reutilizables para renderizado
+5. **Fácil testing**: Cada componente se puede probar independientemente
+6. **Sin breaking changes**: El juego funciona exactamente igual
+7. **Migración segura**: Importación condicional previene errores
 
 ## Próximos Pasos
 
-1. Extraer renderizado de celdas (draw_cell, draw_exits, draw_openings)
-2. Probar que el juego sigue funcionando
-3. Extraer sistema de audio
+1. Completar integración de CellRenderer en draw_cell
+2. Extraer sistema de audio
+3. Extraer game state
 4. Continuar iterativamente
