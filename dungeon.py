@@ -152,10 +152,14 @@ class DungeonBoard:
         
         # Sistema de pensamientos (sonido + subtítulos)
         self.thought_active = False
+        self.thought_blocks_movement = False  # Si el pensamiento actual bloquea movimiento
         self.thought_sound = None
         self.thought_subtitles = []  # Lista de (texto, duración)
         self.thought_current_subtitle_index = 0
         self.thought_subtitle_start_time = 0
+        
+        # Toggle para oscurecimiento de líneas (F5)
+        self.lines_darkening_enabled = True
         
         # Guardar intro.ogg como pensamiento inicial
         if 'intro' in self.music_sounds:
@@ -342,11 +346,27 @@ class DungeonBoard:
     
     def check_connectivity(self, start, end):
         """Verifica si hay un camino posible entre start y end usando BFS.
+        Verifica que las celdas adyacentes tengan salidas enfrentadas.
         Retorna True si hay conectividad, False si no."""
         from collections import deque
         
         queue = deque([start])
         visited = {start}
+        
+        # Mapeo de direcciones a deltas y direcciones opuestas
+        direction_deltas = {
+            Direction.N: (-1, 0),
+            Direction.S: (1, 0),
+            Direction.E: (0, 1),
+            Direction.O: (0, -1),
+        }
+        
+        opposite_directions = {
+            Direction.N: Direction.S,
+            Direction.S: Direction.N,
+            Direction.E: Direction.O,
+            Direction.O: Direction.E,
+        }
         
         while queue:
             curr_row, curr_col = queue.popleft()
@@ -354,16 +374,40 @@ class DungeonBoard:
             if (curr_row, curr_col) == end:
                 return True
             
-            # Explorar vecinos
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            # Obtener la celda actual
+            curr_cell = self.board[curr_row][curr_col]
+            
+            # Explorar vecinos solo si hay salida hacia ellos
+            for direction, (dr, dc) in direction_deltas.items():
+                # Verificar si la celda actual tiene salida en esta dirección
+                if direction not in curr_cell.exits:
+                    continue
+                
                 next_row = curr_row + dr
                 next_col = curr_col + dc
                 next_pos = (next_row, next_col)
                 
-                if (0 <= next_row < self.size and 0 <= next_col < self.size 
-                    and next_pos not in visited):
-                    visited.add(next_pos)
-                    queue.append(next_pos)
+                # Verificar límites y si ya fue visitada
+                if not (0 <= next_row < self.size and 0 <= next_col < self.size):
+                    continue
+                if next_pos in visited:
+                    continue
+                
+                # Obtener la celda vecina
+                next_cell = self.board[next_row][next_col]
+                
+                # Verificar que la celda vecina no sea EMPTY
+                if next_cell.cell_type == CellType.EMPTY:
+                    continue
+                
+                # Verificar que la celda vecina tenga la salida complementaria
+                opposite = opposite_directions[direction]
+                if opposite not in next_cell.exits:
+                    continue
+                
+                # Si todo está bien, agregar a la cola
+                visited.add(next_pos)
+                queue.append(next_pos)
         
         return False
     
@@ -871,12 +915,13 @@ class DungeonBoard:
             text_rect = text_surface.get_rect(center=(self.width // 2, start_y + i * line_height + line_height // 2))
             self.screen.blit(text_surface, text_rect)
     
-    def trigger_thought(self, sound, subtitles):
+    def trigger_thought(self, sound, subtitles, blocks_movement=True):
         """Inicia un pensamiento con sonido y subtítulos.
         
         Args:
             sound: pygame.mixer.Sound a reproducir
             subtitles: Lista de tuplas (texto, duración_ms)
+            blocks_movement: Si True, bloquea el movimiento durante el pensamiento
         """
         # Si hay un pensamiento activo, detenerlo antes de comenzar el nuevo
         if self.thought_active:
@@ -884,8 +929,7 @@ class DungeonBoard:
             if self.thought_sound:
                 self.thought_sound.stop()
             
-            # Limpiar el estado anterior
-            self.thought_active = False
+            # Limpiar el estado anterior (pero mantener thought_active si blocks_movement)
             self.thought_sound = None
             self.thought_subtitles = []
             self.thought_current_subtitle_index = 0
@@ -893,6 +937,7 @@ class DungeonBoard:
         
         # Iniciar el nuevo pensamiento
         self.thought_active = True
+        self.thought_blocks_movement = blocks_movement  # Guardar si este pensamiento bloquea movimiento
         self.thought_sound = sound
         self.thought_subtitles = subtitles
         self.thought_current_subtitle_index = 0
@@ -932,6 +977,7 @@ class DungeonBoard:
                 # No hay más subtítulos, terminar el pensamiento
                 self.showing_subtitles = False
                 self.thought_active = False
+                self.thought_blocks_movement = False
                 self.thought_sound = None
                 self.thought_subtitles = []
                 self.thought_current_subtitle_index = 0
@@ -1027,7 +1073,8 @@ class DungeonBoard:
                          ("Explora la mazmorra... encuentra la salida...", 6000),
                          ("Ten cuidado con lo que acecha en las sombras.", 6000),
                          ("¡Buena suerte, valiente guerrero!", audio_duration - 20000),
-                         ]
+                         ],
+                        blocks_movement=False  # La intro no bloquea el movimiento
                     )
                     self.intro_thought_triggered = True
         
@@ -1157,65 +1204,107 @@ class DungeonBoard:
         elif cell.cell_type == CellType.INICIO:
             # Calcular número de antorchas para iluminación
             torch_count = self.count_torches(board_row, board_col, cell)
-            brightness = 10 + min(130, torch_count * 31)  # Base 10, 31 por antorcha, máximo 140
+            
+            # En el inicio, el brillo base es bajo (oscuro) independientemente de la distancia
+            base_brightness = 10
+            torch_brightness = min(130, torch_count * 31)
+            brightness = max(0, base_brightness + torch_brightness)
             floor_color = (brightness, brightness, brightness)
+            
+            # Calcular factor de brillo para aplicar a todos los elementos (0.0 a 1.0)
+            # En inicio siempre es el mismo valor base
+            brightness_factor = brightness / 255.0
             
             # Inicio es como una habitación: fondo con iluminación
             pygame.draw.rect(self.screen, floor_color, (x, y, self.cell_size, self.cell_size))
-            # Marco del inicio en gris
-            pygame.draw.rect(self.screen, (120, 120, 120), (x, y, self.cell_size, self.cell_size), 3)
+            # Marco del inicio en gris oscurecido
+            marco_color = tuple(int(120 * brightness_factor) for _ in range(3))
+            pygame.draw.rect(self.screen, marco_color, (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra en las paredes
-            self.draw_stone_in_walls(board_row, board_col, x, y, cell)
-            # Dibujar antorchas en las paredes
-            self.draw_torches(board_row, board_col, x, y, cell)
-            # Dibujar fuente en la esquina superior izquierda
-            self.draw_fountain(x, y)
+            self.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor)
         elif cell.cell_type == CellType.PASILLO:
             # Calcular número de antorchas para iluminación
             torch_count = self.count_torches(board_row, board_col, cell)
-            brightness = 10 + min(130, torch_count * 31)  # Base 10, 31 por antorcha, máximo 140
+            
+            # Calcular oscurecimiento basado en distancia desde la entrada
+            start_row, start_col = self.start_position
+            exit_row, exit_col = self.exit_position
+            distance_from_start = abs(start_row - board_row) + abs(start_col - board_col)
+            total_distance = abs(exit_row - start_row) + abs(exit_col - start_col)
+            
+            if total_distance > 0:
+                # progress: 0.0 en entrada, 1.0 en salida
+                progress = distance_from_start / total_distance
+            else:
+                progress = 0.5
+            
+            # Base de luz: 20 en entrada, 0 en salida
+            base_brightness = int(20 * (1.0 - progress))
+            torch_brightness = min(130, torch_count * 31)
+            brightness = max(0, base_brightness + torch_brightness)
             floor_color = (brightness, brightness, brightness)
+            
+            # Calcular factor de brillo para aplicar a elementos (0.0 a 1.0)
+            brightness_factor = brightness / 255.0
             
             # Suelo del pasillo: el área entre las líneas y el centro con iluminación
             pygame.draw.rect(self.screen, floor_color, (x, y, self.cell_size, self.cell_size))
-            # Marco del pasillo ligeramente grueso
-            pygame.draw.rect(self.screen, (120, 120, 120), (x, y, self.cell_size, self.cell_size), 3)
+            # Marco del pasillo ligeramente grueso oscurecido
+            marco_color = tuple(int(120 * brightness_factor) for _ in range(3))
+            pygame.draw.rect(self.screen, marco_color, (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra solo en las 'paredes' dentro de la celda
-            self.draw_stone_in_walls(board_row, board_col, x, y, cell)
-            # Dibujar manchas de sangre si está cerca de la salida
-            self.draw_blood_stains(board_row, board_col, x, y)
-            # Dibujar antorchas en las paredes
-            self.draw_torches(board_row, board_col, x, y, cell)
+            self.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor)
+            # Las líneas se dibujan más adelante (después de las piedras, antes de la sangre)
         elif cell.cell_type == CellType.HABITACION:
             # Calcular número de antorchas para iluminación
             torch_count = self.count_torches(board_row, board_col, cell)
-            brightness = 10 + min(130, torch_count * 31)  # Base 10, 31 por antorcha, máximo 140
+            
+            # Calcular oscurecimiento basado en distancia desde la entrada
+            start_row, start_col = self.start_position
+            exit_row, exit_col = self.exit_position
+            distance_from_start = abs(start_row - board_row) + abs(start_col - board_col)
+            total_distance = abs(exit_row - start_row) + abs(exit_col - start_col)
+            
+            if total_distance > 0:
+                # progress: 0.0 en entrada, 1.0 en salida
+                progress = distance_from_start / total_distance
+            else:
+                progress = 0.5
+            
+            # Base de luz: 20 en entrada, 0 en salida
+            base_brightness = int(20 * (1.0 - progress))
+            torch_brightness = min(130, torch_count * 31)
+            brightness = max(0, base_brightness + torch_brightness)
             floor_color = (brightness, brightness, brightness)
+            
+            # Calcular factor de brillo para aplicar a todos los elementos (0.0 a 1.0)
+            brightness_factor = brightness / 255.0
             
             # Habitación como mazmorra: fondo con iluminación
             pygame.draw.rect(self.screen, floor_color, (x, y, self.cell_size, self.cell_size))
-            # Marco de la habitación en gris
-            pygame.draw.rect(self.screen, (120, 120, 120), (x, y, self.cell_size, self.cell_size), 3)
+            # Marco de la habitación en gris oscurecido
+            marco_color = tuple(int(120 * brightness_factor) for _ in range(3))
+            pygame.draw.rect(self.screen, marco_color, (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra en las paredes
-            self.draw_stone_in_walls(board_row, board_col, x, y, cell)
-            # Dibujar manchas de sangre si está cerca de la salida
-            self.draw_blood_stains(board_row, board_col, x, y)
-            # Dibujar antorchas en las paredes
-            self.draw_torches(board_row, board_col, x, y, cell)
+            self.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor)
+            # Las líneas se dibujan más adelante (después de las piedras, antes de la sangre)
         elif cell.cell_type == CellType.SALIDA:
             # Celda de salida: se dibuja como habitación normal
             torch_count = self.count_torches(board_row, board_col, cell)
-            brightness = 10 + min(130, torch_count * 31)
+            
+            # En la salida, sin antorchas sería completamente oscuro (pitch black)
+            # brightness base = 0 (negro total)
+            base_brightness = 0
+            torch_brightness = min(130, torch_count * 31)
+            brightness = max(0, base_brightness + torch_brightness)
             room_color = (brightness, brightness, brightness)
+            
+            # Calcular factor de brillo para aplicar a todos los elementos (0.0 a 1.0)
+            brightness_factor = brightness / 255.0
+            
             pygame.draw.rect(self.screen, room_color, (x, y, self.cell_size, self.cell_size))
             # Dibujar piedras en las paredes
-            self.draw_stone_in_walls(board_row, board_col, x, y, cell)
-            # Dibujar manchas de sangre en la salida (siempre)
-            self.draw_blood_stains(board_row, board_col, x, y)
-            # Dibujar antorchas en las paredes
-            self.draw_torches(board_row, board_col, x, y, cell)
-            # Dibujar escalera de caracol en una esquina
-            self.draw_spiral_stairs(x, y)
+            self.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor)
         
         # Marcar celdas del camino principal si show_path está activo
         if self.show_path and (board_row, board_col) in self.main_path:
@@ -1224,6 +1313,37 @@ class DungeonBoard:
             overlay.set_alpha(80)
             overlay.fill((0, 100, 255))
             self.screen.blit(overlay, (x, y))
+        
+        # Calcular brightness_factor para las líneas de túneles y salidas
+        # (se aplica con 50% de intensidad respecto al resto)
+        lines_brightness_factor = 1.0
+        if cell.cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
+            # Calcular oscurecimiento basado en distancia desde la entrada
+            start_row, start_col = self.start_position
+            exit_row, exit_col = self.exit_position
+            distance_from_start = abs(start_row - board_row) + abs(start_col - board_col)
+            total_distance = abs(exit_row - start_row) + abs(exit_col - start_col)
+            
+            if total_distance > 0:
+                progress = distance_from_start / total_distance
+            else:
+                progress = 0.5
+            
+            # Calcular brillo base sin antorchas
+            base_brightness = int(50 * (1.0 - progress))
+            # Para las líneas, aplicar 100% del oscurecimiento si está activado, o 0% si está desactivado
+            if self.lines_darkening_enabled:
+                lines_brightness_factor = base_brightness / 255.0
+            else:
+                lines_brightness_factor = 1.0  # Sin oscurecimiento
+        elif cell.cell_type == CellType.INICIO:
+            # En inicio, usar el mismo brillo base que tendría si estuviera en el camino (50)
+            # porque está en la posición más alejada de la salida
+            if self.lines_darkening_enabled:
+                base_brightness = 50
+                lines_brightness_factor = base_brightness / 255.0
+            else:
+                lines_brightness_factor = 1.0  # Sin oscurecimiento
         
         # Para pasillos, habitaciones, inicio y salida: dibujar camino desde el centro hacia las salidas
         if cell.cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.INICIO, CellType.SALIDA]:
@@ -1247,52 +1367,108 @@ class DungeonBoard:
                 mid_y_D = y + 0.8*self.cell_size // 2
                 mid_y_U = y + 1.2*self.cell_size // 2
             
-            # Las líneas internas serán siempre gris oscuro
-            inner_color = (150, 150, 150)
+            # Las líneas internas oscurecidas con 50% de intensidad
+            base_line_color = 150
+            darkened_value = int(base_line_color * lines_brightness_factor)
+            inner_color = (darkened_value, darkened_value, darkened_value)
             
             # North
             if Direction.N in cell.exits:
-                pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_D), (mid_x_L, y + 0.1*self.cell_size), 3)
-                pygame.draw.line(self.screen, inner_color, (mid_x_R, center_y_D), (mid_x_R, y + 0.1*self.cell_size), 3)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_L, y + 0.1*self.cell_size), 3, board_row, board_col, 1)
+                    self.draw_broken_line(inner_color, (mid_x_R, center_y_D), (mid_x_R, y + 0.1*self.cell_size), 3, board_row, board_col, 2)
+                else:
+                    pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_D), (mid_x_L, y + 0.1*self.cell_size), 3)
+                    pygame.draw.line(self.screen, inner_color, (mid_x_R, center_y_D), (mid_x_R, y + 0.1*self.cell_size), 3)
             else:
                 # Cerrar el norte si no hay salida (siempre gris oscuro)
-                pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_D), (mid_x_R, center_y_D), 3)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_R, center_y_D), 3, board_row, board_col, 3)
+                else:
+                    pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_D), (mid_x_R, center_y_D), 3)
             
             # South
             if Direction.S in cell.exits:
-                pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_U), (mid_x_L, y + 0.9*self.cell_size), 3)
-                pygame.draw.line(self.screen, inner_color, (mid_x_R, center_y_U), (mid_x_R, y + 0.9*self.cell_size), 3)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_L, y + 0.9*self.cell_size), 3, board_row, board_col, 4)
+                    self.draw_broken_line(inner_color, (mid_x_R, center_y_U), (mid_x_R, y + 0.9*self.cell_size), 3, board_row, board_col, 5)
+                else:
+                    pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_U), (mid_x_L, y + 0.9*self.cell_size), 3)
+                    pygame.draw.line(self.screen, inner_color, (mid_x_R, center_y_U), (mid_x_R, y + 0.9*self.cell_size), 3)
             else:
                 # Cerrar el sur si no hay salida (siempre gris oscuro)
-                pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_U), (mid_x_R, center_y_U), 3)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_R, center_y_U), 3, board_row, board_col, 6)
+                else:
+                    pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_U), (mid_x_R, center_y_U), 3)
             
             # East
             if Direction.E in cell.exits:
-                pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_D), (x + 0.9*self.cell_size, mid_y_D), 3)
-                pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_U), (x + 0.9*self.cell_size, mid_y_U), 3)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line(inner_color, (center_x_R, mid_y_D), (x + 0.9*self.cell_size, mid_y_D), 3, board_row, board_col, 7)
+                    self.draw_broken_line(inner_color, (center_x_R, mid_y_U), (x + 0.9*self.cell_size, mid_y_U), 3, board_row, board_col, 8)
+                else:
+                    pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_D), (x + 0.9*self.cell_size, mid_y_D), 3)
+                    pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_U), (x + 0.9*self.cell_size, mid_y_U), 3)
             else:
                 # Cerrar el este si no hay salida (siempre gris oscuro)
-                pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_D), (center_x_R, mid_y_U), 3)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line(inner_color, (center_x_R, mid_y_D), (center_x_R, mid_y_U), 3, board_row, board_col, 9)
+                else:
+                    pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_D), (center_x_R, mid_y_U), 3)
             
             # West
             if Direction.O in cell.exits:
-                pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 3)
-                pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 3)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line(inner_color, (center_x_L, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 3, board_row, board_col, 10)
+                    self.draw_broken_line(inner_color, (center_x_L, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 3, board_row, board_col, 11)
+                else:
+                    pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 3)
+                    pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 3)
             else:
                 # Cerrar el oeste si no hay salida (siempre gris oscuro)
-                pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_D), (center_x_L, mid_y_U), 3)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line(inner_color, (center_x_L, mid_y_D), (center_x_L, mid_y_U), 3, board_row, board_col, 12)
+                else:
+                    pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_D), (center_x_L, mid_y_U), 3)
         
         # Draw exits
         if cell.cell_type != CellType.EMPTY:
-            self.draw_exits(board_row, board_col, x, y, cell.exits, cell.cell_type)
+            self.draw_exits(board_row, board_col, x, y, cell.exits, cell.cell_type, lines_brightness_factor)
+        
+        # Dibujar manchas de sangre después de las líneas
+        if cell.cell_type in [CellType.PASILLO, CellType.HABITACION]:
+            self.draw_blood_stains(board_row, board_col, x, y, brightness_factor)
+        elif cell.cell_type == CellType.SALIDA:
+            self.draw_blood_stains(board_row, board_col, x, y, brightness_factor)
+        
+        # Dibujar fuente y escaleras después de la sangre
+        if cell.cell_type == CellType.INICIO:
+            self.draw_fountain(x, y)
+        elif cell.cell_type == CellType.SALIDA:
+            self.draw_spiral_stairs(x, y)
+        
+        # Dibujar antorchas al final (encima de todo)
+        if cell.cell_type in [CellType.INICIO, CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
+            self.draw_torches(board_row, board_col, x, y, cell)
     
-    def draw_exits(self, row, col, x, y, exits, cell_type):
+    def draw_exits(self, row, col, x, y, exits, cell_type, brightness_factor: float = 1.0):
+        """Dibuja las salidas de una celda.
+        
+        Args:
+            brightness_factor: Factor de brillo (0.0 a 1.0) para oscurecer las líneas de salida
+        """
         exit_size = 5
         # Las coordenadas son iguales para PASILLO, HABITACION e INICIO
         mid_x_L = x + 0.8*self.cell_size // 2
         mid_x_R = x + 1.2*self.cell_size // 2
         mid_y_D = y + 0.8*self.cell_size // 2
         mid_y_U = y + 1.2*self.cell_size // 2
+        
+        # Calcular color de las salidas oscurecido con el factor de brillo
+        base_exit_color = 150
+        darkened_value = int(base_exit_color * brightness_factor)
+        exit_color = (darkened_value, darkened_value, darkened_value)
 
         # Map directions to deltas for neighbor checking
         delta = {
@@ -1335,14 +1511,18 @@ class DungeonBoard:
                 if neighbor.cell_type != CellType.EMPTY and opposite in neighbor.exits:
                     connected = True
 
-            # Las salidas son gris oscuro
-            exit_color = (150, 150, 150)
-
-            pygame.draw.line(self.screen, exit_color, (mid_x_L, y), (mid_x_L, y + 0.1*self.cell_size), 4)
-            pygame.draw.line(self.screen, exit_color, (mid_x_R, y), (mid_x_R, y + 0.1*self.cell_size), 4)
+            if self.lines_darkening_enabled:
+                self.draw_broken_line(exit_color, (mid_x_L, y), (mid_x_L, y + 0.1*self.cell_size), 4, row, col, 20)
+                self.draw_broken_line(exit_color, (mid_x_R, y), (mid_x_R, y + 0.1*self.cell_size), 4, row, col, 21)
+            else:
+                pygame.draw.line(self.screen, exit_color, (mid_x_L, y), (mid_x_L, y + 0.1*self.cell_size), 4)
+                pygame.draw.line(self.screen, exit_color, (mid_x_R, y), (mid_x_R, y + 0.1*self.cell_size), 4)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar la salida en negro
             if is_at_edge(Direction.N) or (not connected and not neighbor_empty):
-                pygame.draw.line(self.screen, (0, 0, 0), (mid_x_L, y + 0.05*self.cell_size), (mid_x_R, y + 0.05*self.cell_size), 4)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line((0, 0, 0), (mid_x_L, y + 0.05*self.cell_size), (mid_x_R, y + 0.05*self.cell_size), 4, row, col, 22)
+                else:
+                    pygame.draw.line(self.screen, (0, 0, 0), (mid_x_L, y + 0.05*self.cell_size), (mid_x_R, y + 0.05*self.cell_size), 4)
 
         # North (complementaria): si la vecina tiene N pero yo no, dibujar cruz en la vecina
         if Direction.N not in exits:
@@ -1371,14 +1551,18 @@ class DungeonBoard:
                 if neighbor.cell_type != CellType.EMPTY and opposite in neighbor.exits:
                     connected = True
 
-            # Las salidas son gris oscuro
-            exit_color = (150, 150, 150)
-
-            pygame.draw.line(self.screen, exit_color, (mid_x_L, y + self.cell_size), (mid_x_L, y + 0.8*self.cell_size), 4)
-            pygame.draw.line(self.screen, exit_color, (mid_x_R, y + self.cell_size), (mid_x_R, y + 0.8*self.cell_size), 4)
+            if self.lines_darkening_enabled:
+                self.draw_broken_line(exit_color, (mid_x_L, y + self.cell_size), (mid_x_L, y + 0.8*self.cell_size), 4, row, col, 30)
+                self.draw_broken_line(exit_color, (mid_x_R, y + self.cell_size), (mid_x_R, y + 0.8*self.cell_size), 4, row, col, 31)
+            else:
+                pygame.draw.line(self.screen, exit_color, (mid_x_L, y + self.cell_size), (mid_x_L, y + 0.8*self.cell_size), 4)
+                pygame.draw.line(self.screen, exit_color, (mid_x_R, y + self.cell_size), (mid_x_R, y + 0.8*self.cell_size), 4)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar
             if is_at_edge(Direction.S) or (not connected and not neighbor_empty):
-                pygame.draw.line(self.screen, (0, 0, 0), (mid_x_L, y + self.cell_size - 0.05*self.cell_size), (mid_x_R, y + self.cell_size - 0.05*self.cell_size), 4)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line((0, 0, 0), (mid_x_L, y + self.cell_size - 0.05*self.cell_size), (mid_x_R, y + self.cell_size - 0.05*self.cell_size), 4, row, col, 32)
+                else:
+                    pygame.draw.line(self.screen, (0, 0, 0), (mid_x_L, y + self.cell_size - 0.05*self.cell_size), (mid_x_R, y + self.cell_size - 0.05*self.cell_size), 4)
 
         # South (complementaria)
         if Direction.S not in exits:
@@ -1405,14 +1589,18 @@ class DungeonBoard:
                 if neighbor.cell_type != CellType.EMPTY and opposite in neighbor.exits:
                     connected = True
 
-            # Las salidas son gris oscuro
-            exit_color = (150, 150, 150)
-
-            pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_D), (x + 0.8*self.cell_size, mid_y_D), 4)
-            pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_U), (x + 0.8*self.cell_size, mid_y_U), 4)
+            if self.lines_darkening_enabled:
+                self.draw_broken_line(exit_color, (x + self.cell_size, mid_y_D), (x + 0.8*self.cell_size, mid_y_D), 4, row, col, 40)
+                self.draw_broken_line(exit_color, (x + self.cell_size, mid_y_U), (x + 0.8*self.cell_size, mid_y_U), 4, row, col, 41)
+            else:
+                pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_D), (x + 0.8*self.cell_size, mid_y_D), 4)
+                pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_U), (x + 0.8*self.cell_size, mid_y_U), 4)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar
             if is_at_edge(Direction.E) or (not connected and not neighbor_empty):
-                pygame.draw.line(self.screen, (0, 0, 0), (x + self.cell_size - 0.05*self.cell_size, mid_y_D), (x + self.cell_size - 0.05*self.cell_size, mid_y_U), 4)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line((0, 0, 0), (x + self.cell_size - 0.05*self.cell_size, mid_y_D), (x + self.cell_size - 0.05*self.cell_size, mid_y_U), 4, row, col, 42)
+                else:
+                    pygame.draw.line(self.screen, (0, 0, 0), (x + self.cell_size - 0.05*self.cell_size, mid_y_D), (x + self.cell_size - 0.05*self.cell_size, mid_y_U), 4)
 
         # East (complementaria)
         if Direction.E not in exits:
@@ -1439,14 +1627,18 @@ class DungeonBoard:
                 if neighbor.cell_type != CellType.EMPTY and opposite in neighbor.exits:
                     connected = True
 
-            # Las salidas son gris oscuro
-            exit_color = (150, 150, 150)
-
-            pygame.draw.line(self.screen, exit_color, (x, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 4)
-            pygame.draw.line(self.screen, exit_color, (x, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 4)
+            if self.lines_darkening_enabled:
+                self.draw_broken_line(exit_color, (x, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 4, row, col, 50)
+                self.draw_broken_line(exit_color, (x, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 4, row, col, 51)
+            else:
+                pygame.draw.line(self.screen, exit_color, (x, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 4)
+                pygame.draw.line(self.screen, exit_color, (x, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 4)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar
             if is_at_edge(Direction.O) or (not connected and not neighbor_empty):
-                pygame.draw.line(self.screen, (0, 0, 0), (x + 0.05*self.cell_size, mid_y_D), (x + 0.05*self.cell_size, mid_y_U), 4)
+                if self.lines_darkening_enabled:
+                    self.draw_broken_line((0, 0, 0), (x + 0.05*self.cell_size, mid_y_D), (x + 0.05*self.cell_size, mid_y_U), 4, row, col, 52)
+                else:
+                    pygame.draw.line(self.screen, (0, 0, 0), (x + 0.05*self.cell_size, mid_y_D), (x + 0.05*self.cell_size, mid_y_U), 4)
 
         # West (complementaria)
         if Direction.O not in exits:
@@ -1621,19 +1813,23 @@ class DungeonBoard:
             mortar_color = (30, 30, 30)
             pygame.draw.line(self.screen, mortar_color, (x1, y1), (x2, y2), 2)
 
-    def draw_stone_in_walls(self, board_row: int, board_col: int, x: int, y: int, cell: Cell):
+    def draw_stone_in_walls(self, board_row: int, board_col: int, x: int, y: int, cell: Cell, brightness_factor: float = 1.0):
         """Dibuja textura de piedra únicamente en las zonas de pared dentro
         de una celda de tipo PASILLO (entre el suelo/centro y los bordes).
 
         Se respeta la presencia de salidas: si existe una salida N/S/E/O, se deja
         un hueco en la pared correspondiente para el pasaje.
+        
+        Args:
+            brightness_factor: Factor de brillo (0.0 a 1.0) para oscurecer todos los colores
         """
         seed = board_row * 100000 + board_col
         rnd = random.Random(seed + 7)
 
-        # Calcular brillo base según número de antorchas
+        # Calcular brillo base según número de antorchas, pero aplicando el factor de oscuridad
         torch_count = self.count_torches(board_row, board_col, cell)
         wall_brightness = 20 + min(120, torch_count * 30)  # Base 20, aumenta 30 por antorcha
+        wall_brightness = int(wall_brightness * brightness_factor)  # Aplicar factor de oscuridad
 
         size = self.cell_size
         wall_thickness = max(6, int(size * 0.28))
@@ -1815,6 +2011,12 @@ class DungeonBoard:
         
         return exits
 
+    def toggle_lines_darkening(self):
+        """Toggle del oscurecimiento de líneas (F5)."""
+        self.lines_darkening_enabled = not self.lines_darkening_enabled
+        status = "activado" if self.lines_darkening_enabled else "desactivado"
+        print(f"Oscurecimiento de líneas: {status}")
+
     def place_cell_in_direction(self, direction: Direction):
         """Coloca en la celda en la dirección `direction` desde la posición actual
         una celda aleatoria de tipo PASILLO o HABITACION (50/50) con salidas
@@ -1823,8 +2025,8 @@ class DungeonBoard:
         Si la celda destino está fuera del tablero o no existe salida en la celda
         actual, no hace nada.
         """
-        # Bloquear movimiento durante la animación de introducción
-        if self.intro_anim_active:
+        # Bloquear movimiento durante pensamientos que bloquean movimiento
+        if self.thought_active and self.thought_blocks_movement:
             return
         
         # Bloquear movimiento mientras se muestra la imagen de la losa
@@ -2000,6 +2202,14 @@ class DungeonBoard:
         if self.torches_extinguished:
             return 0
         
+        # Durante la introducción, no hay antorchas
+        if self.intro_anim_active:
+            return 0
+        
+        # Si el pensamiento de intro no ha terminado, no hay antorchas
+        if not self.intro_thought_triggered or (self.thought_active and not self.thought_blocks_movement):
+            return 0
+        
         # Si no está en el camino principal, no hay antorchas
         if (board_row, board_col) not in self.main_path:
             return 0
@@ -2007,28 +2217,6 @@ class DungeonBoard:
         # Calcular distancia a la salida
         exit_row, exit_col = self.exit_position
         distance_to_exit = abs(exit_row - board_row) + abs(exit_col - board_col)
-        
-        # Calcular distancia total del camino (aproximada)
-        start_row, start_col = self.start_position
-        total_distance = abs(exit_row - start_row) + abs(exit_col - start_col)
-        
-        # Calcular probabilidad base que aumenta al acercarse a la salida
-        # En el inicio: ~10%, en la salida: ~40%
-        if total_distance > 0:
-            progress = 1.0 - (distance_to_exit / total_distance)  # 0 en inicio, 1 en salida
-        else:
-            progress = 0.5
-        
-        base_probability = 0.1 + (progress * 0.3)  # 10% a 40%
-        
-        seed = board_row * 100000 + board_col
-        rnd = random.Random(seed)
-        
-        # Generar entre 0 y 4 antorchas con probabilidad variable
-        desired_torches = 0
-        for _ in range(4):
-            if rnd.random() < base_probability:
-                desired_torches += 1
         
         # Contar cuántas paredes sin salida hay disponibles
         available_walls = 0
@@ -2041,8 +2229,102 @@ class DungeonBoard:
         if Direction.O not in cell.exits:
             available_walls += 1
         
+        # En la salida, garantizar al menos una antorcha
+        if (board_row, board_col) == self.exit_position:
+            if available_walls == 0:
+                return 0
+            return max(1, available_walls)  # Al menos 1, máximo todas las paredes
+        
+        # Calcular distancia total del camino (aproximada)
+        start_row, start_col = self.start_position
+        total_distance = abs(exit_row - start_row) + abs(exit_col - start_col)
+        
+        # Calcular probabilidad base que DISMINUYE al acercarse a la salida
+        # En el inicio: ~40%, en la salida: ~10%
+        if total_distance > 0:
+            progress = 1.0 - (distance_to_exit / total_distance)  # 0 en inicio, 1 en salida
+        else:
+            progress = 0.5
+        
+        base_probability = 0.4 - (progress * 0.3)  # 40% a 10%
+        
+        seed = board_row * 100000 + board_col
+        rnd = random.Random(seed)
+        
+        # Generar entre 0 y 4 antorchas con probabilidad variable
+        desired_torches = 0
+        for _ in range(4):
+            if rnd.random() < base_probability:
+                desired_torches += 1
+        
         # Retornar el mínimo entre antorchas deseadas y paredes disponibles
         return min(desired_torches, available_walls)
+    
+    def draw_broken_line(self, color, start_pos, end_pos, width, board_row, board_col, line_id):
+        """Dibuja una línea quebrada (con segmentos irregulares).
+        
+        Args:
+            color: Color de la línea
+            start_pos: Tupla (x, y) de inicio
+            end_pos: Tupla (x, y) de fin
+            width: Ancho de la línea
+            board_row: Fila en el tablero (para semilla)
+            board_col: Columna en el tablero (para semilla)
+            line_id: ID único de la línea (para semilla)
+        """
+        # Asegurar que el color tiene valores enteros
+        color = tuple(int(c) for c in color)
+        
+        # Usar posición + line_id como semilla para reproducibilidad
+        seed = board_row * 100000 + board_col * 100 + line_id
+        rnd = random.Random(seed)
+        
+        x1, y1 = start_pos
+        x2, y2 = end_pos
+        
+        # Calcular longitud de la línea
+        length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+        
+        if length < 5:
+            # Línea muy corta, dibujar directamente
+            pygame.draw.line(self.screen, color, start_pos, end_pos, width)
+            return
+        
+        # Número de segmentos (más segmentos = más quebrada)
+        num_segments = max(3, int(length / 10))
+        
+        # Generar puntos intermedios con desplazamiento aleatorio
+        points = [start_pos]
+        for i in range(1, num_segments):
+            t = i / num_segments
+            # Punto en la línea recta
+            px = x1 + t * (x2 - x1)
+            py = y1 + t * (y2 - y1)
+            
+            # Desplazamiento perpendicular aleatorio
+            # Vector perpendicular
+            dx = x2 - x1
+            dy = y2 - y1
+            perp_x = -dy
+            perp_y = dx
+            # Normalizar
+            perp_len = (perp_x ** 2 + perp_y ** 2) ** 0.5
+            if perp_len > 0:
+                perp_x /= perp_len
+                perp_y /= perp_len
+            
+            # Desplazamiento aleatorio (hasta 3 píxeles)
+            offset = rnd.uniform(-3, 3)
+            px += perp_x * offset
+            py += perp_y * offset
+            
+            points.append((int(px), int(py)))
+        
+        points.append(end_pos)
+        
+        # Dibujar segmentos
+        for i in range(len(points) - 1):
+            pygame.draw.line(self.screen, color, points[i], points[i + 1], width)
     
     def has_blood_stains(self, board_row, board_col):
         """Verifica si una celda tiene manchas de sangre."""
@@ -2061,8 +2343,16 @@ class DungeonBoard:
         probability = 1.0 - ((distance - 1) / 9.0) * 0.7
         return rnd.random() <= probability
     
-    def draw_blood_stains(self, board_row, board_col, x, y):
-        """Dibuja manchas de sangre en celdas cercanas a la salida."""
+    def draw_blood_stains(self, board_row, board_col, x, y, brightness_factor: float = 1.0):
+        """Dibuja manchas de sangre en celdas cercanas a la salida.
+        Las manchas de sangre se oscurecen con el 50% del gradiente de distancia.
+        
+        Args:
+            brightness_factor: Factor de brillo (0.0 a 1.0) para oscurecer todos los colores
+        """
+        # Aplicar 50% del oscurecimiento a la sangre
+        blood_brightness_factor = 1.0 - 0.5 * (1.0 - brightness_factor)
+        
         exit_row, exit_col = self.exit_position
         distance = abs(exit_row - board_row) + abs(exit_col - board_col)
         
@@ -2079,11 +2369,11 @@ class DungeonBoard:
         if rnd.random() > probability:
             return
         
-        # Color de sangre oscura
+        # Color de sangre oscura, aplicando el 50% del factor de oscuridad
         blood_colors = [
-            (80, 0, 0),    # Rojo muy oscuro
-            (100, 10, 10), # Rojo oscuro
-            (70, 5, 5),    # Casi negro rojizo
+            tuple(int(c * blood_brightness_factor) for c in (80, 0, 0)),    # Rojo muy oscuro
+            tuple(int(c * blood_brightness_factor) for c in (100, 10, 10)), # Rojo oscuro
+            tuple(int(c * blood_brightness_factor) for c in (70, 5, 5)),    # Casi negro rojizo
         ]
         
         # Generar 2-5 manchas por celda
@@ -2111,7 +2401,9 @@ class DungeonBoard:
     
     def draw_torches(self, board_row, board_col, x, y, cell):
         """Dibuja antorchas animadas. Las antorchas se posicionan en las paredes sin salida,
-        pero su cantidad es independiente del número de salidas."""
+        pero su cantidad es independiente del número de salidas.
+        Las antorchas NO se oscurecen con el gradiente de distancia.
+        """
         # Usar seed para posiciones deterministas
         seed = board_row * 100000 + board_col
         rnd = random.Random(seed)
@@ -2146,7 +2438,9 @@ class DungeonBoard:
             self.draw_single_torch(torch_x, torch_y, torch_size, flicker)
     
     def draw_single_torch(self, x, y, size, flicker):
-        """Dibuja una antorcha individual con llama animada."""
+        """Dibuja una antorcha individual con llama animada.
+        Las antorchas NO se oscurecen con el gradiente de distancia.
+        """
         # Soporte de madera (marrón oscuro)
         stick_width = max(2, size // 4)
         stick_height = size
@@ -2170,7 +2464,9 @@ class DungeonBoard:
         self.screen.blit(glow_surface, (x - flame_radius * 1.5, flame_y - flame_radius * 1.5))
     
     def draw_spiral_stairs(self, x: int, y: int):
-        """Dibuja una escalera de caracol en una esquina de la celda."""
+        """Dibuja una escalera de caracol en una esquina de la celda.
+        La escalera NO se oscurece con el gradiente de distancia.
+        """
         # Posición en la esquina superior derecha
         corner_x = x + int(self.cell_size * 0.75)
         corner_y = y + int(self.cell_size * 0.25)
@@ -2205,7 +2501,9 @@ class DungeonBoard:
         pygame.draw.circle(self.screen, (80, 60, 40), (corner_x, corner_y), radius, 2)
     
     def draw_fountain(self, x: int, y: int):
-        """Dibuja una fuente en la esquina superior izquierda de una celda."""
+        """Dibuja una fuente en la esquina superior izquierda de una celda.
+        La fuente NO se oscurece con el gradiente de distancia.
+        """
         # Base de la fuente (cuadrado)
         fountain_size = int(self.cell_size * 0.22)
         fountain_x = x + int(self.cell_size * 0.08)
@@ -2402,6 +2700,9 @@ class DungeonBoard:
                     # Toggle mostrar camino con F4
                     elif event.key == pygame.K_F4:
                         self.show_path = not self.show_path
+                    # Toggle oscurecimiento de líneas con F5
+                    elif event.key == pygame.K_F5:
+                        self.toggle_lines_darkening()
                     # Zoom in con Z
                     elif event.key == pygame.K_z:
                         self.zoom_in()
