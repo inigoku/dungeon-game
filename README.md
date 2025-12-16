@@ -1,8 +1,21 @@
 # Dungeon Explorer 2D
 
+[![Tests](https://github.com/inigoku/dungeon-game/actions/workflows/tests.yml/badge.svg)](https://github.com/inigoku/dungeon-game/actions/workflows/tests.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Un juego de exploración de mazmorras en 2D construido con Pygame, con sistema de audio dinámico, niebla de guerra, efectos atmosféricos y un innovador sistema de pensamientos narrativos.
 
 **🎮 [Juega ahora en tu navegador](https://inigoku.github.io/dungeon-game/)** (sin instalación requerida)
+
+## 📋 Tabla de Contenidos
+
+- [Características](#características)
+- [Arquitectura](#arquitectura)
+- [Instalación](#instalación)
+- [Testing](#testing)
+- [Desarrollo](#desarrollo)
+- [Documentación](#documentación)
 
 ## Características
 
@@ -187,6 +200,148 @@ dungeon/
 ### Optimizaciones
 - Solo se renderizan celdas visibles en el viewport actual
 - Caché de texturas por celda
+
+## 🏗️ Arquitectura
+
+El proyecto ha sido refactorizado a una **arquitectura modular** con 8 módulos independientes:
+
+### Módulos Core
+- **models/cell.py** - Estructuras de datos (Cell, CellType, Direction)
+- **config.py** - Constantes centralizadas del juego
+
+### Services
+- **services/lighting_system.py** - Sistema de iluminación y gradientes
+- **services/board_generator.py** - Generación procedural y pathfinding
+- **services/audio_manager.py** - Gestión de música, efectos y pensamientos
+
+### Rendering
+- **rendering/decorations.py** - Antorchas, sangre, fuente, escaleras
+- **rendering/effects.py** - Líneas quebradas, texturas de piedra
+- **rendering/cell_renderer.py** - Helpers de renderizado de celdas
+
+### Características de la Arquitectura
+- ✅ **Separación de responsabilidades** - Cada módulo tiene un propósito claro
+- ✅ **Testabilidad** - Módulos independientes fáciles de probar
+- ✅ **Backward compatibility** - Sistema dual con fallback automático
+- ✅ **Zero breaking changes** - Migración sin interrupciones
+
+Ver [ARCHITECTURE.md](ARCHITECTURE.md) para más detalles.
+
+## 🧪 Testing
+
+### Ejecutar Tests
+
+```bash
+# Tests básicos (45 tests, 100% passing)
+pytest tests/test_config.py tests/test_cell.py -v
+
+# Todos los tests
+pytest tests/ -v
+
+# Con cobertura
+pytest tests/ --cov=. --cov-report=html
+open htmlcov/index.html
+```
+
+### Estado Actual
+
+- **Total de tests**: 210
+- **Pasando**: 63 (30%)
+- **Módulos con 100%**: config.py, models/cell.py
+
+Ver [TESTING_STATUS.md](TESTING_STATUS.md) para más detalles.
+
+## 📦 Instalación
+
+### Prerequisitos
+- Python 3.11+
+- pip
+
+### Instalación Local
+
+```bash
+# Clonar repositorio
+git clone https://github.com/inigoku/dungeon-game.git
+cd dungeon-game
+
+# Crear entorno virtual
+python -m venv .venv
+source .venv/bin/activate  # En Windows: .venv\Scripts\activate
+
+# Instalar dependencias
+pip install pygame
+
+# Ejecutar juego
+python main.py
+# o
+python dungeon.py
+```
+
+### Instalación para Desarrollo
+
+```bash
+# Instalar dependencias de desarrollo
+pip install pytest pytest-cov pytest-mock
+
+# Ejecutar tests
+pytest tests/ -v
+```
+
+## 🚀 Desarrollo
+
+### Estructura del Proyecto
+
+```
+dungeon/
+├── models/
+│   ├── __init__.py
+│   └── cell.py          # Cell, CellType, Direction
+├── services/
+│   ├── __init__.py
+│   ├── lighting_system.py
+│   ├── board_generator.py
+│   └── audio_manager.py
+├── rendering/
+│   ├── __init__.py
+│   ├── decorations.py
+│   ├── effects.py
+│   └── cell_renderer.py
+├── tests/
+│   ├── test_config.py
+│   ├── test_cell.py
+│   └── ...
+├── images/
+│   ├── titulo.png
+│   ├── losa.png
+│   └── cthlulhu.png
+├── sound/
+│   ├── intro.ogg
+│   ├── adagio.ogg
+│   └── ...
+├── config.py            # Constantes
+├── dungeon.py           # Código principal (legacy compatible)
+├── main.py              # Punto de entrada modular
+└── README.md
+```
+
+### Roadmap
+
+Ver [ROADMAP.md](ROADMAP.md) para el plan de desarrollo futuro.
+
+Próximas prioridades:
+1. ✅ Completar suite de tests (objetivo: 100% passing)
+2. ⏳ Configurar CI/CD con GitHub Actions
+3. ⏳ Agregar type hints completos
+4. ⏳ Generar documentación con Sphinx
+
+## 📚 Documentación
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Documentación completa de la arquitectura modular
+- **[TESTING_STATUS.md](TESTING_STATUS.md)** - Estado y roadmap de testing
+- **[ROADMAP.md](ROADMAP.md)** - Plan de desarrollo futuro
+- **[tests/README.md](tests/README.md)** - Guía de tests
+
+## 🎮 Controles
 - Actualización selectiva de volumen de música
 - Sistema de banderas para evitar reproducción repetida de pensamientos
 
