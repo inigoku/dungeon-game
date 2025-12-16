@@ -10,6 +10,7 @@ from dataclasses import dataclass
 try:
     from services.lighting_system import LightingSystem
     from rendering.decorations import DecorationRenderer
+    from rendering.effects import EffectsRenderer
     REFACTORED_MODULES = True
 except ImportError:
     REFACTORED_MODULES = False
@@ -171,6 +172,7 @@ class DungeonBoard:
         if REFACTORED_MODULES:
             self.lighting = LightingSystem()
             self.decorations = DecorationRenderer(self.screen, self.cell_size)
+            self.effects = EffectsRenderer(self.screen, self.cell_size)
         else:
             # Toggle para oscurecimiento de líneas (F5) - versión legacy
             self.lines_darkening_enabled = True
@@ -1853,6 +1855,11 @@ class DungeonBoard:
         Args:
             brightness_factor: Factor de brillo (0.0 a 1.0) para oscurecer todos los colores
         """
+        if REFACTORED_MODULES:
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
+            return
+        
+        # Versión legacy
         seed = board_row * 100000 + board_col
         rnd = random.Random(seed + 7)
 
@@ -2322,6 +2329,11 @@ class DungeonBoard:
             board_col: Columna en el tablero (para semilla)
             line_id: ID único de la línea (para semilla)
         """
+        if REFACTORED_MODULES:
+            self.effects.draw_broken_line(color, start_pos, end_pos, width, board_row, board_col, line_id)
+            return
+        
+        # Versión legacy
         # Asegurar que el color tiene valores enteros
         color = tuple(int(c) for c in color)
         
