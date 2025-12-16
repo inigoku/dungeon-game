@@ -6,6 +6,14 @@ import asyncio
 from enum import Enum
 from dataclasses import dataclass
 
+# Importar módulos refactorizados
+try:
+    from services.lighting_system import LightingSystem
+    REFACTORED_MODULES = True
+except ImportError:
+    REFACTORED_MODULES = False
+    print("Usando versión sin refactorizar")
+
 class CellType(Enum):
     EMPTY = 0
     INICIO = 1
@@ -158,8 +166,12 @@ class DungeonBoard:
         self.thought_current_subtitle_index = 0
         self.thought_subtitle_start_time = 0
         
-        # Toggle para oscurecimiento de líneas (F5)
-        self.lines_darkening_enabled = True
+        # Sistema de iluminación (refactorizado)
+        if REFACTORED_MODULES:
+            self.lighting = LightingSystem()
+        else:
+            # Toggle para oscurecimiento de líneas (F5) - versión legacy
+            self.lines_darkening_enabled = True
         
         # Guardar intro.ogg como pensamiento inicial
         if 'intro' in self.music_sounds:
@@ -2013,9 +2025,29 @@ class DungeonBoard:
 
     def toggle_lines_darkening(self):
         """Toggle del oscurecimiento de líneas (F5)."""
-        self.lines_darkening_enabled = not self.lines_darkening_enabled
-        status = "activado" if self.lines_darkening_enabled else "desactivado"
-        print(f"Oscurecimiento de líneas: {status}")
+        if REFACTORED_MODULES:
+            self.lighting.toggle_lines_darkening()
+        else:
+            self.lines_darkening_enabled = not self.lines_darkening_enabled
+            status = "activado" if self.lines_darkening_enabled else "desactivado"
+            print(f"Oscurecimiento de líneas: {status}")
+    
+    @property
+    def lines_darkening_enabled(self):
+        """Propiedad para acceder al estado del oscurecimiento."""
+        if REFACTORED_MODULES:
+            return self.lighting.lines_darkening_enabled
+        else:
+            return getattr(self, '_lines_darkening_enabled', True)
+    
+    @lines_darkening_enabled.setter
+    def lines_darkening_enabled(self, value):
+        """Setter para el oscurecimiento de líneas."""
+        if REFACTORED_MODULES:
+            self.lighting.lines_darkening_enabled = value
+        else:
+            self._lines_darkening_enabled = value
+
 
     def place_cell_in_direction(self, direction: Direction):
         """Coloca en la celda en la dirección `direction` desde la posición actual
