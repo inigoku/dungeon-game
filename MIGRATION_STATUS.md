@@ -30,26 +30,28 @@
   - ✅ get_opposite_direction: Utilidad de direcciones
 - ⏳ Pendiente: Integración completa con draw_cell
 
+### Fase 6: Sistema de Audio
+- ✅ `services/audio_manager.py` - AudioManager completo:
+  - ✅ Gestión de música con fade in/out
+  - ✅ Reproducción de efectos de sonido
+  - ✅ Sistema de subtítulos
+  - ✅ Sistema de pensamientos con audio+subtítulos
+  - ✅ Sonidos de pasos alternados
+- ✅ Integrado en dungeon.py con wrappers
+
 ### Integración Gradual
 - ✅ `dungeon.py` actualizado con importación condicional
 - ✅ Sistema de iluminación integrado vía property pattern
 - ✅ Sistema de decoraciones integrado con REFACTORED_MODULES
 - ✅ Sistema de efectos visuales integrado con wrappers
+- ✅ Sistema de audio integrado con delegación
 - ✅ Compatibilidad hacia atrás mantenida
 
 ## 🔄 En Progreso
 
-- CellRenderer: Creado pero pendiente de integración completa
+- Ninguno actualmente
 
 ## 📋 Pendiente
-
-### Fase 5: Finalizar Renderizado de Celdas
-- ⏳ Integrar CellRenderer completamente en draw_cell
-- ⏳ Extraer draw_exits a CellRenderer
-- ⏳ Extraer draw_openings a CellRenderer
-
-### Fase 6: Audio
-- ⏳ `services/audio_manager.py` - Gestión de sonidos y música
 
 ### Fase 7: Game State
 - ⏳ `game/game_state.py` - Estado del juego
@@ -64,6 +66,7 @@
 \`\`\`bash
 # Probar módulos individuales
 python -c "from services.lighting_system import LightingSystem; print('✓ LightingSystem OK')"
+python -c "from services.audio_manager import AudioManager; print('✓ AudioManager OK')"
 python -c "from rendering.decorations import DecorationRenderer; print('✓ DecorationRenderer OK')"
 python -c "from rendering.effects import EffectsRenderer; print('✓ EffectsRenderer OK')"
 python -c "from rendering.cell_renderer import CellRenderer; print('✓ CellRenderer OK')"
@@ -80,14 +83,15 @@ python dungeon.py
 1. **Sistema de iluminación desacoplado**: Toda la lógica de luz está aislada
 2. **Renderizado de decoraciones modular**: Antorchas, sangre, fuente y escaleras en módulo separado
 3. **Efectos visuales modulares**: Líneas quebradas y texturas de piedra aisladas
-4. **Helpers de renderizado de celdas**: Componentes reutilizables para renderizado
-5. **Fácil testing**: Cada componente se puede probar independientemente
-6. **Sin breaking changes**: El juego funciona exactamente igual
-7. **Migración segura**: Importación condicional previene errores
+4. **Sistema de audio centralizado**: Música, sonidos y subtítulos en un solo gestor
+5. **Helpers de renderizado de celdas**: Componentes reutilizables para renderizado
+6. **Fácil testing**: Cada componente se puede probar independientemente
+7. **Sin breaking changes**: El juego funciona exactamente igual
+8. **Migración segura**: Importación condicional previene errores
 
 ## Próximos Pasos
 
-1. Completar integración de CellRenderer en draw_cell
-2. Extraer sistema de audio
-3. Extraer game state
-4. Continuar iterativamente
+1. Extraer game state y manejo de entrada
+2. Crear main.py con arquitectura modular
+3. Deprecar dungeon.py monolítico
+4. Documentación completa de la nueva arquitectura

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 # Importar módulos refactorizados
 try:
     from services.lighting_system import LightingSystem
+    from services.audio_manager import AudioManager
     from rendering.decorations import DecorationRenderer
     from rendering.effects import EffectsRenderer
     REFACTORED_MODULES = True
@@ -168,11 +169,12 @@ class DungeonBoard:
         self.thought_current_subtitle_index = 0
         self.thought_subtitle_start_time = 0
         
-        # Sistema de iluminación (refactorizado)
+        # Sistema de iluminación y renderizado (refactorizado)
         if REFACTORED_MODULES:
             self.lighting = LightingSystem()
             self.decorations = DecorationRenderer(self.screen, self.cell_size)
             self.effects = EffectsRenderer(self.screen, self.cell_size)
+            self.audio = AudioManager()
         else:
             # Toggle para oscurecimiento de líneas (F5) - versión legacy
             self.lines_darkening_enabled = True
@@ -831,6 +833,11 @@ class DungeonBoard:
     
     def update_fade(self):
         """Actualiza el fade de música si está activo."""
+        if REFACTORED_MODULES:
+            self.audio.update_fades()
+            return
+        
+        # Versión legacy
         current_time = pygame.time.get_ticks()
         elapsed = current_time - self.fade_start_time
         
@@ -972,6 +979,16 @@ class DungeonBoard:
     
     def update_thought(self):
         """Actualiza el estado del pensamiento activo."""
+        if REFACTORED_MODULES:
+            self.audio.update_thoughts()
+            # Sincronizar estado de subtítulos
+            self.showing_subtitles = self.audio.showing_subtitles
+            self.subtitle_text = self.audio.subtitle_text
+            self.thought_active = self.audio.thought_active
+            self.thought_blocks_movement = self.audio.thought_blocks_movement
+            return
+        
+        # Versión legacy
         if not self.thought_active:
             return
         
