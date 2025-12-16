@@ -217,12 +217,12 @@ class DungeonBoard:
         self.showing_title = True
         self.title_image = None
         try:
-            self.title_image = pygame.image.load("titulo.png").convert()
+            self.title_image = pygame.image.load("images/titulo.png").convert()
             # Escalar la imagen al tamaño de la ventana con alta calidad si es necesario
             if self.title_image.get_size() != (self.width, self.height):
                 self.title_image = pygame.transform.smoothscale(self.title_image, (self.width, self.height))
         except pygame.error as e:
-            print(f"No se pudo cargar titulo.png: {e}")
+            print(f"No se pudo cargar images/titulo.png: {e}")
             self.showing_title = False
         
         # Confirmación de salida
@@ -313,7 +313,7 @@ class DungeonBoard:
         self.exit_image = None
         self.torches_extinguished = False  # Flag para apagar antorchas después de la losa
         try:
-            original_image = pygame.image.load("losa.png")
+            original_image = pygame.image.load("images/losa.png")
             # Escalar manteniendo la proporción para que quepa en la pantalla
             original_width = original_image.get_width()
             original_height = original_image.get_height()
@@ -332,7 +332,7 @@ class DungeonBoard:
             
             self.exit_image = pygame.transform.smoothscale(original_image, (new_width, new_height))
         except pygame.error as e:
-            print(f"No se pudo cargar losa.png: {e}")
+            print(f"No se pudo cargar images/losa.png: {e}")
         
         # Debug mode
         self.debug_mode = False
