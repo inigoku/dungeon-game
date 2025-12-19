@@ -803,21 +803,19 @@ class DungeonBoard:
             image_y = (self.height - self.thought_image.get_height()) // 2
             self.screen.blit(self.thought_image, (image_x, image_y))
             
-            # Si es la imagen de salida (losa), verificar si expiró para activar ráfaga
-            if self.exit_thought_active and self.thought_image_shown:
+            # Si estamos en el pensamiento de salida, verificar si expiró para activar ráfaga
+            # La condición debe seguir verificando incluso después de que termine el pensamiento
+            if self.exit_thought_active:
                 current_time = pygame.time.get_ticks()
                 # Calcular duración: audio de abominación + 2 segundos
                 abominacion_duration = int(self.abominacion_sound.get_length() * 1000) if self.abominacion_sound else 3000
                 total_duration = abominacion_duration + 2000  # +2 segundos
-                elapsed = current_time - self.thought_image_start_time
+                elapsed = current_time - self.exit_image_start_time
                 
-                print(f"[DEBUG EXIT] exit_thought_active={self.exit_thought_active}, thought_image_shown={self.thought_image_shown}")
-                print(f"[DEBUG EXIT] elapsed={elapsed}ms, total_duration={total_duration}ms")
-                
-                if elapsed >= total_duration:
+                if elapsed >= total_duration and not self.rafaga_thought_triggered:
                     # Activar pensamiento de ráfaga que apagará las antorchas
-                    if not self.rafaga_thought_triggered and self.rafaga_sound:
-                        print(f"[DEBUG] Activando ráfaga...")
+                    if self.rafaga_sound:
+                        print(f"[DEBUG] Activando ráfaga después de {elapsed}ms")
                         # Parar la música de Cthulhu
                         self.music_channel.stop()
                         
@@ -2343,6 +2341,9 @@ class DungeonBoard:
                     self.thought_active = True
                     self.thought_blocks_movement = True
                     
+                    # Limpiar cola de eventos para evitar movimientos pendientes
+                    pygame.event.clear([pygame.KEYDOWN, pygame.KEYUP])
+                    
                     async def delayed_blood_thought():
                         await asyncio.sleep(1.0)  # Esperar 1 segundo
                         self.trigger_thought(
@@ -2355,13 +2356,15 @@ class DungeonBoard:
                     return  # BLOQUEAR ahora que ya entró
                 
                 # Verificar si hay antorchas en la celda actual
-                if not self.torch_thought_triggered and self.torch_sound and self.has_torches(target_row, target_col):
-                    print(f"[DEBUG] Activando pensamiento de antorcha en ({target_row}, {target_col})")
-                    print(f"[DEBUG] has_torches() = {self.has_torches(target_row, target_col)}")
-                    print(f"[DEBUG] count_torches() = {self.count_torches(target_row, target_col, self.board[target_row][target_col])}")
+                # IMPORTANTE: Verificar tanto has_torches() como count_torches() > 0
+                cell = self.board[target_row][target_col]
+                if not self.torch_thought_triggered and self.torch_sound and self.has_torches(target_row, target_col) and self.count_torches(target_row, target_col, cell) > 0:
                     self.torch_thought_triggered = True
                     self.thought_active = True
                     self.thought_blocks_movement = True
+                    
+                    # Limpiar cola de eventos para evitar movimientos pendientes
+                    pygame.event.clear([pygame.KEYDOWN, pygame.KEYUP])
                     
                     async def delayed_torch_thought():
                         await asyncio.sleep(1.0)  # Esperar 1 segundo
@@ -2376,20 +2379,21 @@ class DungeonBoard:
                 
                 # Verificar si entró en la celda final
                 if (target_row, target_col) == self.exit_position and not self.exit_image_shown:
-                    print(f"[DEBUG] Entrando en celda de salida ({target_row}, {target_col})")
                     self.exit_image_shown = True
                     self.exit_image_start_time = pygame.time.get_ticks()
                     self.exit_thought_active = True  # Marcar que estamos en pensamiento de salida
-                    print(f"[DEBUG] exit_thought_active={self.exit_thought_active}, exit_image_start_time={self.exit_image_start_time}")
+                    
+                    # Limpiar cola de eventos para evitar movimientos pendientes
+                    pygame.event.clear([pygame.KEYDOWN, pygame.KEYUP])
                     
                     # Activar pensamiento de la salida con sonido de abominación
                     if self.abominacion_sound:
-                        print(f"[DEBUG] Activando pensamiento de abominación...")
                         self.trigger_thought(
                             sounds=[(self.abominacion_sound, 0)],
                             images=[(self.exit_image, 0)] if self.exit_image else None,
                             blocks_movement=True
                         )
+                        print(f"[DEBUG] Pensamiento de salida activado - exit_thought_active={self.exit_thought_active}")
             # si existe pero no tiene la salida complementaria, no se puede mover
             return
 
