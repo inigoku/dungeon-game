@@ -2626,10 +2626,10 @@ class DungeonBoard:
         if cell.cell_type not in (CellType.PASILLO, CellType.HABITACION, CellType.SALIDA):
             return False
         
-        # Solo en celdas a distancia mínima de 5 de la entrada
+        # Solo en celdas a distancia mínima de 2 de la entrada
         entrance_row, entrance_col = self.start_position
         distance = abs(entrance_row - board_row) + abs(entrance_col - board_col)
-        return distance >= 5
+        return distance >= 2
     
     def draw_blood_stains(self, board_row, board_col, x, y, brightness_factor: float = 1.0):
         """Dibuja manchas de sangre en celdas cercanas a la salida.
