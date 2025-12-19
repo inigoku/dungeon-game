@@ -2637,6 +2637,12 @@ class DungeonBoard:
         probability = 1.0 - ((distance - 1) / 9.0) * 0.7
         return rnd.random() <= probability
     
+    def has_torches(self, board_row, board_col):
+        """Verifica si una celda tiene antorchas."""
+        cell = self.board[board_row][board_col]
+        # Las antorchas solo aparecen en habitaciones
+        return cell.cell_type == CellType.HABITACION
+    
     def draw_blood_stains(self, board_row, board_col, x, y, brightness_factor: float = 1.0):
         """Dibuja manchas de sangre en celdas cercanas a la salida.
         Las manchas de sangre se oscurecen con el 50% del gradiente de distancia.
