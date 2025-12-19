@@ -290,13 +290,6 @@ class DungeonBoard:
         self.intro_thought_triggered = False  # Flag para el pensamiento de intro
         self.intro_thought_finished = False  # Flag para cuando termina el pensamiento de intro
         
-        # Variables para delay de pensamientos al entrar en celdas
-        self.last_entered_cell = None
-        self.cell_enter_time = 0
-        self.thought_delay = 1000  # 1 segundo de delay
-        self.pending_thought = None  # Pensamiento pendiente por activar
-        self.pending_thought_time = 0  # Tiempo para activar el pensamiento pendiente
-        
         # Sonido de sangre (usado para pensamientos)
         self.blood_sound = None
         try:
@@ -2298,12 +2291,6 @@ class DungeonBoard:
                 
                 # Actualizar posición lógica (la cámara se moverá suavemente hacia esta posición)
                 self.current_position = (target_row, target_col)
-                
-                # Tracking de cambio de celda para delay de pensamientos
-                if self.last_entered_cell != (target_row, target_col):
-                    self.last_entered_cell = (target_row, target_col)
-                    self.cell_enter_time = pygame.time.get_ticks()
-                
                 # Marcar la celda como visitada
                 self.visited_cells.add((target_row, target_col))
                 # Revelar celdas adyacentes con salidas
@@ -2314,24 +2301,40 @@ class DungeonBoard:
                     self.exit_image_shown = True
                     self.exit_image_start_time = pygame.time.get_ticks()
                 
-                # Activar pensamiento de sangre si ve manchas por primera vez (con delay de 1s)
-                if not self.blood_thought_triggered and self.blood_sound and not self.pending_thought:
+                # Activar pensamiento de sangre si ve manchas por primera vez
+                if not self.blood_thought_triggered and self.blood_sound:
                     # Verificar si hay manchas de sangre en esta celda
                     if self.has_blood_stains(target_row, target_col):
-                        current_time = pygame.time.get_ticks()
-                        self.pending_thought = 'blood'
-                        self.pending_thought_time = current_time + self.thought_delay
-                        self.blood_thought_triggered = True  # Marcar como triggered para no volver a activarlo
+                        # Esperar 1 segundo usando asyncio antes de activar el pensamiento
+                        import asyncio
+                        async def delayed_blood_thought():
+                            await asyncio.sleep(1.0)
+                            self.trigger_thought(
+                                sounds=[(self.blood_sound, 0)],
+                                images=[(self.blood_image, 0)] if self.blood_image else None,
+                                subtitles=[("¿Es eso... sangre?!?", 10000)],
+                                blocks_movement=True
+                            )
+                        asyncio.create_task(delayed_blood_thought())
+                        self.blood_thought_triggered = True
                 
-                # Activar pensamiento de antorchas si es la primera vez que entra en una celda con antorchas (con delay de 1s)
-                if not self.torch_thought_triggered and self.torch_sound and not self.pending_thought:
+                # Activar pensamiento de antorchas si es la primera vez que entra en una celda con antorchas
+                if not self.torch_thought_triggered and self.torch_sound:
                     current_cell = self.board[target_row][target_col]
                     torch_count = self.count_torches(target_row, target_col, current_cell)
                     if torch_count > 0:
-                        current_time = pygame.time.get_ticks()
-                        self.pending_thought = 'torch'
-                        self.pending_thought_time = current_time + self.thought_delay
-                        self.torch_thought_triggered = True  # Marcar como triggered para no volver a activarlo
+                        # Esperar 1 segundo usando asyncio antes de activar el pensamiento
+                        import asyncio
+                        async def delayed_torch_thought():
+                            await asyncio.sleep(1.0)
+                            self.trigger_thought(
+                                sounds=[(self.torch_sound, 0)],
+                                images=[(self.torch_image, 0)] if self.torch_image else None,
+                                subtitles=[("Una antorcha encendida... ¡Interesante!", 6000)],
+                                blocks_movement=True
+                            )
+                        asyncio.create_task(delayed_torch_thought())
+                        self.torch_thought_triggered = True
             # si existe pero no tiene la salida complementaria, no se puede mover
             return
 
@@ -2892,24 +2895,6 @@ class DungeonBoard:
         while running:
             # Actualizar fade de música si está activo
             self.update_fade()
-            
-            # Activar pensamientos pendientes cuando llegue el momento
-            if self.pending_thought and not (REFACTORED_MODULES and self.audio.thought_active):
-                current_time = pygame.time.get_ticks()
-                if current_time >= self.pending_thought_time:
-                    if self.pending_thought == 'blood':
-                        self.trigger_thought(
-                            sounds=[(self.blood_sound, 0)],
-                            images=[(self.blood_image, 0)] if self.blood_image else None,
-                            subtitles=[("¿Es eso... sangre?!?", 10000)]
-                        )
-                    elif self.pending_thought == 'torch':
-                        self.trigger_thought(
-                            sounds=[(self.torch_sound, 0)],
-                            images=[(self.torch_image, 0)] if self.torch_image else None,
-                            subtitles=[("Una antorcha encendida... ¡Interesante!", 6000)]
-                        )
-                    self.pending_thought = None
             
             # Actualizar fade-in del viento
             if self.wind_fading_in:
