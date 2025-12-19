@@ -2640,8 +2640,8 @@ class DungeonBoard:
     def has_torches(self, board_row, board_col):
         """Verifica si una celda tiene antorchas."""
         cell = self.board[board_row][board_col]
-        # Las antorchas solo aparecen en habitaciones
-        return cell.cell_type == CellType.HABITACION
+        # Las antorchas aparecen tanto en pasillos como en habitaciones
+        return cell.cell_type in (CellType.PASILLO, CellType.HABITACION)
     
     def draw_blood_stains(self, board_row, board_col, x, y, brightness_factor: float = 1.0):
         """Dibuja manchas de sangre en celdas cercanas a la salida.
