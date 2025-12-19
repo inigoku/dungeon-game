@@ -1,17 +1,20 @@
 """Efectos visuales del dungeon (líneas quebradas, texturas de piedra)."""
-import pygame
+import pygame  # type: ignore
 import random
+from typing import Tuple, Callable
 from models.cell import Cell, Direction
 
 
 class EffectsRenderer:
     """Renderiza efectos visuales como líneas quebradas y texturas de piedra."""
     
-    def __init__(self, screen, cell_size):
-        self.screen = screen
-        self.cell_size = cell_size
+    def __init__(self, screen: pygame.Surface, cell_size: int) -> None:
+        self.screen: pygame.Surface = screen
+        self.cell_size: int = cell_size
     
-    def draw_broken_line(self, color, start_pos, end_pos, width, board_row, board_col, line_id):
+    def draw_broken_line(self, color: Tuple[int, int, int], start_pos: Tuple[int, int], 
+                        end_pos: Tuple[int, int], width: int, board_row: int, 
+                        board_col: int, line_id: int) -> None:
         """Dibuja una línea quebrada (con segmentos irregulares).
         
         Args:
@@ -24,7 +27,12 @@ class EffectsRenderer:
             line_id: ID único de la línea (para semilla)
         """
         # Asegurar que el color tiene valores enteros
-        color = tuple(int(c) for c in color)
+        if isinstance(color, (int, float)):
+            # Si color es un solo número, convertir a tupla gris
+            int_color: Tuple[int, int, int] = (int(color), int(color), int(color))
+        else:
+            # Si color es una tupla, convertir cada componente a int
+            int_color = tuple(int(c) for c in color)  # type: ignore
         
         # Usar posición + line_id como semilla para reproducibilidad
         seed = board_row * 100000 + board_col * 100 + line_id
@@ -38,7 +46,7 @@ class EffectsRenderer:
         
         if length < 5:
             # Línea muy corta, dibujar directamente
-            pygame.draw.line(self.screen, color, start_pos, end_pos, width)
+            pygame.draw.line(self.screen, int_color, start_pos, end_pos, width)
             return
         
         # Número de segmentos (más segmentos = más quebrada)
@@ -75,9 +83,9 @@ class EffectsRenderer:
         
         # Dibujar segmentos
         for i in range(len(points) - 1):
-            pygame.draw.line(self.screen, color, points[i], points[i + 1], width)
+            pygame.draw.line(self.screen, int_color, points[i], points[i + 1], width)
     
-    def draw_stone_texture(self, board_row, board_col, x, y):
+    def draw_stone_texture(self, board_row: int, board_col: int, x: int, y: int) -> None:
         """Dibuja una textura de piedra en la celda dada usando un patrón determinista por celda.
 
         Esto crea pequeñas 'piedras' con tonos grisáceos y bordes sutiles para dar sensación de muro.
@@ -121,7 +129,9 @@ class EffectsRenderer:
             mortar_color = (30, 30, 30)
             pygame.draw.line(self.screen, mortar_color, (x1, y1), (x2, y2), 2)
 
-    def draw_stone_in_walls(self, board_row, board_col, x, y, cell, brightness_factor, count_torches_callback):
+    def draw_stone_in_walls(self, board_row: int, board_col: int, x: int, y: int, 
+                           cell: Cell, brightness_factor: float, 
+                           count_torches_callback: Callable[[int, int, Cell], int]) -> None:
         """Dibuja textura de piedra únicamente en las zonas de pared dentro
         de una celda de tipo PASILLO (entre el suelo/centro y los bordes).
 

@@ -1,18 +1,20 @@
 """Decoraciones visuales del dungeon (antorchas, sangre, fuente, escaleras)."""
-import pygame
+import pygame  # type: ignore
 import random
 import math
-from models.cell import Direction
+from typing import Tuple
+from models.cell import Cell, Direction
 
 
 class DecorationRenderer:
     """Renderiza decoraciones como antorchas, manchas de sangre, fuente y escaleras."""
     
-    def __init__(self, screen, cell_size):
-        self.screen = screen
-        self.cell_size = cell_size
+    def __init__(self, screen: pygame.Surface, cell_size: int) -> None:
+        self.screen: pygame.Surface = screen
+        self.cell_size: int = cell_size
     
-    def draw_blood_stains(self, board_row, board_col, x, y, brightness_factor, exit_position):
+    def draw_blood_stains(self, board_row: int, board_col: int, x: int, y: int, 
+                         brightness_factor: float, exit_position: Tuple[int, int]) -> None:
         """Dibuja manchas de sangre en celdas cercanas a la salida.
         
         Args:
@@ -67,7 +69,8 @@ class DecorationRenderer:
                                  (stain_x + offset_x, stain_y + offset_y),
                                  circle_size)
     
-    def draw_torches(self, board_row, board_col, x, y, cell, num_torches):
+    def draw_torches(self, board_row: int, board_col: int, x: int, y: int, 
+                    cell: Cell, num_torches: int) -> None:
         """Dibuja antorchas animadas en las paredes sin salida.
         
         Args:
@@ -109,7 +112,7 @@ class DecorationRenderer:
             _, torch_x, torch_y = possible_positions[i]
             self._draw_single_torch(torch_x, torch_y, torch_size, flicker)
     
-    def _draw_single_torch(self, x, y, size, flicker):
+    def _draw_single_torch(self, x: int, y: int, size: int, flicker: float) -> None:
         """Dibuja una antorcha individual con llama animada."""
         # Mango de madera
         wood_color = (101, 67, 33)
@@ -128,7 +131,7 @@ class DecorationRenderer:
         inner_radius = int(flame_radius * 0.5)
         pygame.draw.circle(self.screen, inner_flame_color, (x, y), inner_radius)
     
-    def draw_fountain(self, x, y):
+    def draw_fountain(self, x: int, y: int) -> None:
         """Dibuja una fuente en la esquina superior izquierda de una celda."""
         fountain_size = max(20, int(self.cell_size * 0.3))
         fountain_x = x + fountain_size // 2 + 5
@@ -159,7 +162,7 @@ class DecorationRenderer:
         pygame.draw.circle(self.screen, water_border_color,
                           (fountain_x, fountain_y), water_radius, 2)
     
-    def draw_spiral_stairs(self, x, y):
+    def draw_spiral_stairs(self, x: int, y: int) -> None:
         """Dibuja una escalera de caracol en una esquina de la celda."""
         stairs_size = max(20, int(self.cell_size * 0.35))
         stairs_x = x + self.cell_size - stairs_size // 2 - 5

@@ -14,16 +14,16 @@ from config import (
 class LightingSystem:
     """Maneja todos los cálculos de iluminación del dungeon."""
     
-    def __init__(self):
-        self.lines_darkening_enabled = True
+    def __init__(self) -> None:
+        self.lines_darkening_enabled: bool = True
     
-    def calculate_brightness(self, base_brightness, torch_count):
+    def calculate_brightness(self, base_brightness: int, torch_count: int) -> int:
         """Calcula el brillo total combinando base y antorchas."""
         torch_brightness = min(MAX_TORCH_BRIGHTNESS, torch_count * TORCH_BRIGHTNESS_PER_UNIT)
         brightness = max(0, base_brightness + torch_brightness)
         return brightness
     
-    def calculate_base_brightness(self, distance_from_start, total_distance):
+    def calculate_base_brightness(self, distance_from_start: float, total_distance: float) -> int:
         """Calcula el brillo base según la distancia desde la entrada."""
         if total_distance > 0:
             progress = distance_from_start / total_distance
@@ -34,11 +34,11 @@ class LightingSystem:
         base_brightness = int(BASE_BRIGHTNESS_ENTRANCE * (1.0 - progress))
         return base_brightness
     
-    def calculate_brightness_factor(self, brightness):
+    def calculate_brightness_factor(self, brightness: int) -> float:
         """Convierte brillo (0-255) a factor (0.0-1.0)."""
         return brightness / 255.0
     
-    def calculate_lines_brightness_factor(self, cell_type, distance_from_start=0, total_distance=1):
+    def calculate_lines_brightness_factor(self, cell_type: CellType, distance_from_start: float = 0, total_distance: float = 1) -> float:
         """Calcula el factor de brillo para las líneas."""
         if cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
             if total_distance > 0:
@@ -65,11 +65,11 @@ class LightingSystem:
         
         return lines_brightness_factor
     
-    def apply_blood_darkening(self, brightness_factor):
+    def apply_blood_darkening(self, brightness_factor: float) -> float:
         """Aplica el oscurecimiento del 50% a la sangre."""
         return 1.0 - BLOOD_DARKENING_FACTOR * (1.0 - brightness_factor)
     
-    def toggle_lines_darkening(self):
+    def toggle_lines_darkening(self) -> bool:
         """Toggle del oscurecimiento de líneas."""
         self.lines_darkening_enabled = not self.lines_darkening_enabled
         status = "activado" if self.lines_darkening_enabled else "desactivado"

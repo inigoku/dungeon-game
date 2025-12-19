@@ -279,6 +279,7 @@ class DungeonBoard:
         
         self.torch_thought_triggered = False  # Flag para el pensamiento de antorchas
         self.intro_thought_triggered = False  # Flag para el pensamiento de intro
+        self.intro_thought_finished = False  # Flag para cuando termina el pensamiento de intro
         
         # Sonido de sangre (usado para pensamientos)
         self.blood_sound = None
@@ -289,6 +290,18 @@ class DungeonBoard:
             print(f"No se pudo cargar sound/sangre.ogg: {e}")
         
         self.blood_thought_triggered = False  # Flag para el pensamiento de sangre
+        
+        # Sonido de ráfaga (para cuando se apagan las antorchas)
+        self.rafaga_sound = None
+        try:
+            self.rafaga_sound = pygame.mixer.Sound("sound/rafaga.ogg")
+            self.rafaga_sound.set_volume(0.9)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/rafaga.ogg: {e}")
+        
+        self.rafaga_thought_triggered = False  # Flag para el pensamiento de ráfaga
+        self.wind_fade_start_time = 0  # Tiempo de inicio del fade-in del viento
+        self.wind_fading_in = False  # Flag para el fade-in del viento
         
         # Sonidos de pasos
         self.footstep_sounds = []
@@ -315,7 +328,14 @@ class DungeonBoard:
         self.exit_image_shown = False
         self.exit_image_start_time = 0
         self.exit_image = None
+        self.torch_image = None
+        self.blood_image = None
+        self.thought_image = None  # Imagen actual del pensamiento (separada de exit_image)
+        self.thought_image_shown = False
+        self.thought_image_start_time = 0
         self.torches_extinguished = False  # Flag para apagar antorchas después de la losa
+        
+        # Cargar imagen de losa (salida)
         try:
             original_image = pygame.image.load("images/losa.png")
             # Escalar manteniendo la proporción para que quepa en la pantalla
@@ -335,8 +355,33 @@ class DungeonBoard:
             new_height = int(original_height * scale)
             
             self.exit_image = pygame.transform.smoothscale(original_image, (new_width, new_height))
+            print(f"[DEBUG] Imagen de losa cargada: {new_width}x{new_height}")
         except pygame.error as e:
             print(f"No se pudo cargar images/losa.png: {e}")
+        
+        # Cargar imagen de antorcha
+        try:
+            torch_img = pygame.image.load("images/antorcha.png")
+            # Escalar a un tamaño apropiado
+            max_size = min(self.width, self.height) * 0.6
+            scale = max_size / max(torch_img.get_width(), torch_img.get_height())
+            new_w = int(torch_img.get_width() * scale)
+            new_h = int(torch_img.get_height() * scale)
+            self.torch_image = pygame.transform.smoothscale(torch_img, (new_w, new_h))
+        except pygame.error as e:
+            print(f"No se pudo cargar images/antorcha.png: {e}")
+        
+        # Cargar imagen de sangre
+        try:
+            blood_img = pygame.image.load("images/sangre.png")
+            # Escalar a un tamaño apropiado
+            max_size = min(self.width, self.height) * 0.6
+            scale = max_size / max(blood_img.get_width(), blood_img.get_height())
+            new_w = int(blood_img.get_width() * scale)
+            new_h = int(blood_img.get_height() * scale)
+            self.blood_image = pygame.transform.smoothscale(blood_img, (new_w, new_h))
+        except pygame.error as e:
+            print(f"No se pudo cargar images/sangre.png: {e}")
         
         # Debug mode
         self.debug_mode = False
@@ -730,19 +775,34 @@ class DungeonBoard:
         # Dibujar subtítulos si están activos
         self.draw_subtitles()
         
-        # Si se debe mostrar la imagen de la salida (10 segundos)
-        if self.exit_image_shown and self.exit_image:
-            current_time = pygame.time.get_ticks()
-            if current_time - self.exit_image_start_time < 10000:  # 10 segundos
-                # Centrar la imagen en la pantalla
-                image_x = (self.width - self.exit_image.get_width()) // 2
-                image_y = (self.height - self.exit_image.get_height()) // 2
-                self.screen.blit(self.exit_image, (image_x, image_y))
-            else:
-                # Después de 10 segundos, dejar de mostrarla y apagar antorchas
-                self.exit_image_shown = False
-                if not self.torches_extinguished:
-                    self.torches_extinguished = True
+        # Dibujar imagen del pensamiento activo (si hay una)
+        if self.thought_image_shown and self.thought_image:
+            # Centrar la imagen en la pantalla
+            image_x = (self.width - self.thought_image.get_width()) // 2
+            image_y = (self.height - self.thought_image.get_height()) // 2
+            self.screen.blit(self.thought_image, (image_x, image_y))
+            
+            # Si es la imagen de salida (losa), verificar si expiró para activar ráfaga
+            if self.thought_image == self.exit_image:
+                current_time = pygame.time.get_ticks()
+                if current_time - self.thought_image_start_time >= 12000:
+                    # Activar pensamiento de ráfaga que apagará las antorchas
+                    if not self.rafaga_thought_triggered and self.rafaga_sound:
+                        # Parar la música de Cthulhu
+                        self.music_channel.stop()
+                        
+                        # Activar pensamiento de ráfaga (bloquea movimiento)
+                        self.trigger_thought(
+                            sounds=[(self.rafaga_sound, 0)],  # Duración automática (~8s)
+                            blocks_movement=True
+                        )
+                        self.rafaga_thought_triggered = True
+                        self.torches_extinguished = True
+                        print("[DEBUG] Ráfaga activada - antorchas apagadas")
+                        
+                        # Iniciar fade-in del viento
+                        self.wind_fade_start_time = pygame.time.get_ticks()
+                        self.wind_fading_in = True
         
         # Mostrar diálogo de confirmación de salida si está activo (siempre encima de todo)
         if self.asking_exit_confirmation:
@@ -894,11 +954,8 @@ class DungeonBoard:
         if not self.showing_subtitles:
             return
         
-        # Verificar si los subtítulos han expirado
-        current_time = pygame.time.get_ticks()
-        if current_time - self.subtitle_start_time > self.subtitle_duration:
-            self.showing_subtitles = False
-            return
+        # Los threads manejan automáticamente la expiración de subtítulos
+        # Solo dibujamos lo que el AudioManager nos indica
         
         # Dividir el texto en líneas que quepan en el ancho del juego
         font = pygame.font.Font(None, 32)
@@ -938,14 +995,26 @@ class DungeonBoard:
             text_rect = text_surface.get_rect(center=(self.width // 2, start_y + i * line_height + line_height // 2))
             self.screen.blit(text_surface, text_rect)
     
-    def trigger_thought(self, sound, subtitles, blocks_movement=True):
-        """Inicia un pensamiento con sonido y subtítulos.
+    def trigger_thought(self, sounds=None, images=None, subtitles=None, blocks_movement=True):
+        """Inicia un pensamiento con arrays de sonidos, imágenes y subtítulos.
         
         Args:
-            sound: pygame.mixer.Sound a reproducir
+            sounds: Lista de tuplas (sound_obj, duración_ms) donde 0 = duración auto del audio
+            images: Lista de tuplas (image_surface, duración_ms)
             subtitles: Lista de tuplas (texto, duración_ms)
             blocks_movement: Si True, bloquea el movimiento durante el pensamiento
         """
+        if REFACTORED_MODULES:
+            # Delegar al AudioManager que usa threading
+            self.audio.trigger_thought(
+                sounds=sounds,
+                images=images,
+                subtitles=subtitles,
+                blocks_movement=blocks_movement
+            )
+            return
+        
+        # Versión legacy
         # Si hay un pensamiento activo, detenerlo antes de comenzar el nuevo
         if self.thought_active:
             # Detener el sonido anterior si existe
@@ -980,15 +1049,31 @@ class DungeonBoard:
     def update_thought(self):
         """Actualiza el estado del pensamiento activo."""
         if REFACTORED_MODULES:
+            # Guardar estado anterior de thought_active
+            was_active = self.thought_active
+            
             self.audio.update_thoughts()
-            # Sincronizar estado de subtítulos
+            # Sincronizar estado de subtítulos e imágenes (el thread maneja el timing)
             self.showing_subtitles = self.audio.showing_subtitles
             self.subtitle_text = self.audio.subtitle_text
             self.thought_active = self.audio.thought_active
             self.thought_blocks_movement = self.audio.thought_blocks_movement
+            # Sincronizar imagen del pensamiento (sin sobrescribir exit_image)
+            self.thought_image_shown = self.audio.showing_image
+            if self.audio.showing_image:
+                self.thought_image = self.audio.image_surface
+                self.thought_image_start_time = self.audio.image_start_time
+            else:
+                self.thought_image = None
+            
+            # Si el pensamiento de intro acaba de terminar, marcar flag
+            if was_active and not self.thought_active and self.intro_thought_triggered and not self.intro_thought_finished:
+                self.intro_thought_finished = True
+                print("[DEBUG] Pensamiento de intro terminado - antorchas ahora disponibles")
+            
             return
         
-        # Versión legacy
+        # Versión legacy (sin cambios)
         if not self.thought_active:
             return
         
@@ -1097,15 +1182,14 @@ class DungeonBoard:
                 
                 # Activar pensamiento de intro cuando el personaje entra en el calabozo
                 if not self.intro_thought_triggered and self.intro_sound:
-                    # Duración de intro.ogg (aproximada: 34 segundos = 34000ms)
-                    audio_duration = 34000
+                    # Duración de intro.ogg: 0 = auto (duración del audio)
                     self.trigger_thought(
-                        self.intro_sound,
-                        [("Usa A, W, S y D para moverte.", 4000),
+                        sounds=[(self.intro_sound, 0)],
+                        subtitles=[("Usa A, W, S y D para moverte.", 4000),
                          ("Haz zoom con Z y X.", 4000),
                          ("Explora la mazmorra... encuentra la salida...", 6000),
                          ("Ten cuidado con lo que acecha en las sombras.", 6000),
-                         ("¡Buena suerte, valiente guerrero!", audio_duration - 20000),
+                         ("¡Buena suerte, valiente guerrero!", 14000),  # Resto del audio
                          ],
                         blocks_movement=False  # La intro no bloquea el movimiento
                     )
@@ -2168,11 +2252,10 @@ class DungeonBoard:
                 if not self.blood_thought_triggered and self.blood_sound:
                     # Verificar si hay manchas de sangre en esta celda
                     if self.has_blood_stains(target_row, target_col):
-                        # Duración del audio de sangre (aproximada: 10 segundos = 10000ms)
-                        audio_duration = 10000
                         self.trigger_thought(
-                            self.blood_sound,
-                            [("¿Es eso... sangre?!?", audio_duration)]
+                            sounds=[(self.blood_sound, 0)],  # 0 = duración auto
+                            images=[(self.blood_image, 0)] if self.blood_image else None,  # Imagen por duración del audio
+                            subtitles=[("¿Es eso... sangre?!?", 10000)]
                         )
                         self.blood_thought_triggered = True
                 
@@ -2181,11 +2264,10 @@ class DungeonBoard:
                     current_cell = self.board[target_row][target_col]
                     torch_count = self.count_torches(target_row, target_col, current_cell)
                     if torch_count > 0:
-                        # Obtener duración del audio (aproximada: 6 segundos = 6000ms)
-                        audio_duration = 6000
                         self.trigger_thought(
-                            self.torch_sound,
-                            [("Una antorcha encendida... ¡Interesante!", audio_duration)]
+                            sounds=[(self.torch_sound, 0)],  # 0 = duración auto
+                            images=[(self.torch_image, 0)] if self.torch_image else None,  # Imagen por duración del audio
+                            subtitles=[("Una antorcha encendida... ¡Interesante!", 6000)]
                         )
                         self.torch_thought_triggered = True
             # si existe pero no tiene la salida complementaria, no se puede mover
@@ -2281,7 +2363,7 @@ class DungeonBoard:
             return 0
         
         # Si el pensamiento de intro no ha terminado, no hay antorchas
-        if not self.intro_thought_triggered or (self.thought_active and not self.thought_blocks_movement):
+        if not self.intro_thought_finished:
             return 0
         
         # Si no está en el camino principal, no hay antorchas
@@ -2634,13 +2716,19 @@ class DungeonBoard:
         elif self.cthulhu_played:  # Volumen de cthulhu aumenta al acercarse a la salida
             # Si estamos en la celda de salida, volumen máximo (1.0) y mostrar subtítulo
             if (curr_row, curr_col) == self.exit_position:
-                self.music_channel.set_volume(1.0)
-                # Mostrar subtítulos de Cthulhu solo una vez al llegar a la salida
+                # Solo configurar volumen de Cthulhu si el viento aún no está sonando
+                if not self.wind_fading_in and self.current_music == 'cthulhu':
+                    self.music_channel.set_volume(1.0)
+                
+                # Mostrar subtítulos e imagen de Cthulhu solo una vez al llegar a la salida
                 if not self.showing_subtitles and not hasattr(self, 'cthulhu_subtitle_shown'):
-                    self.showing_subtitles = True
-                    self.subtitle_text = "PH'NGLUI MGLW'NAFH CTHULHU R'LYEH WGAH'NAGL FHTAGN"
-                    self.subtitle_start_time = pygame.time.get_ticks()
-                    self.subtitle_duration = 8000  # 8 segundos
+                    # Usar trigger_thought para el pensamiento completo de Cthulhu
+                    # La imagen dura más que el subtítulo para dar un efecto dramático
+                    self.trigger_thought(
+                        images=[(self.exit_image, 12000)] if self.exit_image else None,  # Imagen por 12 segundos
+                        subtitles=[("PH'NGLUI MGLW'NAFH CTHULHU R'LYEH WGAH'NAGL FHTAGN", 8000)],
+                        blocks_movement=False
+                    )
                     self.cthulhu_subtitle_shown = True
             # Si volvemos cerca del inicio, regresar a adagio
             elif distance_from_start <= 5.0 and 'adagio' in self.music_sounds:
@@ -2717,6 +2805,31 @@ class DungeonBoard:
             # Actualizar fade de música si está activo
             self.update_fade()
             
+            # Actualizar fade-in del viento
+            if self.wind_fading_in:
+                current_time = pygame.time.get_ticks()
+                elapsed = current_time - self.wind_fade_start_time
+                
+                # Iniciar viento cuando termina la ráfaga (si no está sonando ya)
+                if elapsed >= 8000 and self.current_music != 'viento':  # ~8s duración de ráfaga
+                    if 'viento' in self.music_sounds:
+                        self.current_music = 'viento'
+                        self.music_channel.play(self.music_sounds['viento'], loops=-1)
+                        self.music_channel.set_volume(0.0)  # Empezar desde silencio
+                        print("[DEBUG] Música de viento iniciada")
+                
+                # Fade-in durante 20 segundos después de que empieza el viento
+                if self.current_music == 'viento':
+                    fade_elapsed = elapsed - 8000  # Tiempo desde que empezó el viento
+                    if fade_elapsed < 20000:  # 20 segundos de fade-in
+                        volume = (fade_elapsed / 20000.0)  # 0.0 a 1.0
+                        self.music_channel.set_volume(volume)
+                    else:
+                        # Fade completo, volumen máximo
+                        self.music_channel.set_volume(1.0)
+                        self.wind_fading_in = False
+                        print("[DEBUG] Fade-in de viento completado")
+            
             # Actualizar sistema de pensamientos
             self.update_thought()
             
@@ -2789,6 +2902,10 @@ class DungeonBoard:
                     elif event.key == pygame.K_x:
                         self.zoom_out()
                     else:
+                        # Bloquear movimiento durante la animación de introducción
+                        if self.intro_anim_active:
+                            continue
+                        
                         # Expect an arrow key to move in that direction
                         dir_map = {
                             pygame.K_UP: Direction.N,

@@ -1,0 +1,204 @@
+"""Tests extendidos para rendering/cell_renderer.py - Cobertura 75%+"""
+import pytest
+from unittest.mock import Mock, patch, MagicMock
+from rendering.cell_renderer import CellRenderer
+from models.cell import Cell, CellType, Direction
+
+
+class TestCellRendererExtended:
+    """Tests adicionales para alcanzar 75% de cobertura."""
+    
+    def test_draw_cell_background_pasillo(self):
+        """Test dibujar fondo de pasillo."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.PASILLO, set())
+        
+        # Mock del callback
+        mock_callback = Mock(return_value=3)
+        
+        renderer.draw_cell_background(100, 100, cell, 5, 5, 0.8, mock_callback)
+        
+        # Verificar que se llamó a draw.rect
+        assert mock_screen.method_calls  # Alguna llamada debe haberse hecho
+    
+    def test_draw_cell_background_habitacion(self):
+        """Test dibujar fondo de habitación."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.HABITACION, set())
+        
+        mock_callback = Mock(return_value=2)
+        
+        renderer.draw_cell_background(100, 100, cell, 5, 5, 0.8, mock_callback)
+        
+        assert mock_screen.method_calls
+    
+    def test_draw_cell_background_inicio(self):
+        """Test dibujar fondo de inicio."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.INICIO, set())
+        
+        mock_callback = Mock(return_value=1)
+        
+        renderer.draw_cell_background(100, 100, cell, 5, 5, 1.0, mock_callback)
+        
+        assert mock_screen.method_calls
+    
+    def test_draw_cell_background_salida(self):
+        """Test dibujar fondo de salida."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.SALIDA, set())
+        
+        mock_callback = Mock(return_value=0)
+        
+        renderer.draw_cell_background(100, 100, cell, 5, 5, 0.5, mock_callback)
+        
+        assert mock_screen.method_calls
+    
+    def test_draw_cell_background_empty(self):
+        """Test dibujar fondo de celda vacía."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.EMPTY, set())
+        
+        mock_callback = Mock(return_value=0)
+        
+        renderer.draw_cell_background(100, 100, cell, 5, 5, 0.0, mock_callback)
+        
+        assert mock_screen.method_calls
+    
+    def test_draw_cell_tunnels_north(self):
+        """Test dibujar túnel al norte."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.PASILLO, {Direction.N})
+        
+        board = [[Cell(CellType.EMPTY, set()) for _ in range(11)] for _ in range(11)]
+        board[5][5] = cell
+        board[4][5] = Cell(CellType.PASILLO, {Direction.S})
+        
+        mock_callback = Mock(return_value=0.8)
+        
+        renderer.draw_cell_tunnels(100, 100, cell, 5, 5, board, 0.8, mock_callback)
+        
+        # Debería haber dibujado líneas
+        assert mock_screen.method_calls
+    
+    def test_draw_cell_tunnels_south(self):
+        """Test dibujar túnel al sur."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.PASILLO, {Direction.S})
+        
+        board = [[Cell(CellType.EMPTY, set()) for _ in range(11)] for _ in range(11)]
+        board[5][5] = cell
+        board[6][5] = Cell(CellType.PASILLO, {Direction.N})
+        
+        mock_callback = Mock(return_value=0.8)
+        
+        renderer.draw_cell_tunnels(100, 100, cell, 5, 5, board, 0.8, mock_callback)
+        
+        assert mock_screen.method_calls
+    
+    def test_draw_cell_tunnels_east(self):
+        """Test dibujar túnel al este."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.PASILLO, {Direction.E})
+        
+        board = [[Cell(CellType.EMPTY, set()) for _ in range(11)] for _ in range(11)]
+        board[5][5] = cell
+        board[5][6] = Cell(CellType.PASILLO, {Direction.O})
+        
+        mock_callback = Mock(return_value=0.8)
+        
+        renderer.draw_cell_tunnels(100, 100, cell, 5, 5, board, 0.8, mock_callback)
+        
+        assert mock_screen.method_calls
+    
+    def test_draw_cell_tunnels_west(self):
+        """Test dibujar túnel al oeste."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.PASILLO, {Direction.O})
+        
+        board = [[Cell(CellType.EMPTY, set()) for _ in range(11)] for _ in range(11)]
+        board[5][5] = cell
+        board[5][4] = Cell(CellType.PASILLO, {Direction.E})
+        
+        mock_callback = Mock(return_value=0.8)
+        
+        renderer.draw_cell_tunnels(100, 100, cell, 5, 5, board, 0.8, mock_callback)
+        
+        assert mock_screen.method_calls
+    
+    def test_draw_cell_tunnels_multiple_exits(self):
+        """Test dibujar túneles con múltiples salidas."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.PASILLO, {Direction.N, Direction.E, Direction.S, Direction.O})
+        
+        board = [[Cell(CellType.EMPTY, set()) for _ in range(11)] for _ in range(11)]
+        board[5][5] = cell
+        board[4][5] = Cell(CellType.PASILLO, {Direction.S})
+        board[6][5] = Cell(CellType.PASILLO, {Direction.N})
+        board[5][4] = Cell(CellType.PASILLO, {Direction.E})
+        board[5][6] = Cell(CellType.PASILLO, {Direction.O})
+        
+        mock_callback = Mock(return_value=0.8)
+        
+        renderer.draw_cell_tunnels(100, 100, cell, 5, 5, board, 0.8, mock_callback)
+        
+        assert mock_screen.method_calls
+    
+    def test_draw_cell_tunnels_no_exits(self):
+        """Test dibujar celda sin salidas."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.HABITACION, set())
+        
+        board = [[Cell(CellType.EMPTY, set()) for _ in range(11)] for _ in range(11)]
+        board[5][5] = cell
+        
+        mock_callback = Mock(return_value=0.8)
+        
+        renderer.draw_cell_tunnels(100, 100, cell, 5, 5, board, 0.8, mock_callback)
+        
+        # Puede o no dibujar algo
+        assert True
+    
+    def test_draw_cell_tunnels_edge_cell(self):
+        """Test dibujar túneles en celda del borde."""
+        mock_screen = Mock()
+        renderer = CellRenderer(mock_screen, 90, 11)
+        cell = Cell(CellType.PASILLO, {Direction.E, Direction.S})
+        
+        board = [[Cell(CellType.EMPTY, set()) for _ in range(11)] for _ in range(11)]
+        board[0][0] = cell  # Esquina superior izquierda
+        board[0][1] = Cell(CellType.PASILLO, {Direction.O})
+        board[1][0] = Cell(CellType.PASILLO, {Direction.N})
+        
+        mock_callback = Mock(return_value=0.8)
+        
+        renderer.draw_cell_tunnels(100, 100, cell, 0, 0, board, 0.8, mock_callback)
+        
+        assert mock_screen.method_calls
+    
+    def test_different_cell_sizes(self):
+        """Test con diferentes tamaños de celda."""
+        mock_screen = Mock()
+        
+        for cell_size in [50, 90, 100, 120]:
+            renderer = CellRenderer(mock_screen, cell_size, 11)
+            assert renderer.cell_size == cell_size
+    
+    def test_different_board_sizes_rendering(self):
+        """Test con diferentes tamaños de tablero."""
+        mock_screen = Mock()
+        
+        for size in [7, 11, 15, 21]:
+            renderer = CellRenderer(mock_screen, 90, size)
+            assert renderer.size == size

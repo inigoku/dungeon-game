@@ -2,6 +2,7 @@
 import random
 import math
 from collections import deque
+from typing import List, Tuple, Dict, Set
 from models import Cell, CellType, Direction
 from config import MAX_GENERATION_ATTEMPTS
 
@@ -9,24 +10,24 @@ from config import MAX_GENERATION_ATTEMPTS
 class BoardGenerator:
     """Handles dungeon board generation and pathfinding."""
     
-    def __init__(self, size):
-        self.size = size
+    def __init__(self, size: int) -> None:
+        self.size: int = size
     
-    def check_connectivity(self, board, start, end):
+    def check_connectivity(self, board: List[List[Cell]], start: Tuple[int, int], end: Tuple[int, int]) -> bool:
         """Verifica si hay un camino posible entre start y end usando BFS.
         Verifica que las celdas adyacentes tengan salidas enfrentadas.
         """
-        queue = deque([start])
-        visited = {start}
+        queue: deque[Tuple[int, int]] = deque([start])
+        visited: Set[Tuple[int, int]] = {start}
         
-        direction_deltas = {
+        direction_deltas: Dict[Direction, Tuple[int, int]] = {
             Direction.N: (-1, 0),
             Direction.S: (1, 0),
             Direction.E: (0, 1),
             Direction.O: (0, -1),
         }
         
-        opposite_directions = {
+        opposite_directions: Dict[Direction, Direction] = {
             Direction.N: Direction.S,
             Direction.S: Direction.N,
             Direction.E: Direction.O,
@@ -68,7 +69,7 @@ class BoardGenerator:
         
         return False
     
-    def generate_exit_position(self, center):
+    def generate_exit_position(self, center: int) -> Tuple[int, int]:
         """Genera una posición aleatoria para la celda de salida, alejada del centro."""
         max_distance_to_edge = center - 5
         min_distance = int(max_distance_to_edge * 0.75)
@@ -100,18 +101,18 @@ class BoardGenerator:
         
         return (center + max_distance, center)
     
-    def calculate_main_path(self, start, end):
+    def calculate_main_path(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
         """Calcula el camino principal usando A*."""
         from heapq import heappush, heappop
         
-        def heuristic(pos1, pos2):
+        def heuristic(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
             return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
         
-        open_set = []
+        open_set: List[Tuple[int, Tuple[int, int]]] = []
         heappush(open_set, (0, start))
-        came_from = {}
-        g_score = {start: 0}
-        f_score = {start: heuristic(start, end)}
+        came_from: Dict[Tuple[int, int], Tuple[int, int]] = {}
+        g_score: Dict[Tuple[int, int], int] = {start: 0}
+        f_score: Dict[Tuple[int, int], int] = {start: heuristic(start, end)}
         
         while open_set:
             _, current = heappop(open_set)

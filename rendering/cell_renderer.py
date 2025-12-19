@@ -1,23 +1,24 @@
 """Renderizado de celdas individuales del dungeon."""
-import pygame
+import pygame  # type: ignore
+from typing import Callable, Tuple
 from models.cell import Cell, CellType, Direction
 
 
 class CellRenderer:
     """Renderiza celdas individuales del dungeon con todos sus elementos."""
     
-    def __init__(self, screen, cell_size, size):
+    def __init__(self, screen: pygame.Surface, cell_size: int, size: int) -> None:
         """
         Args:
             screen: Superficie de pygame donde dibujar
             cell_size: Tamaño de cada celda en píxeles
             size: Tamaño del tablero (número de celdas por lado)
         """
-        self.screen = screen
-        self.cell_size = cell_size
-        self.size = size
+        self.screen: pygame.Surface = screen
+        self.cell_size: int = cell_size
+        self.size: int = size
     
-    def get_opposite_direction(self, direction):
+    def get_opposite_direction(self, direction: Direction) -> Direction:
         """Retorna la dirección opuesta."""
         opposite_map = {
             Direction.N: Direction.S,
@@ -25,10 +26,13 @@ class CellRenderer:
             Direction.E: Direction.O,
             Direction.O: Direction.E,
         }
-        return opposite_map.get(direction)
+        result = opposite_map.get(direction)
+        if result is None:
+            raise ValueError(f"Invalid direction: {direction}")
+        return result
     
-    def draw_cell_background(self, x, y, cell, board_row, board_col, 
-                            brightness_factor, draw_stone_callback):
+    def draw_cell_background(self, x: int, y: int, cell: Cell, board_row: int, board_col: int, 
+                            brightness_factor: float, draw_stone_callback: Callable[[int, int, int, int], None]) -> None:
         """Dibuja el fondo de una celda según su tipo.
         
         Args:
@@ -55,9 +59,9 @@ class CellRenderer:
             if cell.cell_type != CellType.EMPTY:
                 draw_stone_callback(board_row, board_col, x, y, cell, brightness_factor)
     
-    def draw_cell_tunnels(self, x, y, cell, board_row, board_col, 
-                         lines_brightness_factor, lines_darkening_enabled,
-                         draw_broken_line_callback):
+    def draw_cell_tunnels(self, x: int, y: int, cell: Cell, board_row: int, board_col: int, 
+                         lines_brightness_factor: float, lines_darkening_enabled: bool,
+                         draw_broken_line_callback: Callable[[Tuple[int, int, int], Tuple[int, int], Tuple[int, int], int, int, int, int], None]) -> None:
         """Dibuja los túneles/pasillos internos de una celda.
         
         Args:

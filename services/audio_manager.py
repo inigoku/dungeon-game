@@ -1,6 +1,8 @@
 """Sistema de gestión de audio del dungeon (música, efectos de sonido, subtítulos)."""
 import pygame
 import random
+import threading
+import time
 
 
 class AudioManager:
@@ -17,6 +19,7 @@ class AudioManager:
         self._load_music_file('intro', "sound/intro.ogg")
         self._load_music_file('adagio', "sound/adagio.ogg")
         self._load_music_file('cthulhu', "sound/cthulhu.ogg")
+        self._load_music_file('viento', "sound/viento.ogg")
         
         # Estado de la música
         self.current_music = None
@@ -39,13 +42,17 @@ class AudioManager:
         self.subtitle_start_time = 0
         self.subtitle_duration = 0
         
-        # Sistema de pensamientos
+        # Sistema de pensamientos con threading (soporta sonido, subtítulos e imágenes)
         self.thought_active = False
         self.thought_blocks_movement = False
-        self.thought_sound = None
-        self.thought_subtitles = []
-        self.thought_current_subtitle_index = 0
-        self.thought_subtitle_start_time = 0
+        self.thought_thread = None
+        self._thought_lock = threading.Lock()
+        
+        # Sistema de imágenes para pensamientos
+        self.showing_image = False
+        self.image_surface = None
+        self.image_start_time = 0
+        self.image_duration = 0
         
         # Sonidos de efectos
         self.blood_sound = None
@@ -188,63 +195,242 @@ class AudioManager:
     
     def update_subtitles(self):
         """Actualiza el estado de los subtítulos."""
+        # Si hay un pensamiento activo, update_thoughts() maneja los subtítulos
+        if self.thought_active:
+            return
+            
         if self.showing_subtitles:
             elapsed = pygame.time.get_ticks() - self.subtitle_start_time
             if elapsed >= self.subtitle_duration:
                 self.showing_subtitles = False
                 self.subtitle_text = ""
     
-    def trigger_thought(self, sound_obj, subtitles, blocks_movement=False):
-        """Activa un pensamiento con sonido y subtítulos.
+    def _thought_worker(self, sounds, images, subtitles):
+        """Thread worker que ejecuta un pensamiento completo.
         
         Args:
-            sound_obj: Objeto Sound de pygame
+            sounds: Lista de tuplas (sound_obj, duración_ms) donde duración 0 = duración del audio
+            images: Lista de tuplas (image_surface, duración_ms) donde duración 0 = duración del sonido
+            subtitles: Lista de tuplas (texto, duración_ms)
+        """
+        components = []
+        if sounds: components.append(f"{len(sounds)} sonidos")
+        if images: components.append(f"{len(images)} imágenes")
+        if subtitles: components.append(f"{len(subtitles)} subtítulos")
+        print(f"[DEBUG] Thread iniciado con: {', '.join(components) if components else 'nada'}")
+        
+        # Calcular la duración máxima entre todos los elementos
+        max_duration = 0
+        
+        # Procesar sonidos primero para obtener su duración total
+        sound_timeline = []
+        sound_total_duration = 0
+        current_time = 0
+        if sounds:
+            for sound_obj, duration_ms in sounds:
+                if sound_obj:
+                    if duration_ms == 0:
+                        # Obtener duración real del sonido
+                        actual_duration = int(sound_obj.get_length() * 1000)
+                        sound_timeline.append((current_time, sound_obj, actual_duration))
+                        current_time += actual_duration
+                    else:
+                        sound_timeline.append((current_time, sound_obj, duration_ms))
+                        current_time += duration_ms
+            sound_total_duration = current_time
+            max_duration = max(max_duration, sound_total_duration)
+        
+        # Procesar imágenes (duración 0 = duración del sonido)
+        image_timeline = []
+        current_time = 0
+        if images:
+            for image_obj, duration_ms in images:
+                if image_obj:
+                    # Si duración es 0, usar la duración del sonido
+                    actual_duration = sound_total_duration if duration_ms == 0 else duration_ms
+                    if actual_duration <= 0:
+                        print("[ERROR] Duración de imagen debe ser > 0 (o usar 0 con sonido)")
+                        continue
+                    image_timeline.append((current_time, image_obj, actual_duration))
+                    current_time += actual_duration
+            max_duration = max(max_duration, current_time)
+        
+        # Procesar subtítulos
+        subtitle_timeline = []
+        current_time = 0
+        if subtitles:
+            for text, duration_ms in subtitles:
+                if text:
+                    if duration_ms <= 0:
+                        print("[ERROR] Duración de subtítulo debe ser > 0")
+                        continue
+                    subtitle_timeline.append((current_time, text, duration_ms))
+                    current_time += duration_ms
+            max_duration = max(max_duration, current_time)
+        
+        print(f"[DEBUG] Duración total del pensamiento: {max_duration}ms")
+        
+        # Reproducir todos los sonidos al inicio de su tiempo
+        for start_time, sound_obj, duration_ms in sound_timeline:
+            if start_time == 0:
+                sound_obj.play()
+                print(f"[DEBUG] Reproduciendo sonido (duración: {duration_ms if duration_ms > 0 else 'auto'}ms)")
+        
+        # Ejecutar la línea de tiempo
+        start_ticks = pygame.time.get_ticks()
+        current_subtitle_index = 0
+        current_image_index = 0
+        current_sound_index = 1  # Ya reprodujimos el primero
+        
+        while True:
+            elapsed = pygame.time.get_ticks() - start_ticks
+            
+            # Activar sonidos según su timeline
+            while current_sound_index < len(sound_timeline):
+                sound_start, sound_obj, _ = sound_timeline[current_sound_index]
+                if elapsed >= sound_start:
+                    sound_obj.play()
+                    print(f"[DEBUG] Reproduciendo sonido {current_sound_index + 1}/{len(sound_timeline)}")
+                    current_sound_index += 1
+                else:
+                    break
+            
+            # Actualizar subtítulos según su timeline
+            if current_subtitle_index < len(subtitle_timeline):
+                sub_start, sub_text, sub_duration = subtitle_timeline[current_subtitle_index]
+                if elapsed >= sub_start:
+                    with self._thought_lock:
+                        self.showing_subtitles = True
+                        self.subtitle_text = sub_text
+                        self.subtitle_duration = sub_duration
+                        self.subtitle_start_time = pygame.time.get_ticks()
+                    print(f"[DEBUG] Subtítulo {current_subtitle_index + 1}/{len(subtitle_timeline)}: '{sub_text[:30]}...' por {sub_duration}ms")
+                    current_subtitle_index += 1
+                elif current_subtitle_index > 0:
+                    # Verificar si el subtítulo actual expiró
+                    prev_start, prev_text, prev_duration = subtitle_timeline[current_subtitle_index - 1]
+                    if elapsed >= prev_start + prev_duration:
+                        with self._thought_lock:
+                            self.showing_subtitles = False
+                            self.subtitle_text = ""
+            
+            # Actualizar imágenes según su timeline
+            if current_image_index < len(image_timeline):
+                img_start, img_surface, img_duration = image_timeline[current_image_index]
+                if elapsed >= img_start:
+                    with self._thought_lock:
+                        self.showing_image = True
+                        self.image_surface = img_surface
+                        self.image_duration = img_duration
+                        self.image_start_time = pygame.time.get_ticks()
+                    print(f"[DEBUG] Imagen {current_image_index + 1}/{len(image_timeline)} por {img_duration}ms")
+                    current_image_index += 1
+                elif current_image_index > 0:
+                    # Verificar si la imagen actual expiró
+                    prev_start, prev_surface, prev_duration = image_timeline[current_image_index - 1]
+                    if elapsed >= prev_start + prev_duration:
+                        with self._thought_lock:
+                            self.showing_image = False
+                            self.image_surface = None
+            
+            # Terminar cuando se alcanza la duración máxima
+            if elapsed >= max_duration:
+                break
+            
+            # Pequeña pausa para no saturar el CPU
+            time.sleep(0.01)
+        
+        print("[DEBUG] Thread finalizando, limpiando")
+        # Limpiar al finalizar
+        with self._thought_lock:
+            self.showing_subtitles = False
+            self.subtitle_text = ""
+            self.showing_image = False
+            self.image_surface = None
+            self.thought_active = False
+            self.thought_blocks_movement = False
+    
+    def trigger_thought(self, sounds=None, images=None, subtitles=None, blocks_movement=False):
+        """Activa un pensamiento con arrays de sonidos, imágenes y subtítulos.
+        
+        Args:
+            sounds: Lista de tuplas (sound_obj, duración_ms) donde duración 0 = duración del audio
+            images: Lista de tuplas (image_surface, duración_ms) donde duración 0 = duración del sonido
             subtitles: Lista de tuplas (texto, duración_ms)
             blocks_movement: Si bloquea el movimiento del jugador
+            
+        Ejemplos:
+            # Solo sonido que se reproduce completo
+            trigger_thought(sounds=[(sound1, 0)])
+            
+            # Dos sonidos secuenciales
+            trigger_thought(sounds=[(sound1, 0), (sound2, 0)])
+            
+            # Sonido + subtítulos sincronizados
+            trigger_thought(
+                sounds=[(intro_sound, 0)],
+                subtitles=[("Texto 1", 4000), ("Texto 2", 6000)]
+            )
+            
+            # Sonido + imagen (imagen dura lo que el sonido)
+            trigger_thought(
+                sounds=[(blood_sound, 0)],
+                images=[(blood_img, 0)]  # Duración automática = duración del sonido
+            )
+            
+            # Imagen con duración específica + subtítulo
+            trigger_thought(
+                images=[(exit_img, 10000)],
+                subtitles=[("Has encontrado la salida", 8000)]
+            )
         """
-        self.thought_active = True
-        self.thought_sound = sound_obj
-        self.thought_subtitles = subtitles
-        self.thought_current_subtitle_index = 0
-        self.thought_blocks_movement = blocks_movement
+        components = []
+        if sounds: components.append(f"{len(sounds)} sonidos")
+        if images: components.append(f"{len(images)} imágenes")
+        if subtitles: components.append(f"{len(subtitles)} subtítulos")
+        print(f"[DEBUG] trigger_thought: {', '.join(components) if components else 'vacío'}, blocks={blocks_movement}, active={self.thought_active}")
         
-        # Reproducir sonido
-        if sound_obj:
-            sound_obj.play()
-        
-        # Mostrar primer subtítulo
-        if subtitles:
-            text, duration = subtitles[0]
-            self.show_subtitle(text, duration)
-            self.thought_subtitle_start_time = pygame.time.get_ticks()
-    
-    def update_thoughts(self):
-        """Actualiza el estado de los pensamientos."""
-        if not self.thought_active:
+        # No iniciar un nuevo pensamiento si ya hay uno activo
+        if self.thought_active:
+            print("[DEBUG] Ya hay un pensamiento activo, ignorando")
             return
         
-        # Verificar si el sonido terminó
-        if self.thought_sound and not pygame.mixer.get_busy():
-            # Solo si el canal del pensamiento no está activo
-            # (asumiendo que los pensamientos no usan el canal de música)
-            pass
+        # Validar duraciones (0 es válido para imágenes si hay sonido)
+        if images:
+            for img, duration in images:
+                if duration < 0:
+                    print("[ERROR] Las imágenes requieren duración >= 0")
+                    return
+                if duration == 0 and not sounds:
+                    print("[ERROR] Imagen con duración 0 requiere un sonido")
+                    return
         
-        # Actualizar subtítulos del pensamiento
-        if self.thought_current_subtitle_index < len(self.thought_subtitles):
-            text, duration = self.thought_subtitles[self.thought_current_subtitle_index]
-            elapsed = pygame.time.get_ticks() - self.thought_subtitle_start_time
-            
-            if elapsed >= duration:
-                # Pasar al siguiente subtítulo
-                self.thought_current_subtitle_index += 1
-                if self.thought_current_subtitle_index < len(self.thought_subtitles):
-                    text, duration = self.thought_subtitles[self.thought_current_subtitle_index]
-                    self.show_subtitle(text, duration)
-                    self.thought_subtitle_start_time = pygame.time.get_ticks()
-                else:
-                    # Todos los subtítulos mostrados
-                    self.thought_active = False
-                    self.thought_blocks_movement = False
+        if subtitles:
+            for text, duration in subtitles:
+                if duration <= 0:
+                    print("[ERROR] Los subtítulos requieren duración > 0")
+                    return
+        
+        with self._thought_lock:
+            self.thought_active = True
+            self.thought_blocks_movement = blocks_movement
+        
+        # Crear y lanzar el thread
+        self.thought_thread = threading.Thread(
+            target=self._thought_worker,
+            args=(sounds, images, subtitles),
+            daemon=True
+        )
+        self.thought_thread.start()
+        print("[DEBUG] Thread lanzado")
+    
+    def update_thoughts(self):
+        """Actualiza el estado de los pensamientos (ahora manejado por threads)."""
+        # El thread maneja todo automáticamente, solo verificamos si terminó
+        if self.thought_thread and not self.thought_thread.is_alive():
+            with self._thought_lock:
+                if not self.thought_active:
+                    self.thought_thread = None
     
     def play_footstep(self):
         """Reproduce un sonido de paso alternando entre paso1 y paso2."""
