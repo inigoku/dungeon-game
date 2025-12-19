@@ -2305,23 +2305,24 @@ class DungeonBoard:
                 if not self.blood_thought_triggered and self.blood_sound:
                     # Verificar si hay manchas de sangre en esta celda
                     if self.has_blood_stains(target_row, target_col):
-                        # Bloquear movimiento inmediatamente
-                        self.thought_active = True
-                        self.thought_blocks_movement = True
                         self.blood_thought_triggered = True
                         
-                        # Activar pensamiento después de 1 segundo
+                        # Bloquear movimiento y activar pensamiento después de 1 segundo
                         import asyncio
                         async def delayed_blood_thought():
+                            # Bloquear movimiento inmediatamente
+                            self.thought_active = True
+                            self.thought_blocks_movement = True
+                            
                             await asyncio.sleep(1.0)
-                            # Solo activar si aún no hay otro pensamiento activo
-                            if self.thought_active:
-                                self.trigger_thought(
-                                    sounds=[(self.blood_sound, 0)],
-                                    images=[(self.blood_image, 0)] if self.blood_image else None,
-                                    subtitles=[("¿Es eso... sangre?!?", 10000)],
-                                    blocks_movement=True
-                                )
+                            
+                            # Activar el pensamiento completo
+                            self.trigger_thought(
+                                sounds=[(self.blood_sound, 0)],
+                                images=[(self.blood_image, 0)] if self.blood_image else None,
+                                subtitles=[("¿Es eso... sangre?!?", 10000)],
+                                blocks_movement=True
+                            )
                         asyncio.create_task(delayed_blood_thought())
                 
                 # Activar pensamiento de antorchas si es la primera vez que entra en una celda con antorchas
@@ -2329,23 +2330,24 @@ class DungeonBoard:
                     current_cell = self.board[target_row][target_col]
                     torch_count = self.count_torches(target_row, target_col, current_cell)
                     if torch_count > 0:
-                        # Bloquear movimiento inmediatamente
-                        self.thought_active = True
-                        self.thought_blocks_movement = True
                         self.torch_thought_triggered = True
                         
-                        # Activar pensamiento después de 1 segundo
+                        # Bloquear movimiento y activar pensamiento después de 1 segundo
                         import asyncio
                         async def delayed_torch_thought():
+                            # Bloquear movimiento inmediatamente
+                            self.thought_active = True
+                            self.thought_blocks_movement = True
+                            
                             await asyncio.sleep(1.0)
-                            # Solo activar si aún no hay otro pensamiento activo
-                            if self.thought_active:
-                                self.trigger_thought(
-                                    sounds=[(self.torch_sound, 0)],
-                                    images=[(self.torch_image, 0)] if self.torch_image else None,
-                                    subtitles=[("Una antorcha encendida... ¡Interesante!", 6000)],
-                                    blocks_movement=True
-                                )
+                            
+                            # Activar el pensamiento completo
+                            self.trigger_thought(
+                                sounds=[(self.torch_sound, 0)],
+                                images=[(self.torch_image, 0)] if self.torch_image else None,
+                                subtitles=[("Una antorcha encendida... ¡Interesante!", 6000)],
+                                blocks_movement=True
+                            )
                         asyncio.create_task(delayed_torch_thought())
             # si existe pero no tiene la salida complementaria, no se puede mover
             return
