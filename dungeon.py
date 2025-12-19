@@ -2292,6 +2292,7 @@ class DungeonBoard:
                         blocks_movement=True
                     )
                 asyncio.create_task(delayed_blood_thought())
+                return  # BLOQUEAR INMEDIATAMENTE - no continuar con el movimiento
             
             # Check antorchas
             if not self.torch_thought_triggered and self.torch_sound:
@@ -2312,6 +2313,7 @@ class DungeonBoard:
                             blocks_movement=True
                         )
                     asyncio.create_task(delayed_torch_thought())
+                    return  # BLOQUEAR INMEDIATAMENTE - no continuar con el movimiento
 
         # Si la celda ya existe (no es EMPTY): solo moverse si tiene la salida complementaria
         if target_cell.cell_type != CellType.EMPTY:
