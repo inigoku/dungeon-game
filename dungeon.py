@@ -1631,12 +1631,14 @@ class DungeonBoard:
                 self.draw_spiral_stairs(x, y)
         
         # Dibujar antorchas al final (encima de todo)
-        if cell.cell_type in [CellType.INICIO, CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
-            if REFACTORED_MODULES:
-                num_torches = self.count_torches(board_row, board_col, cell)
-                self.decorations.draw_torches(board_row, board_col, x, y, cell, num_torches)
-            else:
-                self.draw_torches(board_row, board_col, x, y, cell)
+        # SOLO en celdas visitadas (no en celdas reveladas pero no visitadas)
+        if (board_row, board_col) in self.visited_cells:
+            if cell.cell_type in [CellType.INICIO, CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
+                if REFACTORED_MODULES:
+                    num_torches = self.count_torches(board_row, board_col, cell)
+                    self.decorations.draw_torches(board_row, board_col, x, y, cell, num_torches)
+                else:
+                    self.draw_torches(board_row, board_col, x, y, cell)
     
     def draw_exits(self, row, col, x, y, exits, cell_type, brightness_factor: float = 1.0):
         """Dibuja las salidas de una celda.
