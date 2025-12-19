@@ -315,6 +315,14 @@ class DungeonBoard:
         self.wind_fade_start_time = 0  # Tiempo de inicio del fade-in del viento
         self.wind_fading_in = False  # Flag para el fade-in del viento
         
+        # Sonido de abominacion (para el pensamiento de la salida)
+        self.abominacion_sound = None
+        try:
+            self.abominacion_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/abominacion.ogg"))
+            self.abominacion_sound.set_volume(0.8)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/abominacion.ogg: {e}")
+        
         # Sonidos de pasos
         self.footstep_sounds = []
         try:
@@ -2357,6 +2365,14 @@ class DungeonBoard:
                 if (target_row, target_col) == self.exit_position and not self.exit_image_shown:
                     self.exit_image_shown = True
                     self.exit_image_start_time = pygame.time.get_ticks()
+                    
+                    # Activar pensamiento de la salida con sonido de abominación
+                    if self.abominacion_sound:
+                        self.trigger_thought(
+                            sounds=[(self.abominacion_sound, 0)],
+                            images=[(self.exit_image, 0)] if self.exit_image else None,
+                            blocks_movement=True
+                        )
             # si existe pero no tiene la salida complementaria, no se puede mover
             return
 
