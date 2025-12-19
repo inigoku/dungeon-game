@@ -2646,7 +2646,7 @@ class DungeonBoard:
             return False
         
         # Solo en celdas a distancia mínima de 5 de la entrada
-        entrance_row, entrance_col = self.entrance_position
+        entrance_row, entrance_col = self.start_position
         distance = abs(entrance_row - board_row) + abs(entrance_col - board_col)
         return distance >= 5
     
