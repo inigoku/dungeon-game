@@ -805,7 +805,11 @@ class DungeonBoard:
             # Si es la imagen de salida (losa), verificar si expiró para activar ráfaga
             if self.thought_image == self.exit_image:
                 current_time = pygame.time.get_ticks()
-                if current_time - self.thought_image_start_time >= 12000:
+                # Calcular duración: audio de abominación + 2 segundos
+                abominacion_duration = int(self.abominacion_sound.get_length() * 1000) if self.abominacion_sound else 3000
+                total_duration = abominacion_duration + 2000  # +2 segundos
+                
+                if current_time - self.thought_image_start_time >= total_duration:
                     # Activar pensamiento de ráfaga que apagará las antorchas
                     if not self.rafaga_thought_triggered and self.rafaga_sound:
                         # Parar la música de Cthulhu
