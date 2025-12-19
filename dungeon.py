@@ -311,7 +311,7 @@ class DungeonBoard:
         self.rafaga_thought_triggered = False  # Flag para el pensamiento de ráfaga
         self.torches_flickering = False  # Flag para el parpadeo de antorchas
         self.flicker_start_time = 0  # Tiempo de inicio del parpadeo
-        self.flicker_duration = 8000  # Duración del parpadeo (8 segundos, la duración de la ráfaga)
+        self.flicker_duration = 0  # Duración del parpadeo (se establece dinámicamente)
         self.wind_fade_start_time = 0  # Tiempo de inicio del fade-in del viento
         self.wind_fading_in = False  # Flag para el fade-in del viento
         
@@ -805,13 +805,15 @@ class DungeonBoard:
                         
                         # Activar pensamiento de ráfaga (bloquea movimiento)
                         self.trigger_thought(
-                            sounds=[(self.rafaga_sound, 0)],  # Duración automática (~8s)
+                            sounds=[(self.rafaga_sound, 0)],  # Duración automática
                             blocks_movement=True
                         )
                         self.rafaga_thought_triggered = True
                         self.torches_flickering = True
                         self.flicker_start_time = current_time
-                        print("[DEBUG] Ráfaga activada - antorchas parpadeando")
+                        # Obtener la duración real del sonido de ráfaga
+                        self.flicker_duration = int(self.rafaga_sound.get_length() * 1000)  # Convertir a ms
+                        print(f"[DEBUG] Ráfaga activada - antorchas parpadeando por {self.flicker_duration}ms")
                         
                         # Iniciar fade-in del viento
                         self.wind_fade_start_time = pygame.time.get_ticks()
