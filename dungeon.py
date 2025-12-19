@@ -2284,7 +2284,6 @@ class DungeonBoard:
                 self.thought_blocks_movement = True
                 
                 # Programar pensamiento para 1s después
-                import asyncio
                 async def delayed_blood_thought():
                     await asyncio.sleep(1.0)
                     self.trigger_thought(
@@ -3089,6 +3088,5 @@ class DungeonBoard:
         sys.exit()
 
 if __name__ == "__main__":
-    import asyncio
     dungeon = DungeonBoard()
     asyncio.run(dungeon.run())
