@@ -812,11 +812,15 @@ class DungeonBoard:
                 total_duration = abominacion_duration + 2000  # +2 segundos
                 elapsed = current_time - self.exit_image_start_time
                 
+                # Debug continuo
+                if elapsed % 500 < 20:  # Imprimir cada ~500ms
+                    print(f"[DEBUG EXIT CHECK] elapsed={elapsed}ms, total_duration={total_duration}ms, thought_active={self.thought_active}, rafaga_triggered={self.rafaga_thought_triggered}")
+                
                 # IMPORTANTE: Esperar a que termine el pensamiento de abominación Y el tiempo adicional
                 if elapsed >= total_duration and not self.rafaga_thought_triggered and not self.thought_active:
                     # Activar pensamiento de ráfaga que apagará las antorchas
                     if self.rafaga_sound:
-                        print(f"[DEBUG] Activando ráfaga después de {elapsed}ms")
+                        print(f"[DEBUG] ¡ACTIVANDO RÁFAGA! elapsed={elapsed}ms")
                         # Parar la música de Cthulhu
                         self.music_channel.stop()
                         
