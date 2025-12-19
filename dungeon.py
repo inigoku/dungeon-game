@@ -2307,13 +2307,13 @@ class DungeonBoard:
                     if self.has_blood_stains(target_row, target_col):
                         self.blood_thought_triggered = True
                         
-                        # Bloquear movimiento y activar pensamiento después de 1 segundo
+                        # BLOQUEAR MOVIMIENTO INMEDIATAMENTE
+                        self.thought_active = True
+                        self.thought_blocks_movement = True
+                        
+                        # Activar pensamiento después de 1 segundo
                         import asyncio
                         async def delayed_blood_thought():
-                            # Bloquear movimiento inmediatamente
-                            self.thought_active = True
-                            self.thought_blocks_movement = True
-                            
                             await asyncio.sleep(1.0)
                             
                             # Activar el pensamiento completo
@@ -2332,13 +2332,13 @@ class DungeonBoard:
                     if torch_count > 0:
                         self.torch_thought_triggered = True
                         
-                        # Bloquear movimiento y activar pensamiento después de 1 segundo
+                        # BLOQUEAR MOVIMIENTO INMEDIATAMENTE
+                        self.thought_active = True
+                        self.thought_blocks_movement = True
+                        
+                        # Activar pensamiento después de 1 segundo
                         import asyncio
                         async def delayed_torch_thought():
-                            # Bloquear movimiento inmediatamente
-                            self.thought_active = True
-                            self.thought_blocks_movement = True
-                            
                             await asyncio.sleep(1.0)
                             
                             # Activar el pensamiento completo
