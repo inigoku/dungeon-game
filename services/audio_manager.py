@@ -270,10 +270,17 @@ class AudioManager:
         
         print(f"[DEBUG] Duración total del pensamiento: {max_duration}ms")
         
+        # Lista para guardar los canales de audio activos
+        with self._thought_lock:
+            self._active_sound_channels = []
+        
         # Reproducir todos los sonidos al inicio de su tiempo
         for start_time, sound_obj, duration_ms in sound_timeline:
             if start_time == 0:
-                sound_obj.play()
+                channel = sound_obj.play()
+                if channel:
+                    with self._thought_lock:
+                        self._active_sound_channels.append(channel)
                 print(f"[DEBUG] Reproduciendo sonido (duración: {duration_ms if duration_ms > 0 else 'auto'}ms)")
         
         # Ejecutar la línea de tiempo
@@ -289,7 +296,10 @@ class AudioManager:
             while current_sound_index < len(sound_timeline):
                 sound_start, sound_obj, _ = sound_timeline[current_sound_index]
                 if elapsed >= sound_start:
-                    sound_obj.play()
+                    channel = sound_obj.play()
+                    if channel:
+                        with self._thought_lock:
+                            self._active_sound_channels.append(channel)
                     print(f"[DEBUG] Reproduciendo sonido {current_sound_index + 1}/{len(sound_timeline)}")
                     current_sound_index += 1
                 else:
@@ -353,6 +363,7 @@ class AudioManager:
             self.showing_image = False
             self.image_surface = None
             self.thought_active = False
+            self._active_sound_channels = []
             self.thought_blocks_movement = False
     
     def trigger_thought(self, sounds=None, images=None, subtitles=None, blocks_movement=False):
@@ -435,6 +446,11 @@ class AudioManager:
         if self.thought_active and self.thought_thread:
             with self._thought_lock:
                 self._cancel_thought = True
+                # Detener todos los sonidos activos del pensamiento
+                for channel in self._active_sound_channels:
+                    if channel:
+                        channel.stop()
+                self._active_sound_channels = []
                 # Limpiar inmediatamente el estado visible
                 self.showing_subtitles = False
                 self.subtitle_text = ""

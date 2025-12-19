@@ -143,6 +143,10 @@ class DungeonBoard:
             self.music_sounds['cthulhu'] = pygame.mixer.Sound(os.path.join(script_dir, "sound/cthulhu.ogg"))
         except pygame.error as e:
             print(f"No se pudo cargar sound/cthulhu.ogg: {e}")
+        try:
+            self.music_sounds['viento'] = pygame.mixer.Sound(os.path.join(script_dir, "sound/viento.ogg"))
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/viento.ogg: {e}")
         
         # Sistema de música: adagio desde el principio, cthulhu en la salida
         self.current_music = None
@@ -305,6 +309,9 @@ class DungeonBoard:
             print(f"No se pudo cargar sound/rafaga.ogg: {e}")
         
         self.rafaga_thought_triggered = False  # Flag para el pensamiento de ráfaga
+        self.torches_flickering = False  # Flag para el parpadeo de antorchas
+        self.flicker_start_time = 0  # Tiempo de inicio del parpadeo
+        self.flicker_duration = 8000  # Duración del parpadeo (8 segundos, la duración de la ráfaga)
         self.wind_fade_start_time = 0  # Tiempo de inicio del fade-in del viento
         self.wind_fading_in = False  # Flag para el fade-in del viento
         
@@ -802,8 +809,9 @@ class DungeonBoard:
                             blocks_movement=True
                         )
                         self.rafaga_thought_triggered = True
-                        self.torches_extinguished = True
-                        print("[DEBUG] Ráfaga activada - antorchas apagadas")
+                        self.torches_flickering = True
+                        self.flicker_start_time = current_time
+                        print("[DEBUG] Ráfaga activada - antorchas parpadeando")
                         
                         # Iniciar fade-in del viento
                         self.wind_fade_start_time = pygame.time.get_ticks()
@@ -2400,6 +2408,32 @@ class DungeonBoard:
         # Si las antorchas están apagadas, no hay antorchas
         if self.torches_extinguished:
             return 0
+        
+        # Si las antorchas están parpadeando, aplicar efecto de parpadeo
+        if self.torches_flickering:
+            current_time = pygame.time.get_ticks()
+            elapsed = current_time - self.flicker_start_time
+            
+            # Si ya pasó la duración del parpadeo, apagar definitivamente
+            if elapsed >= self.flicker_duration:
+                self.torches_flickering = False
+                self.torches_extinguished = True
+                print("[DEBUG] Antorchas apagadas definitivamente")
+                return 0
+            
+            # Parpadeo: alternar entre visible/invisible cada vez más rápido
+            # Primero parpadeos lentos (500ms), luego medios (250ms), luego rápidos (100ms)
+            if elapsed < 3000:  # Primeros 3 segundos: parpadeo lento
+                flicker_interval = 500
+            elif elapsed < 6000:  # Segundos 3-6: parpadeo medio
+                flicker_interval = 250
+            else:  # Últimos 2 segundos: parpadeo rápido
+                flicker_interval = 100
+            
+            # Alternar entre visible/invisible
+            if (elapsed // flicker_interval) % 2 == 0:
+                return 0  # Invisible (antorchas apagadas en este frame)
+            # Si es impar, continuar con la lógica normal (antorchas visibles)
         
         # Durante la introducción, no hay antorchas
         if self.intro_anim_active:
