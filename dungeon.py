@@ -233,8 +233,9 @@ class DungeonBoard:
             print(f"No se pudo cargar images/titulo.png: {e}")
             self.showing_title = False
         
-        # Confirmación de salida
+        # Confirmación de salida y menú principal
         self.asking_exit_confirmation = False
+        self.asking_main_menu_confirmation = False
         
         # Animación de inicio
         self.intro_anim_active = False  # Se activará después de la pantalla de título
@@ -812,6 +813,10 @@ class DungeonBoard:
         if self.asking_exit_confirmation:
             self.draw_exit_confirmation()
         
+        # Mostrar diálogo de confirmación de menú principal si está activo
+        if self.asking_main_menu_confirmation:
+            self.draw_main_menu_confirmation()
+        
         pygame.display.flip()
     
     def draw_player(self, offset_row_float, offset_col_float):
@@ -1128,6 +1133,40 @@ class DungeonBoard:
         subtitle_font = pygame.font.Font(None, 32)
         
         title_text = title_font.render("¿Salir del juego?", True, (255, 255, 255))
+        subtitle_text = subtitle_font.render("S = Sí  /  N = No", True, (200, 200, 200))
+        
+        title_x = dialog_x + (dialog_width - title_text.get_width()) // 2
+        title_y = dialog_y + 30
+        subtitle_x = dialog_x + (dialog_width - subtitle_text.get_width()) // 2
+        subtitle_y = dialog_y + 90
+        
+        self.screen.blit(title_text, (title_x, title_y))
+        self.screen.blit(subtitle_text, (subtitle_x, subtitle_y))
+
+    def draw_main_menu_confirmation(self):
+        """Dibuja el diálogo de confirmación para volver al menú principal."""
+        # Fondo oscuro semi-transparente
+        overlay = pygame.Surface((self.width, self.height))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Caja de diálogo
+        dialog_width = 450
+        dialog_height = 150
+        dialog_x = (self.width - dialog_width) // 2
+        dialog_y = (self.height - dialog_height) // 2
+        
+        # Fondo de la caja
+        pygame.draw.rect(self.screen, (40, 40, 40), (dialog_x, dialog_y, dialog_width, dialog_height))
+        # Borde
+        pygame.draw.rect(self.screen, (200, 200, 200), (dialog_x, dialog_y, dialog_width, dialog_height), 3)
+        
+        # Texto
+        title_font = pygame.font.Font(None, 40)
+        subtitle_font = pygame.font.Font(None, 32)
+        
+        title_text = title_font.render("¿Volver al menú principal?", True, (255, 255, 255))
         subtitle_text = subtitle_font.render("S = Sí  /  N = No", True, (200, 200, 200))
         
         title_x = dialog_x + (dialog_width - title_text.get_width()) // 2
@@ -2867,7 +2906,7 @@ class DungeonBoard:
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
-                    # Si estamos pidiendo confirmación de salida
+                    # Si estamos pidiendo confirmación de salida del juego
                     if self.asking_exit_confirmation:
                         if event.key == pygame.K_s:  # Sí, salir
                             running = False
@@ -2875,16 +2914,44 @@ class DungeonBoard:
                             self.asking_exit_confirmation = False
                         continue
                     
-                    # Si estamos en la pantalla de título, cualquier tecla inicia el juego
-                    if self.showing_title:
-                        self.showing_title = False
-                        self.intro_anim_active = True
-                        self.intro_anim_start_time = pygame.time.get_ticks()
+                    # Si estamos pidiendo confirmación para volver al menú principal
+                    if self.asking_main_menu_confirmation:
+                        if event.key == pygame.K_s:  # Sí, volver al menú
+                            # Resetear el juego al menú principal
+                            self.showing_title = True
+                            self.asking_main_menu_confirmation = False
+                            # Detener música
+                            if REFACTORED_MODULES:
+                                self.audio.stop_music()
+                            else:
+                                self.music_channel.stop()
+                            # Cancelar cualquier pensamiento activo
+                            if REFACTORED_MODULES and self.audio.thought_active:
+                                self.audio.cancel_thought()
+                        elif event.key == pygame.K_n or event.key == pygame.K_ESCAPE:  # No, cancelar
+                            self.asking_main_menu_confirmation = False
                         continue
                     
-                    # Tecla ESC para salir (con confirmación)
+                    # Si estamos en la pantalla de título, cualquier tecla excepto ESC inicia el juego
+                    if self.showing_title:
+                        if event.key == pygame.K_ESCAPE:
+                            # ESC en pantalla principal sale del juego
+                            running = False
+                        else:
+                            # Cualquier otra tecla inicia el juego
+                            self.showing_title = False
+                            self.intro_anim_active = True
+                            self.intro_anim_start_time = pygame.time.get_ticks()
+                        continue
+                    
+                    # Tecla ESC durante el juego
                     if event.key == pygame.K_ESCAPE:
-                        self.asking_exit_confirmation = True
+                        # Si hay un pensamiento activo, cancelarlo
+                        if REFACTORED_MODULES and self.audio.thought_active:
+                            self.audio.cancel_thought()
+                        # Si no hay pensamiento, preguntar si volver al menú principal
+                        elif not (REFACTORED_MODULES and self.audio.thought_active):
+                            self.asking_main_menu_confirmation = True
                         continue
                     
                     # Toggle auto reveal mode con F2

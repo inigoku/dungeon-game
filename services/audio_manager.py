@@ -333,7 +333,12 @@ class AudioManager:
                             self.showing_image = False
                             self.image_surface = None
             
-            # Terminar cuando se alcanza la duración máxima
+            # Terminar si se cancela o se alcanza la duración máxima
+            with self._thought_lock:
+                if self._cancel_thought:
+                    print("[DEBUG] Pensamiento cancelado por el usuario")
+                    break
+            
             if elapsed >= max_duration:
                 break
             
@@ -414,6 +419,7 @@ class AudioManager:
         with self._thought_lock:
             self.thought_active = True
             self.thought_blocks_movement = blocks_movement
+            self._cancel_thought = False  # Reset flag de cancelación
         
         # Crear y lanzar el thread
         self.thought_thread = threading.Thread(
@@ -424,6 +430,18 @@ class AudioManager:
         self.thought_thread.start()
         print("[DEBUG] Thread lanzado")
     
+    def cancel_thought(self):
+        """Cancela el pensamiento activo."""
+        if self.thought_active and self.thought_thread:
+            with self._thought_lock:
+                self._cancel_thought = True
+                # Limpiar inmediatamente el estado visible
+                self.showing_subtitles = False
+                self.subtitle_text = ""
+                self.showing_image = False
+                self.image_surface = None
+            print("[DEBUG] Cancelación de pensamiento solicitada")
+    
     def update_thoughts(self):
         """Actualiza el estado de los pensamientos (ahora manejado por threads)."""
         # El thread maneja todo automáticamente, solo verificamos si terminó
@@ -431,6 +449,7 @@ class AudioManager:
             with self._thought_lock:
                 if not self.thought_active:
                     self.thought_thread = None
+                    self._cancel_thought = False  # Reset flag de cancelación
     
     def play_footstep(self):
         """Reproduce un sonido de paso alternando entre paso1 y paso2."""
