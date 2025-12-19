@@ -2,6 +2,7 @@ import pygame
 import random
 import math
 import sys
+import os
 import asyncio
 from enum import Enum
 from dataclasses import dataclass
@@ -125,18 +126,21 @@ class DungeonBoard:
         self.music_channel = pygame.mixer.Channel(0)
         self.music_channel.set_volume(0.5)
         
+        # Obtener directorio del script para rutas relativas
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
         # Cargar archivos de música como Sound objects
         self.music_sounds = {}
         try:
-            self.music_sounds['intro'] = pygame.mixer.Sound("sound/intro.ogg")
+            self.music_sounds['intro'] = pygame.mixer.Sound(os.path.join(script_dir, "sound/intro.ogg"))
         except pygame.error as e:
             print(f"No se pudo cargar sound/intro.ogg: {e}")
         try:
-            self.music_sounds['adagio'] = pygame.mixer.Sound("sound/adagio.ogg")
+            self.music_sounds['adagio'] = pygame.mixer.Sound(os.path.join(script_dir, "sound/adagio.ogg"))
         except pygame.error as e:
             print(f"No se pudo cargar sound/adagio.ogg: {e}")
         try:
-            self.music_sounds['cthulhu'] = pygame.mixer.Sound("sound/cthulhu.ogg")
+            self.music_sounds['cthulhu'] = pygame.mixer.Sound(os.path.join(script_dir, "sound/cthulhu.ogg"))
         except pygame.error as e:
             print(f"No se pudo cargar sound/cthulhu.ogg: {e}")
         
@@ -221,7 +225,7 @@ class DungeonBoard:
         self.showing_title = True
         self.title_image = None
         try:
-            self.title_image = pygame.image.load("images/titulo.png").convert()
+            self.title_image = pygame.image.load(os.path.join(script_dir, "images/titulo.png")).convert()
             # Escalar la imagen al tamaño de la ventana con alta calidad si es necesario
             if self.title_image.get_size() != (self.width, self.height):
                 self.title_image = pygame.transform.smoothscale(self.title_image, (self.width, self.height))
@@ -241,21 +245,21 @@ class DungeonBoard:
         # Efectos de sonido ambientales (con probabilidades ponderadas)
         self.ambient_sounds = {}
         try:
-            drip_sound = pygame.mixer.Sound("sound/gota.ogg")
+            drip_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/gota.ogg"))
             drip_sound.set_volume(0.5)
             self.ambient_sounds['gota'] = drip_sound
         except pygame.error as e:
             print(f"No se pudo cargar sound/gota.ogg: {e}")
         
         try:
-            two_drips_sound = pygame.mixer.Sound("sound/dos-gotas.ogg")
+            two_drips_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/dos-gotas.ogg"))
             two_drips_sound.set_volume(0.5)
             self.ambient_sounds['dos-gotas'] = two_drips_sound
         except pygame.error as e:
             print(f"No se pudo cargar sound/dos-gotas.ogg: {e}")
         
         try:
-            bat_sound = pygame.mixer.Sound("sound/murcielago.ogg")
+            bat_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/murcielago.ogg"))
             bat_sound.set_volume(0.6)
             self.ambient_sounds['murcielago'] = bat_sound
         except pygame.error as e:
@@ -272,7 +276,7 @@ class DungeonBoard:
         # Sonido de antorchas (usado para pensamientos)
         self.torch_sound = None
         try:
-            self.torch_sound = pygame.mixer.Sound("sound/antorchas.ogg")
+            self.torch_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/antorchas.ogg"))
             self.torch_sound.set_volume(0.7)
         except pygame.error as e:
             print(f"No se pudo cargar sound/antorchas.ogg: {e}")
@@ -284,7 +288,7 @@ class DungeonBoard:
         # Sonido de sangre (usado para pensamientos)
         self.blood_sound = None
         try:
-            self.blood_sound = pygame.mixer.Sound("sound/sangre.ogg")
+            self.blood_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/sangre.ogg"))
             self.blood_sound.set_volume(0.7)
         except pygame.error as e:
             print(f"No se pudo cargar sound/sangre.ogg: {e}")
@@ -294,7 +298,7 @@ class DungeonBoard:
         # Sonido de ráfaga (para cuando se apagan las antorchas)
         self.rafaga_sound = None
         try:
-            self.rafaga_sound = pygame.mixer.Sound("sound/rafaga.ogg")
+            self.rafaga_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/rafaga.ogg"))
             self.rafaga_sound.set_volume(0.9)
         except pygame.error as e:
             print(f"No se pudo cargar sound/rafaga.ogg: {e}")
@@ -306,14 +310,14 @@ class DungeonBoard:
         # Sonidos de pasos
         self.footstep_sounds = []
         try:
-            step1 = pygame.mixer.Sound("sound/paso1.ogg")
+            step1 = pygame.mixer.Sound(os.path.join(script_dir, "sound/paso1.ogg"))
             step1.set_volume(0.4)
             self.footstep_sounds.append(step1)
         except pygame.error as e:
             print(f"No se pudo cargar sound/paso1.ogg: {e}")
         
         try:
-            step2 = pygame.mixer.Sound("sound/paso2.ogg")
+            step2 = pygame.mixer.Sound(os.path.join(script_dir, "sound/paso2.ogg"))
             step2.set_volume(0.4)
             self.footstep_sounds.append(step2)
         except pygame.error as e:
@@ -337,7 +341,7 @@ class DungeonBoard:
         
         # Cargar imagen de losa (salida)
         try:
-            original_image = pygame.image.load("images/losa.png")
+            original_image = pygame.image.load(os.path.join(script_dir, "images/losa.png"))
             # Escalar manteniendo la proporción para que quepa en la pantalla
             original_width = original_image.get_width()
             original_height = original_image.get_height()
@@ -361,7 +365,7 @@ class DungeonBoard:
         
         # Cargar imagen de antorcha
         try:
-            torch_img = pygame.image.load("images/antorcha.png")
+            torch_img = pygame.image.load(os.path.join(script_dir, "images/antorcha.png"))
             # Escalar a un tamaño apropiado
             max_size = min(self.width, self.height) * 0.6
             scale = max_size / max(torch_img.get_width(), torch_img.get_height())
@@ -373,7 +377,7 @@ class DungeonBoard:
         
         # Cargar imagen de sangre
         try:
-            blood_img = pygame.image.load("images/sangre.png")
+            blood_img = pygame.image.load(os.path.join(script_dir, "images/sangre.png"))
             # Escalar a un tamaño apropiado
             max_size = min(self.width, self.height) * 0.6
             scale = max_size / max(blood_img.get_width(), blood_img.get_height())
