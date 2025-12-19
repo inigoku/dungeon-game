@@ -2393,9 +2393,13 @@ class DungeonBoard:
                     
                     # Activar pensamiento de la salida con sonido de abominación
                     if self.abominacion_sound:
+                        # Calcular duración total: audio + 2 segundos
+                        audio_duration = int(self.abominacion_sound.get_length() * 1000)
+                        image_duration = audio_duration + 2000  # +2 segundos después del audio
+                        
                         self.trigger_thought(
                             sounds=[(self.abominacion_sound, 0)],
-                            images=[(self.exit_image, 0)] if self.exit_image else None,
+                            images=[(self.exit_image, image_duration)] if self.exit_image else None,
                             blocks_movement=True
                         )
                         print(f"[DEBUG] Pensamiento de salida activado - exit_thought_active={self.exit_thought_active}")
