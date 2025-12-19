@@ -347,6 +347,7 @@ class DungeonBoard:
         # Sistema de final del juego con imagen de losa
         self.exit_image_shown = False
         self.exit_image_start_time = 0
+        self.exit_thought_active = False  # Flag para saber si estamos en el pensamiento de salida
         self.exit_image = None
         self.torch_image = None
         self.blood_image = None
@@ -803,7 +804,7 @@ class DungeonBoard:
             self.screen.blit(self.thought_image, (image_x, image_y))
             
             # Si es la imagen de salida (losa), verificar si expiró para activar ráfaga
-            if self.thought_image == self.exit_image:
+            if self.exit_thought_active and self.thought_image_shown:
                 current_time = pygame.time.get_ticks()
                 # Calcular duración: audio de abominación + 2 segundos
                 abominacion_duration = int(self.abominacion_sound.get_length() * 1000) if self.abominacion_sound else 3000
@@ -2369,6 +2370,7 @@ class DungeonBoard:
                 if (target_row, target_col) == self.exit_position and not self.exit_image_shown:
                     self.exit_image_shown = True
                     self.exit_image_start_time = pygame.time.get_ticks()
+                    self.exit_thought_active = True  # Marcar que estamos en pensamiento de salida
                     
                     # Activar pensamiento de la salida con sonido de abominación
                     if self.abominacion_sound:
