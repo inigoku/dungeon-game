@@ -2338,6 +2338,41 @@ class DungeonBoard:
                 # Revelar celdas adyacentes con salidas
                 self.reveal_adjacent_cells(target_row, target_col)
                 
+                # POST-CHECK: Activar pensamientos DESPUÉS de entrar en la celda
+                # Verificar si hay manchas de sangre en la celda actual
+                if not self.blood_thought_triggered and self.blood_sound and self.has_blood_stains(target_row, target_col):
+                    self.blood_thought_triggered = True
+                    self.thought_active = True
+                    self.thought_blocks_movement = True
+                    
+                    async def delayed_blood_thought():
+                        await asyncio.sleep(1.0)  # Esperar 1 segundo
+                        self.trigger_thought(
+                            sounds=[(self.blood_sound, 0)],
+                            images=[(self.blood_image, 0)] if self.blood_image else None,
+                            subtitles=[("Manchas de sangre en el suelo...", 6000)],
+                            blocks_movement=True
+                        )
+                    asyncio.create_task(delayed_blood_thought())
+                    return  # BLOQUEAR ahora que ya entró
+                
+                # Verificar si hay antorchas en la celda actual
+                if not self.torch_thought_triggered and self.torch_sound and self.has_torches(target_row, target_col):
+                    self.torch_thought_triggered = True
+                    self.thought_active = True
+                    self.thought_blocks_movement = True
+                    
+                    async def delayed_torch_thought():
+                        await asyncio.sleep(1.0)  # Esperar 1 segundo
+                        self.trigger_thought(
+                            sounds=[(self.torch_sound, 0)],
+                            images=[(self.torch_image, 0)] if self.torch_image else None,
+                            subtitles=[("Una antorcha encendida... ¡Interesante!", 6000)],
+                            blocks_movement=True
+                        )
+                    asyncio.create_task(delayed_torch_thought())
+                    return  # BLOQUEAR ahora que ya entró
+                
                 # Verificar si entró en la celda final
                 if (target_row, target_col) == self.exit_position and not self.exit_image_shown:
                     self.exit_image_shown = True
