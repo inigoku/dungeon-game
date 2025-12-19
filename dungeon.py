@@ -2484,6 +2484,12 @@ class DungeonBoard:
         if (board_row, board_col) not in self.main_path:
             return 0
         
+        # VERIFICAR DISTANCIA MÍNIMA DESDE LA ENTRADA
+        entrance_row, entrance_col = self.start_position
+        distance_from_entrance = abs(entrance_row - board_row) + abs(entrance_col - board_col)
+        if distance_from_entrance < 5:
+            return 0  # No hay antorchas si está muy cerca de la entrada
+        
         # Calcular distancia a la salida
         exit_row, exit_col = self.exit_position
         distance_to_exit = abs(exit_row - board_row) + abs(exit_col - board_col)
@@ -2626,10 +2632,10 @@ class DungeonBoard:
         if cell.cell_type not in (CellType.PASILLO, CellType.HABITACION, CellType.SALIDA):
             return False
         
-        # Solo en celdas a distancia mínima de 2 de la entrada
+        # Solo en celdas a distancia mínima de 5 de la entrada
         entrance_row, entrance_col = self.start_position
         distance = abs(entrance_row - board_row) + abs(entrance_col - board_col)
-        return distance >= 2
+        return distance >= 5
     
     def draw_blood_stains(self, board_row, board_col, x, y, brightness_factor: float = 1.0):
         """Dibuja manchas de sangre en celdas cercanas a la salida.
