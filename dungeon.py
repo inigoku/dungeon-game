@@ -413,11 +413,11 @@ class DungeonBoard:
         
         # Detección de entorno web
         self.is_web = hasattr(sys, 'platform') and 'emscripten' in sys.platform.lower()
+        self.first_key_ignored = not self.is_web  # En web False (necesita ignorar), en nativo True (ya ignorada)
         
-        # En web, ignorar la primera tecla para evitar inputs fantasma si se inició con tecla
+        # En web, limpiar cola de eventos al inicio
         if self.is_web:
-            self.first_key_ignored = False
-            pygame.event.clear()  # Limpiar cola de eventos al inicio
+            pygame.event.clear()
             print("[DEBUG] Modo web detectado - primera tecla será ignorada")
     
     def get_view_offset(self):
