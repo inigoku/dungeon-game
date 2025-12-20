@@ -410,6 +410,16 @@ class DungeonBoard:
         self.debug_mode = False
         self.show_path = False  # F4 para mostrar el camino completo
         self.auto_reveal_mode = False  # F2 para activar/desactivar revelación automática
+        
+        # Detección de entorno web
+        self.is_web = hasattr(sys, 'platform') and 'emscripten' in sys.platform.lower()
+        
+        # En web, ignorar teclas iniciales para evitar inputs fantasma al cargar
+        if self.is_web:
+            self.ignore_initial_keys = True
+            self.initial_key_ignore_time = pygame.time.get_ticks()
+            pygame.event.clear()  # Limpiar cola de eventos al inicio
+            print("[DEBUG] Modo web detectado - ignorando teclas iniciales")
     
     def get_view_offset(self):
         """Interpola la cámara hacia la posición del jugador y retorna el offset redondeado."""
@@ -2770,6 +2780,16 @@ class DungeonBoard:
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
+                    # En web, ignorar teclas durante los primeros 500ms para evitar inputs fantasma
+                    if self.is_web and self.ignore_initial_keys:
+                        current_time = pygame.time.get_ticks()
+                        if current_time - self.initial_key_ignore_time < 500:
+                            print("[DEBUG] Tecla ignorada durante periodo inicial")
+                            continue
+                        else:
+                            self.ignore_initial_keys = False
+                            print("[DEBUG] Periodo de ignorar teclas completado")
+                    
                     # Si estamos pidiendo confirmación de salida del juego
                     if self.asking_exit_confirmation:
                         if event.key == pygame.K_s:  # Sí, salir
