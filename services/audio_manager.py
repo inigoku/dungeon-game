@@ -514,20 +514,42 @@ class AudioManager:
     
     def cancel_thought(self):
         """Cancela el pensamiento activo."""
-        if self.thought_active and self.thought_thread:
-            with self._thought_lock:
-                self._cancel_thought = True
-                # Detener todos los sonidos activos del pensamiento
-                for channel in self._active_sound_channels:
-                    if channel:
-                        channel.stop()
-                self._active_sound_channels = []
-                # Limpiar inmediatamente el estado visible
-                self.showing_subtitles = False
-                self.subtitle_text = ""
-                self.showing_image = False
-                self.image_surface = None
-            print("[DEBUG] Cancelación de pensamiento solicitada")
+        if IS_WEB:
+            # Modo web: cancelar directamente sin threads
+            if self.thought_active:
+                with self._thought_lock:
+                    self._cancel_thought = True
+                    # Detener todos los sonidos activos del pensamiento
+                    for channel in self._active_sound_channels:
+                        if channel:
+                            channel.stop()
+                    self._active_sound_channels = []
+                    # Limpiar inmediatamente el estado visible
+                    self.showing_subtitles = False
+                    self.subtitle_text = ""
+                    self.showing_image = False
+                    self.image_surface = None
+                    self.image_end_time = None
+                    self.subtitle_end_time = None
+                    # Marcar pensamiento como no activo
+                    self.thought_active = False
+                print("[DEBUG] Pensamiento cancelado en modo web")
+        else:
+            # Modo nativo con threads
+            if self.thought_active and self.thought_thread:
+                with self._thought_lock:
+                    self._cancel_thought = True
+                    # Detener todos los sonidos activos del pensamiento
+                    for channel in self._active_sound_channels:
+                        if channel:
+                            channel.stop()
+                    self._active_sound_channels = []
+                    # Limpiar inmediatamente el estado visible
+                    self.showing_subtitles = False
+                    self.subtitle_text = ""
+                    self.showing_image = False
+                    self.image_surface = None
+                print("[DEBUG] Cancelación de pensamiento solicitada")
     
     def update_thoughts(self):
         """Actualiza el estado de los pensamientos."""
