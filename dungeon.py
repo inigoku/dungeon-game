@@ -2779,12 +2779,6 @@ class DungeonBoard:
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
-                    # En web, ignorar la primera tecla para evitar inputs fantasma
-                    if self.is_web and not self.first_key_ignored:
-                        self.first_key_ignored = True
-                        print("[DEBUG] Primera tecla ignorada")
-                        continue
-                    
                     # Si estamos pidiendo confirmación de salida del juego
                     if self.asking_exit_confirmation:
                         if event.key == pygame.K_s:  # Sí, salir
@@ -2821,6 +2815,12 @@ class DungeonBoard:
                             self.showing_title = False
                             self.intro_anim_active = True
                             self.intro_anim_start_time = pygame.time.get_ticks()
+                        continue
+                    
+                    # En web, ignorar la primera tecla DESPUÉS de salir de la pantalla de título
+                    if self.is_web and not self.first_key_ignored:
+                        self.first_key_ignored = True
+                        print("[DEBUG] Primera tecla después del título ignorada")
                         continue
                     
                     # Tecla ESC durante el juego
