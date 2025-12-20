@@ -3,6 +3,7 @@ import pygame
 import random
 import threading
 import time
+import os
 
 
 class AudioManager:
@@ -438,8 +439,22 @@ class AudioManager:
             args=(sounds, images, subtitles),
             daemon=True
         )
+        
+        # Darle prioridad máxima al thread de pensamientos
         self.thought_thread.start()
-        print("[DEBUG] Thread lanzado")
+        
+        # Intentar aumentar la prioridad del thread en sistemas Unix/Linux/macOS
+        try:
+            import psutil
+            p = psutil.Process(os.getpid())
+            # Establecer prioridad alta (en macOS: -20 es la más alta, 20 la más baja)
+            # Para el thread actual usamos nice value
+            os.nice(-10)  # Aumentar prioridad del proceso completo
+        except (ImportError, PermissionError, OSError):
+            # Si no tiene permisos o psutil no está instalado, continuar sin prioridad
+            pass
+        
+        print("[DEBUG] Thread lanzado con prioridad máxima")
     
     def cancel_thought(self):
         """Cancela el pensamiento activo."""

@@ -312,6 +312,8 @@ class DungeonBoard:
         self.torches_flickering = False  # Flag para el parpadeo de antorchas
         self.flicker_start_time = 0  # Tiempo de inicio del parpadeo
         self.flicker_duration = 0  # Duración del parpadeo (se establece dinámicamente)
+        self.zoom_out_count = 0  # Contador de zoom outs realizados
+        self.zoom_out_triggered = False  # Flag para evitar múltiples zoom outs
         self.wind_fade_start_time = 0  # Tiempo de inicio del fade-in del viento
         self.wind_fading_in = False  # Flag para el fade-in del viento
         
@@ -802,43 +804,6 @@ class DungeonBoard:
             image_x = (self.width - self.thought_image.get_width()) // 2
             image_y = (self.height - self.thought_image.get_height()) // 2
             self.screen.blit(self.thought_image, (image_x, image_y))
-            
-            # Si estamos en el pensamiento de salida, verificar si expiró para activar ráfaga
-            # La condición debe seguir verificando incluso después de que termine el pensamiento
-            if self.exit_thought_active:
-                current_time = pygame.time.get_ticks()
-                # Calcular duración: audio de abominación + 2 segundos
-                abominacion_duration = int(self.abominacion_sound.get_length() * 1000) if self.abominacion_sound else 3000
-                total_duration = abominacion_duration + 2000  # +2 segundos
-                elapsed = current_time - self.exit_image_start_time
-                
-                # Debug continuo
-                if elapsed % 500 < 20:  # Imprimir cada ~500ms
-                    print(f"[DEBUG EXIT CHECK] elapsed={elapsed}ms, total_duration={total_duration}ms, thought_active={self.thought_active}, rafaga_triggered={self.rafaga_thought_triggered}")
-                
-                # IMPORTANTE: Esperar a que termine el pensamiento de abominación Y el tiempo adicional
-                if elapsed >= total_duration and not self.rafaga_thought_triggered and not self.thought_active:
-                    # Activar pensamiento de ráfaga que apagará las antorchas
-                    if self.rafaga_sound:
-                        print(f"[DEBUG] ¡ACTIVANDO RÁFAGA! elapsed={elapsed}ms")
-                        # Parar la música de Cthulhu
-                        self.music_channel.stop()
-                        
-                        # Activar pensamiento de ráfaga (bloquea movimiento)
-                        self.trigger_thought(
-                            sounds=[(self.rafaga_sound, 0)],  # Duración automática
-                            blocks_movement=True
-                        )
-                        self.rafaga_thought_triggered = True
-                        self.torches_flickering = True
-                        self.flicker_start_time = current_time
-                        # Obtener la duración real del sonido de ráfaga y dividir por 2
-                        self.flicker_duration = int(self.rafaga_sound.get_length() * 1000 / 2)  # Mitad de la duración en ms
-                        print(f"[DEBUG] Ráfaga activada - antorchas parpadeando por {self.flicker_duration}ms")
-                        
-                        # Iniciar fade-in del viento
-                        self.wind_fade_start_time = pygame.time.get_ticks()
-                        self.wind_fading_in = True
         
         # Mostrar diálogo de confirmación de salida si está activo (siempre encima de todo)
         if self.asking_exit_confirmation:
@@ -936,42 +901,6 @@ class DungeonBoard:
         if REFACTORED_MODULES:
             self.audio.update_fades()
             return
-        
-        # Versión legacy
-        current_time = pygame.time.get_ticks()
-        elapsed = current_time - self.fade_start_time
-        
-        if self.fading_out:
-            if elapsed >= self.fade_duration:
-                # Fade out completado
-                self.music_channel.set_volume(0.0)
-                self.fading_out = False
-                
-                # Cargar la siguiente música si hay una pendiente
-                if self.pending_music_load:
-                    music_name, loop = self.pending_music_load
-                    if music_name in self.music_sounds:
-                        self.music_channel.stop()
-                        self.current_music = music_name
-                        self.music_channel.play(self.music_sounds[music_name], loops=-1 if loop else 0)
-                        self.start_fade_in(self.music_volume)
-                    self.pending_music_load = None
-            else:
-                # Interpolar volumen
-                t = elapsed / self.fade_duration
-                volume = self.fade_from_volume + (self.fade_to_volume - self.fade_from_volume) * t
-                self.music_channel.set_volume(volume)
-        
-        elif self.fading_in:
-            if elapsed >= self.fade_duration:
-                # Fade in completado
-                self.music_channel.set_volume(self.fade_to_volume)
-                self.fading_in = False
-            else:
-                # Interpolar volumen
-                t = elapsed / self.fade_duration
-                volume = self.fade_from_volume + (self.fade_to_volume - self.fade_from_volume) * t
-                self.music_channel.set_volume(volume)
     
     def start_fade_out(self, next_music_name=None, loop=False):
         """Inicia un fade out de la música actual."""
@@ -1035,110 +964,8 @@ class DungeonBoard:
             text_rect = text_surface.get_rect(center=(self.width // 2, start_y + i * line_height + line_height // 2))
             self.screen.blit(text_surface, text_rect)
     
-    def trigger_thought(self, sounds=None, images=None, subtitles=None, blocks_movement=True):
-        """Inicia un pensamiento con arrays de sonidos, imágenes y subtítulos.
-        
-        Args:
-            sounds: Lista de tuplas (sound_obj, duración_ms) donde 0 = duración auto del audio
-            images: Lista de tuplas (image_surface, duración_ms)
-            subtitles: Lista de tuplas (texto, duración_ms)
-            blocks_movement: Si True, bloquea el movimiento durante el pensamiento
-        """
-        if REFACTORED_MODULES:
-            # Delegar al AudioManager que usa threading
-            self.audio.trigger_thought(
-                sounds=sounds,
-                images=images,
-                subtitles=subtitles,
-                blocks_movement=blocks_movement
-            )
-            return
-        
-        # Versión legacy
-        # Si hay un pensamiento activo, detenerlo antes de comenzar el nuevo
-        if self.thought_active:
-            # Detener el sonido anterior si existe
-            if self.thought_sound:
-                self.thought_sound.stop()
-            
-            # Limpiar el estado anterior (pero mantener thought_active si blocks_movement)
-            self.thought_sound = None
-            self.thought_subtitles = []
-            self.thought_current_subtitle_index = 0
-            self.showing_subtitles = False
-        
-        # Iniciar el nuevo pensamiento
-        self.thought_active = True
-        self.thought_blocks_movement = blocks_movement  # Guardar si este pensamiento bloquea movimiento
-        self.thought_sound = sound
-        self.thought_subtitles = subtitles
-        self.thought_current_subtitle_index = 0
-        self.thought_subtitle_start_time = pygame.time.get_ticks()
-        
-        # Reproducir el sonido
-        if sound:
-            sound.play()
-        
-        # Activar el primer subtítulo
-        if subtitles:
-            self.showing_subtitles = True
-            self.subtitle_text = subtitles[0][0]
-            self.subtitle_start_time = pygame.time.get_ticks()
-            self.subtitle_duration = subtitles[0][1]
+
     
-    def update_thought(self):
-        """Actualiza el estado del pensamiento activo."""
-        if REFACTORED_MODULES:
-            # Guardar estado anterior de thought_active
-            was_active = self.thought_active
-            
-            self.audio.update_thoughts()
-            # Sincronizar estado de subtítulos e imágenes (el thread maneja el timing)
-            self.showing_subtitles = self.audio.showing_subtitles
-            self.subtitle_text = self.audio.subtitle_text
-            self.thought_active = self.audio.thought_active
-            self.thought_blocks_movement = self.audio.thought_blocks_movement
-            # Sincronizar imagen del pensamiento (sin sobrescribir exit_image)
-            self.thought_image_shown = self.audio.showing_image
-            if self.audio.showing_image:
-                self.thought_image = self.audio.image_surface
-                self.thought_image_start_time = self.audio.image_start_time
-            else:
-                self.thought_image = None
-            
-            # Si el pensamiento de intro acaba de terminar, marcar flag
-            if was_active and not self.thought_active and self.intro_thought_triggered and not self.intro_thought_finished:
-                self.intro_thought_finished = True
-                print("[DEBUG] Pensamiento de intro terminado - antorchas ahora disponibles")
-            
-            return
-        
-        # Versión legacy (sin cambios)
-        if not self.thought_active:
-            return
-        
-        current_time = pygame.time.get_ticks()
-        
-        # Verificar si el subtítulo actual ha terminado
-        if current_time - self.subtitle_start_time > self.subtitle_duration:
-            self.thought_current_subtitle_index += 1
-            
-            # Verificar si hay más subtítulos
-            if self.thought_current_subtitle_index < len(self.thought_subtitles):
-                # Activar el siguiente subtítulo inmediatamente
-                subtitle_data = self.thought_subtitles[self.thought_current_subtitle_index]
-                self.showing_subtitles = True
-                self.subtitle_text = subtitle_data[0]
-                self.subtitle_start_time = current_time
-                self.subtitle_duration = subtitle_data[1]
-            else:
-                # No hay más subtítulos, terminar el pensamiento
-                self.showing_subtitles = False
-                self.thought_active = False
-                self.thought_blocks_movement = False
-                self.thought_sound = None
-                self.thought_subtitles = []
-                self.thought_current_subtitle_index = 0
     
     def draw_exit_confirmation(self):
         """Dibuja el diálogo de confirmación de salida."""
@@ -1257,7 +1084,7 @@ class DungeonBoard:
                 # Activar pensamiento de intro cuando el personaje entra en el calabozo
                 if not self.intro_thought_triggered and self.intro_sound:
                     # Duración de intro.ogg: 0 = auto (duración del audio)
-                    self.trigger_thought(
+                    self.audio.trigger_thought(
                         sounds=[(self.intro_sound, 0)],
                         subtitles=[("Usa A, W, S y D para moverte.", 4000),
                          ("Haz zoom con Z y X.", 4000),
@@ -1412,7 +1239,7 @@ class DungeonBoard:
             marco_color = tuple(int(120 * brightness_factor) for _ in range(3))
             pygame.draw.rect(self.screen, marco_color, (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra en las paredes
-            self.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor)
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
         elif cell.cell_type == CellType.PASILLO:
             # Calcular número de antorchas para iluminación
             torch_count = self.count_torches(board_row, board_col, cell)
@@ -1444,7 +1271,7 @@ class DungeonBoard:
             marco_color = tuple(int(120 * brightness_factor) for _ in range(3))
             pygame.draw.rect(self.screen, marco_color, (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra solo en las 'paredes' dentro de la celda
-            self.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor)
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
             # Las líneas se dibujan más adelante (después de las piedras, antes de la sangre)
         elif cell.cell_type == CellType.HABITACION:
             # Calcular número de antorchas para iluminación
@@ -1477,7 +1304,7 @@ class DungeonBoard:
             marco_color = tuple(int(120 * brightness_factor) for _ in range(3))
             pygame.draw.rect(self.screen, marco_color, (x, y, self.cell_size, self.cell_size), 3)
             # Dibujar textura de piedra en las paredes
-            self.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor)
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
             # Las líneas se dibujan más adelante (después de las piedras, antes de la sangre)
         elif cell.cell_type == CellType.SALIDA:
             # Celda de salida: se dibuja como habitación normal
@@ -1495,7 +1322,7 @@ class DungeonBoard:
             
             pygame.draw.rect(self.screen, room_color, (x, y, self.cell_size, self.cell_size))
             # Dibujar piedras en las paredes
-            self.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor)
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
         
         # Marcar celdas del camino principal si show_path está activo
         if self.show_path and (board_row, board_col) in self.main_path:
@@ -1566,60 +1393,60 @@ class DungeonBoard:
             # North
             if Direction.N in cell.exits:
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_L, y + 0.1*self.cell_size), 3, board_row, board_col, 1)
-                    self.draw_broken_line(inner_color, (mid_x_R, center_y_D), (mid_x_R, y + 0.1*self.cell_size), 3, board_row, board_col, 2)
+                    self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_L, y + 0.1*self.cell_size), 3, board_row, board_col, 1)
+                    self.effects.draw_broken_line(inner_color, (mid_x_R, center_y_D), (mid_x_R, y + 0.1*self.cell_size), 3, board_row, board_col, 2)
                 else:
                     pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_D), (mid_x_L, y + 0.1*self.cell_size), 3)
                     pygame.draw.line(self.screen, inner_color, (mid_x_R, center_y_D), (mid_x_R, y + 0.1*self.cell_size), 3)
             else:
                 # Cerrar el norte si no hay salida (siempre gris oscuro)
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_R, center_y_D), 3, board_row, board_col, 3)
+                    self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_R, center_y_D), 3, board_row, board_col, 3)
                 else:
                     pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_D), (mid_x_R, center_y_D), 3)
             
             # South
             if Direction.S in cell.exits:
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_L, y + 0.9*self.cell_size), 3, board_row, board_col, 4)
-                    self.draw_broken_line(inner_color, (mid_x_R, center_y_U), (mid_x_R, y + 0.9*self.cell_size), 3, board_row, board_col, 5)
+                    self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_L, y + 0.9*self.cell_size), 3, board_row, board_col, 4)
+                    self.effects.draw_broken_line(inner_color, (mid_x_R, center_y_U), (mid_x_R, y + 0.9*self.cell_size), 3, board_row, board_col, 5)
                 else:
                     pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_U), (mid_x_L, y + 0.9*self.cell_size), 3)
                     pygame.draw.line(self.screen, inner_color, (mid_x_R, center_y_U), (mid_x_R, y + 0.9*self.cell_size), 3)
             else:
                 # Cerrar el sur si no hay salida (siempre gris oscuro)
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_R, center_y_U), 3, board_row, board_col, 6)
+                    self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_R, center_y_U), 3, board_row, board_col, 6)
                 else:
                     pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_U), (mid_x_R, center_y_U), 3)
             
             # East
             if Direction.E in cell.exits:
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line(inner_color, (center_x_R, mid_y_D), (x + 0.9*self.cell_size, mid_y_D), 3, board_row, board_col, 7)
-                    self.draw_broken_line(inner_color, (center_x_R, mid_y_U), (x + 0.9*self.cell_size, mid_y_U), 3, board_row, board_col, 8)
+                    self.effects.draw_broken_line(inner_color, (center_x_R, mid_y_D), (x + 0.9*self.cell_size, mid_y_D), 3, board_row, board_col, 7)
+                    self.effects.draw_broken_line(inner_color, (center_x_R, mid_y_U), (x + 0.9*self.cell_size, mid_y_U), 3, board_row, board_col, 8)
                 else:
                     pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_D), (x + 0.9*self.cell_size, mid_y_D), 3)
                     pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_U), (x + 0.9*self.cell_size, mid_y_U), 3)
             else:
                 # Cerrar el este si no hay salida (siempre gris oscuro)
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line(inner_color, (center_x_R, mid_y_D), (center_x_R, mid_y_U), 3, board_row, board_col, 9)
+                    self.effects.draw_broken_line(inner_color, (center_x_R, mid_y_D), (center_x_R, mid_y_U), 3, board_row, board_col, 9)
                 else:
                     pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_D), (center_x_R, mid_y_U), 3)
             
             # West
             if Direction.O in cell.exits:
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line(inner_color, (center_x_L, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 3, board_row, board_col, 10)
-                    self.draw_broken_line(inner_color, (center_x_L, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 3, board_row, board_col, 11)
+                    self.effects.draw_broken_line(inner_color, (center_x_L, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 3, board_row, board_col, 10)
+                    self.effects.draw_broken_line(inner_color, (center_x_L, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 3, board_row, board_col, 11)
                 else:
                     pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 3)
                     pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 3)
             else:
                 # Cerrar el oeste si no hay salida (siempre gris oscuro)
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line(inner_color, (center_x_L, mid_y_D), (center_x_L, mid_y_U), 3, board_row, board_col, 12)
+                    self.effects.draw_broken_line(inner_color, (center_x_L, mid_y_D), (center_x_L, mid_y_U), 3, board_row, board_col, 12)
                 else:
                     pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_D), (center_x_L, mid_y_U), 3)
         
@@ -1721,15 +1548,15 @@ class DungeonBoard:
                     connected = True
 
             if self.lines_darkening_enabled:
-                self.draw_broken_line(exit_color, (mid_x_L, y), (mid_x_L, y + 0.1*self.cell_size), 4, row, col, 20)
-                self.draw_broken_line(exit_color, (mid_x_R, y), (mid_x_R, y + 0.1*self.cell_size), 4, row, col, 21)
+                self.effects.draw_broken_line(exit_color, (mid_x_L, y), (mid_x_L, y + 0.1*self.cell_size), 4, row, col, 20)
+                self.effects.draw_broken_line(exit_color, (mid_x_R, y), (mid_x_R, y + 0.1*self.cell_size), 4, row, col, 21)
             else:
                 pygame.draw.line(self.screen, exit_color, (mid_x_L, y), (mid_x_L, y + 0.1*self.cell_size), 4)
                 pygame.draw.line(self.screen, exit_color, (mid_x_R, y), (mid_x_R, y + 0.1*self.cell_size), 4)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar la salida en negro
             if is_at_edge(Direction.N) or (not connected and not neighbor_empty):
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line((0, 0, 0), (mid_x_L, y + 0.05*self.cell_size), (mid_x_R, y + 0.05*self.cell_size), 4, row, col, 22)
+                    self.effects.draw_broken_line((0, 0, 0), (mid_x_L, y + 0.05*self.cell_size), (mid_x_R, y + 0.05*self.cell_size), 4, row, col, 22)
                 else:
                     pygame.draw.line(self.screen, (0, 0, 0), (mid_x_L, y + 0.05*self.cell_size), (mid_x_R, y + 0.05*self.cell_size), 4)
 
@@ -1761,15 +1588,15 @@ class DungeonBoard:
                     connected = True
 
             if self.lines_darkening_enabled:
-                self.draw_broken_line(exit_color, (mid_x_L, y + self.cell_size), (mid_x_L, y + 0.8*self.cell_size), 4, row, col, 30)
-                self.draw_broken_line(exit_color, (mid_x_R, y + self.cell_size), (mid_x_R, y + 0.8*self.cell_size), 4, row, col, 31)
+                self.effects.draw_broken_line(exit_color, (mid_x_L, y + self.cell_size), (mid_x_L, y + 0.8*self.cell_size), 4, row, col, 30)
+                self.effects.draw_broken_line(exit_color, (mid_x_R, y + self.cell_size), (mid_x_R, y + 0.8*self.cell_size), 4, row, col, 31)
             else:
                 pygame.draw.line(self.screen, exit_color, (mid_x_L, y + self.cell_size), (mid_x_L, y + 0.8*self.cell_size), 4)
                 pygame.draw.line(self.screen, exit_color, (mid_x_R, y + self.cell_size), (mid_x_R, y + 0.8*self.cell_size), 4)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar
             if is_at_edge(Direction.S) or (not connected and not neighbor_empty):
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line((0, 0, 0), (mid_x_L, y + self.cell_size - 0.05*self.cell_size), (mid_x_R, y + self.cell_size - 0.05*self.cell_size), 4, row, col, 32)
+                    self.effects.draw_broken_line((0, 0, 0), (mid_x_L, y + self.cell_size - 0.05*self.cell_size), (mid_x_R, y + self.cell_size - 0.05*self.cell_size), 4, row, col, 32)
                 else:
                     pygame.draw.line(self.screen, (0, 0, 0), (mid_x_L, y + self.cell_size - 0.05*self.cell_size), (mid_x_R, y + self.cell_size - 0.05*self.cell_size), 4)
 
@@ -1799,15 +1626,15 @@ class DungeonBoard:
                     connected = True
 
             if self.lines_darkening_enabled:
-                self.draw_broken_line(exit_color, (x + self.cell_size, mid_y_D), (x + 0.8*self.cell_size, mid_y_D), 4, row, col, 40)
-                self.draw_broken_line(exit_color, (x + self.cell_size, mid_y_U), (x + 0.8*self.cell_size, mid_y_U), 4, row, col, 41)
+                self.effects.draw_broken_line(exit_color, (x + self.cell_size, mid_y_D), (x + 0.8*self.cell_size, mid_y_D), 4, row, col, 40)
+                self.effects.draw_broken_line(exit_color, (x + self.cell_size, mid_y_U), (x + 0.8*self.cell_size, mid_y_U), 4, row, col, 41)
             else:
                 pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_D), (x + 0.8*self.cell_size, mid_y_D), 4)
                 pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_U), (x + 0.8*self.cell_size, mid_y_U), 4)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar
             if is_at_edge(Direction.E) or (not connected and not neighbor_empty):
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line((0, 0, 0), (x + self.cell_size - 0.05*self.cell_size, mid_y_D), (x + self.cell_size - 0.05*self.cell_size, mid_y_U), 4, row, col, 42)
+                    self.effects.draw_broken_line((0, 0, 0), (x + self.cell_size - 0.05*self.cell_size, mid_y_D), (x + self.cell_size - 0.05*self.cell_size, mid_y_U), 4, row, col, 42)
                 else:
                     pygame.draw.line(self.screen, (0, 0, 0), (x + self.cell_size - 0.05*self.cell_size, mid_y_D), (x + self.cell_size - 0.05*self.cell_size, mid_y_U), 4)
 
@@ -1837,15 +1664,15 @@ class DungeonBoard:
                     connected = True
 
             if self.lines_darkening_enabled:
-                self.draw_broken_line(exit_color, (x, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 4, row, col, 50)
-                self.draw_broken_line(exit_color, (x, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 4, row, col, 51)
+                self.effects.draw_broken_line(exit_color, (x, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 4, row, col, 50)
+                self.effects.draw_broken_line(exit_color, (x, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 4, row, col, 51)
             else:
                 pygame.draw.line(self.screen, exit_color, (x, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 4)
                 pygame.draw.line(self.screen, exit_color, (x, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 4)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar
             if is_at_edge(Direction.O) or (not connected and not neighbor_empty):
                 if self.lines_darkening_enabled:
-                    self.draw_broken_line((0, 0, 0), (x + 0.05*self.cell_size, mid_y_D), (x + 0.05*self.cell_size, mid_y_U), 4, row, col, 52)
+                    self.effects.draw_broken_line((0, 0, 0), (x + 0.05*self.cell_size, mid_y_D), (x + 0.05*self.cell_size, mid_y_U), 4, row, col, 52)
                 else:
                     pygame.draw.line(self.screen, (0, 0, 0), (x + 0.05*self.cell_size, mid_y_D), (x + 0.05*self.cell_size, mid_y_U), 4)
 
@@ -2022,104 +1849,6 @@ class DungeonBoard:
             mortar_color = (30, 30, 30)
             pygame.draw.line(self.screen, mortar_color, (x1, y1), (x2, y2), 2)
 
-    def draw_stone_in_walls(self, board_row: int, board_col: int, x: int, y: int, cell: Cell, brightness_factor: float = 1.0):
-        """Dibuja textura de piedra únicamente en las zonas de pared dentro
-        de una celda de tipo PASILLO (entre el suelo/centro y los bordes).
-
-        Se respeta la presencia de salidas: si existe una salida N/S/E/O, se deja
-        un hueco en la pared correspondiente para el pasaje.
-        
-        Args:
-            brightness_factor: Factor de brillo (0.0 a 1.0) para oscurecer todos los colores
-        """
-        if REFACTORED_MODULES:
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
-            return
-        
-        # Versión legacy
-        seed = board_row * 100000 + board_col
-        rnd = random.Random(seed + 7)
-
-        # Calcular brillo base según número de antorchas, pero aplicando el factor de oscuridad
-        torch_count = self.count_torches(board_row, board_col, cell)
-        wall_brightness = 20 + min(120, torch_count * 30)  # Base 20, aumenta 30 por antorcha
-        wall_brightness = int(wall_brightness * brightness_factor)  # Aplicar factor de oscuridad
-
-        size = self.cell_size
-        wall_thickness = max(6, int(size * 0.28))
-        gap_w = max(8, int(size * 0.36))
-        gap_h = max(8, int(size * 0.36))
-
-        # Rects: top, bottom, left, right (cada uno representando la pared dentro de la celda)
-        # Top
-        top_rects = []
-        if Direction.N in cell.exits:
-            # dejar hueco central
-            left_w = (size - gap_w) // 2
-            top_rects.append((x, y, left_w, wall_thickness))
-            top_rects.append((x + left_w + gap_w, y, left_w, wall_thickness))
-        else:
-            top_rects.append((x, y, size, wall_thickness))
-
-        # Bottom
-        bottom_rects = []
-        if Direction.S in cell.exits:
-            left_w = (size - gap_w) // 2
-            bottom_rects.append((x, y + size - wall_thickness, left_w, wall_thickness))
-            bottom_rects.append((x + left_w + gap_w, y + size - wall_thickness, left_w, wall_thickness))
-        else:
-            bottom_rects.append((x, y + size - wall_thickness, size, wall_thickness))
-
-        # Left
-        left_rects = []
-        if Direction.O in cell.exits:
-            top_h = (size - gap_h) // 2
-            left_rects.append((x, y, wall_thickness, top_h))
-            left_rects.append((x, y + top_h + gap_h, wall_thickness, top_h))
-        else:
-            left_rects.append((x, y, wall_thickness, size))
-
-        # Right
-        right_rects = []
-        if Direction.E in cell.exits:
-            top_h = (size - gap_h) // 2
-            right_rects.append((x + size - wall_thickness, y, wall_thickness, top_h))
-            right_rects.append((x + size - wall_thickness, y + top_h + gap_h, wall_thickness, top_h))
-        else:
-            right_rects.append((x + size - wall_thickness, y, wall_thickness, size))
-
-        all_rects = top_rects + bottom_rects + left_rects + right_rects
-
-        base_stone = (wall_brightness, wall_brightness, wall_brightness)
-        for (rx, ry, rw, rh) in all_rects:
-            # rellenar esa rect con piedras pequeñas — más denso
-            area = max(1, rw * rh)
-            num = rnd.randint(max(12, area // 80), max(24, area // 40))
-            for _ in range(num):
-                # usar piedras más pequeñas y más numerosas
-                w = rnd.randint(max(2, int(rw * 0.08)), max(4, int(rw * 0.5)))
-                h = rnd.randint(max(2, int(rh * 0.06)), max(4, int(rh * 0.45)))
-                sx = rx + rnd.randint(0, max(0, rw - w))
-                sy = ry + rnd.randint(0, max(0, rh - h))
-                shade = rnd.randint(-40, 60)
-                stone_color = tuple(max(0, min(255, base_stone[i] + shade)) for i in range(3))
-                pygame.draw.ellipse(self.screen, stone_color, (sx, sy, w, h))
-                if rnd.random() < 0.9:
-                    border = tuple(max(0, c - 55) for c in stone_color)
-                    try:
-                        pygame.draw.ellipse(self.screen, border, (sx, sy, w, h), 1)
-                    except Exception:
-                        pass
-
-        # Añadir algunas grietas en las paredes — más visibles y más numerosas
-        for _ in range(rnd.randint(6, 14)):
-            (rx, ry, rw, rh) = rnd.choice(all_rects)
-            x1 = rx + rnd.randint(0, max(0, rw - 1))
-            y1 = ry + rnd.randint(0, max(0, rh - 1))
-            x2 = rx + rnd.randint(0, max(0, rw - 1))
-            y2 = ry + rnd.randint(0, max(0, rh - 1))
-            mortar_color = (25, 25, 25)
-            pygame.draw.line(self.screen, mortar_color, (x1, y1), (x2, y2), 2)
     
     def generate_random_exits(self, exclude_direction: Direction, cell_type: CellType, current_pos: tuple) -> set:
         """Genera salidas aleatorias según el tipo de celda, excepto la dirección de entrada.
@@ -2307,7 +2036,7 @@ class DungeonBoard:
                 # Programar pensamiento para 1s después
                 async def delayed_blood_thought():
                     await asyncio.sleep(1.0)
-                    self.trigger_thought(
+                    self.audio.trigger_thought(
                         sounds=[(self.blood_sound, 0)],
                         images=[(self.blood_image, 0)] if self.blood_image else None,
                         subtitles=[("¿Es eso... sangre?!?", 10000)],
@@ -2351,7 +2080,7 @@ class DungeonBoard:
                     
                     async def delayed_blood_thought():
                         await asyncio.sleep(1.0)  # Esperar 1 segundo
-                        self.trigger_thought(
+                        self.audio.trigger_thought(
                             sounds=[(self.blood_sound, 0)],
                             images=[(self.blood_image, 0)] if self.blood_image else None,
                             subtitles=[("Manchas de sangre en el suelo...", 6000)],
@@ -2373,7 +2102,7 @@ class DungeonBoard:
                     
                     async def delayed_torch_thought():
                         await asyncio.sleep(1.0)  # Esperar 1 segundo
-                        self.trigger_thought(
+                        self.audio.trigger_thought(
                             sounds=[(self.torch_sound, 0)],
                             images=[(self.torch_image, 0)] if self.torch_image else None,
                             subtitles=[("Una antorcha encendida... ¡Interesante!", 6000)],
@@ -2397,7 +2126,7 @@ class DungeonBoard:
                         audio_duration = int(self.abominacion_sound.get_length() * 1000)
                         image_duration = audio_duration + 2000  # +2 segundos después del audio
                         
-                        self.trigger_thought(
+                        self.audio.trigger_thought(
                             sounds=[(self.abominacion_sound, 0)],
                             images=[(self.exit_image, image_duration)] if self.exit_image else None,
                             blocks_movement=True
@@ -2496,21 +2225,36 @@ class DungeonBoard:
             current_time = pygame.time.get_ticks()
             elapsed = current_time - self.flicker_start_time
             
-            # Si ya pasó la duración del parpadeo, apagar definitivamente
+            # Después de 3 segundos, hacer zoom out 3 veces (una vez)
+            if elapsed >= 3000 and not self.zoom_out_triggered:
+                print("[DEBUG] Haciendo zoom out 3 veces")
+                for _ in range(3):
+                    self.zoom_out()
+                self.zoom_out_triggered = True
+            
+            # Si ya pasó la duración del parpadeo (5 segundos), apagar definitivamente
             if elapsed >= self.flicker_duration:
                 self.torches_flickering = False
                 self.torches_extinguished = True
                 print("[DEBUG] Antorchas apagadas definitivamente")
+                
+                # Restaurar el zoom original
+                if hasattr(self, 'original_zoom_index'):
+                    self.current_zoom_index = self.original_zoom_index
+                    self.view_size = self.zoom_levels[self.current_zoom_index]
+                    self.cell_size = self.fixed_window_size // self.view_size
+                    self.update_camera_target()
+                    print(f"[DEBUG] Zoom restaurado a nivel {self.original_zoom_index}")
+                
                 return 0
             
             # Parpadeo: alternar entre visible/invisible cada vez más rápido
-            # Primero parpadeos lentos (500ms), luego medios (250ms), luego rápidos (100ms)
-            if elapsed < 3000:  # Primeros 3 segundos: parpadeo lento
-                flicker_interval = 500
-            elif elapsed < 6000:  # Segundos 3-6: parpadeo medio
-                flicker_interval = 250
-            else:  # Últimos 2 segundos: parpadeo rápido
-                flicker_interval = 100
+            # Primeros 3 segundos: parpadeo lento (500ms)
+            # Últimos 2 segundos: parpadeo rápido (100ms)
+            if elapsed < 3000:
+                flicker_interval = 500  # Parpadeo lento
+            else:
+                flicker_interval = 100  # Parpadeo rápido
             
             # Alternar entre visible/invisible
             if (elapsed // flicker_interval) % 2 == 0:
@@ -2581,76 +2325,6 @@ class DungeonBoard:
         # Retornar el mínimo entre antorchas deseadas y paredes disponibles
         return min(desired_torches, available_walls)
     
-    def draw_broken_line(self, color, start_pos, end_pos, width, board_row, board_col, line_id):
-        """Dibuja una línea quebrada (con segmentos irregulares).
-        
-        Args:
-            color: Color de la línea
-            start_pos: Tupla (x, y) de inicio
-            end_pos: Tupla (x, y) de fin
-            width: Ancho de la línea
-            board_row: Fila en el tablero (para semilla)
-            board_col: Columna en el tablero (para semilla)
-            line_id: ID único de la línea (para semilla)
-        """
-        if REFACTORED_MODULES:
-            self.effects.draw_broken_line(color, start_pos, end_pos, width, board_row, board_col, line_id)
-            return
-        
-        # Versión legacy
-        # Asegurar que el color tiene valores enteros
-        color = tuple(int(c) for c in color)
-        
-        # Usar posición + line_id como semilla para reproducibilidad
-        seed = board_row * 100000 + board_col * 100 + line_id
-        rnd = random.Random(seed)
-        
-        x1, y1 = start_pos
-        x2, y2 = end_pos
-        
-        # Calcular longitud de la línea
-        length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-        
-        if length < 5:
-            # Línea muy corta, dibujar directamente
-            pygame.draw.line(self.screen, color, start_pos, end_pos, width)
-            return
-        
-        # Número de segmentos (más segmentos = más quebrada)
-        num_segments = max(3, int(length / 10))
-        
-        # Generar puntos intermedios con desplazamiento aleatorio
-        points = [start_pos]
-        for i in range(1, num_segments):
-            t = i / num_segments
-            # Punto en la línea recta
-            px = x1 + t * (x2 - x1)
-            py = y1 + t * (y2 - y1)
-            
-            # Desplazamiento perpendicular aleatorio
-            # Vector perpendicular
-            dx = x2 - x1
-            dy = y2 - y1
-            perp_x = -dy
-            perp_y = dx
-            # Normalizar
-            perp_len = (perp_x ** 2 + perp_y ** 2) ** 0.5
-            if perp_len > 0:
-                perp_x /= perp_len
-                perp_y /= perp_len
-            
-            # Desplazamiento aleatorio (hasta 3 píxeles)
-            offset = rnd.uniform(-3, 3)
-            px += perp_x * offset
-            py += perp_y * offset
-            
-            points.append((int(px), int(py)))
-        
-        points.append(end_pos)
-        
-        # Dibujar segmentos
-        for i in range(len(points) - 1):
-            pygame.draw.line(self.screen, color, points[i], points[i + 1], width)
     
     def has_blood_stains(self, board_row, board_col):
         """Verifica si una celda tiene manchas de sangre."""
@@ -2902,7 +2576,7 @@ class DungeonBoard:
                 if not self.showing_subtitles and not hasattr(self, 'cthulhu_subtitle_shown'):
                     # Usar trigger_thought para el pensamiento completo de Cthulhu
                     # La imagen dura más que el subtítulo para dar un efecto dramático
-                    self.trigger_thought(
+                    self.audio.trigger_thought(
                         images=[(self.exit_image, 12000)] if self.exit_image else None,  # Imagen por 12 segundos
                         subtitles=[("PH'NGLUI MGLW'NAFH CTHULHU R'LYEH WGAH'NAGL FHTAGN", 8000)],
                         blocks_movement=False
@@ -2988,31 +2662,85 @@ class DungeonBoard:
                 current_time = pygame.time.get_ticks()
                 elapsed = current_time - self.wind_fade_start_time
                 
-                # Iniciar viento cuando termina la ráfaga (si no está sonando ya)
-                if elapsed >= 8000 and self.current_music != 'viento':  # ~8s duración de ráfaga
+                # Fade-in durante 20 segundos desde el inicio
+                if elapsed < 20000:  # 20 segundos de fade-in
+                    volume = (elapsed / 20000.0)  # 0.0 a 1.0 gradualmente
+                    self.music_channel.set_volume(volume)
+                else:
+                    # Fade completo, volumen máximo
+                    self.music_channel.set_volume(1.0)
+                    self.wind_fading_in = False
+                    print("[DEBUG] Fade-in de viento completado")
+            
+            # Actualizar sistema de pensamientos
+            # Guardar estado anterior de thought_active
+            was_active = self.thought_active
+            
+            self.audio.update_thoughts()
+            # Sincronizar estado de subtítulos e imágenes (el thread maneja el timing)
+            self.showing_subtitles = self.audio.showing_subtitles
+            self.subtitle_text = self.audio.subtitle_text
+            self.thought_active = self.audio.thought_active
+            self.thought_blocks_movement = self.audio.thought_blocks_movement
+            # Sincronizar imagen del pensamiento (sin sobrescribir exit_image)
+            self.thought_image_shown = self.audio.showing_image
+            if self.audio.showing_image:
+                self.thought_image = self.audio.image_surface
+                self.thought_image_start_time = self.audio.image_start_time
+            else:
+                self.thought_image = None
+            
+            # Si el pensamiento de intro acaba de terminar, marcar flag
+            if was_active and not self.thought_active and self.intro_thought_triggered and not self.intro_thought_finished:
+                self.intro_thought_finished = True
+                print("[DEBUG] Pensamiento de intro terminado - antorchas ahora disponibles")
+            
+            # Si el pensamiento de salida acaba de terminar, activar ráfaga
+            if was_active and not self.thought_active and self.exit_thought_active and not self.rafaga_thought_triggered:
+                print("[DEBUG] Pensamiento de salida terminado - activando ráfaga inmediatamente")
+                if self.rafaga_sound:
+                    # Parar la música de Cthulhu
+                    self.music_channel.stop()
+                    
+                    # Activar pensamiento de ráfaga (bloquea movimiento)
+                    self.audio.trigger_thought(
+                        sounds=[(self.rafaga_sound, 0)],  # Duración automática
+                        blocks_movement=True
+                    )
+                    self.rafaga_thought_triggered = True
+                    self.torches_flickering = True
+                    self.flicker_start_time = pygame.time.get_ticks()
+                    # Las antorchas parpadean durante 5 segundos
+                    self.flicker_duration = 5000  # 5 segundos
+                    print(f"[DEBUG] Ráfaga activada - antorchas parpadeando por {self.flicker_duration}ms")
+                    
+                    # Guardar el zoom original para restaurarlo después
+                    self.original_zoom_index = self.current_zoom_index
+                    
+                    # Hacer zoom in máximo al empezar el parpadeo
+                    self.current_zoom_index = 0  # Zoom máximo (7x7)
+                    self.view_size = self.zoom_levels[self.current_zoom_index]
+                    self.cell_size = self.fixed_window_size // self.view_size
+                    self.update_camera_target()
+                    print("[DEBUG] Zoom in máximo aplicado")
+                    
+                    # Inicializar contadores para zoom out
+                    self.zoom_out_count = 0
+                    self.zoom_out_triggered = False
+                    
+                    # Iniciar música de viento inmediatamente con volumen 0
                     if 'viento' in self.music_sounds:
                         self.current_music = 'viento'
                         self.music_channel.play(self.music_sounds['viento'], loops=-1)
-                        self.music_channel.set_volume(0.0)  # Empezar desde silencio
-                        print("[DEBUG] Música de viento iniciada")
-                
-                # Fade-in durante 20 segundos después de que empieza el viento
-                if self.current_music == 'viento':
-                    fade_elapsed = elapsed - 8000  # Tiempo desde que empezó el viento
-                    if fade_elapsed < 20000:  # 20 segundos de fade-in
-                        volume = (fade_elapsed / 20000.0)  # 0.0 a 1.0
-                        self.music_channel.set_volume(volume)
-                    else:
-                        # Fade completo, volumen máximo
-                        self.music_channel.set_volume(1.0)
-                        self.wind_fading_in = False
-                        print("[DEBUG] Fade-in de viento completado")
-            
-            # Actualizar sistema de pensamientos
-            self.update_thought()
+                        self.music_channel.set_volume(0.0)  # Empezar desde silencio total
+                        print("[DEBUG] Música de viento iniciada con volumen 0")
+                    
+                    # Iniciar fade-in del viento (durará 20 segundos)
+                    self.wind_fade_start_time = pygame.time.get_ticks()
+                    self.wind_fading_in = True
             
             # Actualizar volumen de música según distancia (solo durante el juego, no durante fade)
-            if not self.showing_title and not self.intro_anim_active and not self.fading_out and not self.fading_in:
+            if not self.showing_title and not self.intro_anim_active and not self.fading_out and not self.fading_in and not self.wind_fading_in:
                 self.update_music_volume_by_distance()
             
             # Reproducir sonidos ambientales aleatorios (solo durante el juego, no en pantalla de título)
