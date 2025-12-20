@@ -2129,7 +2129,7 @@ class DungeonBoard:
                         self.audio.trigger_thought(
                             sounds=[(self.abominacion_sound, 0)],
                             images=[(self.exit_image, image_duration)] if self.exit_image else None,
-                            subtitles=[("Una losa con extraños símbolos...", image_duration)],
+                            subtitles=[("¿Qué es esta abominación?", image_duration)],
                             blocks_movement=True
                         )
                         print(f"[DEBUG] Pensamiento de salida activado - exit_thought_active={self.exit_thought_active}")
