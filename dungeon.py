@@ -2846,8 +2846,16 @@ class DungeonBoard:
                         self.zoom_out()
                     else:
                         # Bloquear movimiento durante la animación de introducción
+                        # PERO permitir saltarla con cualquier tecla de movimiento
                         if self.intro_anim_active:
-                            continue
+                            # Si pulsan una tecla de movimiento, terminar la animación inmediatamente
+                            if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT,
+                                           pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d):
+                                self.intro_anim_active = False
+                                self.intro_show_weapons = True
+                                print("[DEBUG] Animación de intro saltada por input del usuario")
+                            else:
+                                continue
                         
                         # Expect an arrow key to move in that direction
                         dir_map = {
