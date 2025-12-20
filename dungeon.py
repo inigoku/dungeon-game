@@ -1071,6 +1071,10 @@ class DungeonBoard:
             t_now = pygame.time.get_ticks()
             elapsed = t_now - self.intro_anim_start_time
             
+            # Debug en web
+            if self.is_web and elapsed % 1000 < 50:  # Log cada segundo aproximadamente
+                print(f"[DEBUG WEB] Intro anim - elapsed: {elapsed}ms")
+            
             # Stage 0: Caída (0-800ms)
             if elapsed < 800:
                 fall_progress = elapsed / 800.0
@@ -1088,6 +1092,8 @@ class DungeonBoard:
             else:
                 self.intro_anim_active = False
                 self.intro_show_weapons = True
+                if self.is_web:
+                    print("[DEBUG WEB] Intro anim completada")
                 
                 # Activar pensamiento de intro cuando el personaje entra en el calabozo
                 if not self.intro_thought_triggered and self.intro_sound:
@@ -2846,16 +2852,8 @@ class DungeonBoard:
                         self.zoom_out()
                     else:
                         # Bloquear movimiento durante la animación de introducción
-                        # PERO permitir saltarla con cualquier tecla de movimiento
                         if self.intro_anim_active:
-                            # Si pulsan una tecla de movimiento, terminar la animación inmediatamente
-                            if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT,
-                                           pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d):
-                                self.intro_anim_active = False
-                                self.intro_show_weapons = True
-                                print("[DEBUG] Animación de intro saltada por input del usuario")
-                            else:
-                                continue
+                            continue
                         
                         # Expect an arrow key to move in that direction
                         dir_map = {
