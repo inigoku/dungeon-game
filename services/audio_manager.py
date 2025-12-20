@@ -4,6 +4,11 @@ import random
 import threading
 import time
 import os
+import sys
+
+
+# Detectar si estamos en entorno web (Pygbag/Emscripten)
+IS_WEB = hasattr(sys, 'platform') and 'emscripten' in sys.platform.lower()
 
 
 class AudioManager:
@@ -433,7 +438,34 @@ class AudioManager:
             self.thought_blocks_movement = blocks_movement
             self._cancel_thought = False  # Reset flag de cancelación
         
-        # Crear y lanzar el thread
+        # En entorno web, ejecutar sin threads (simplificado)
+        if IS_WEB:
+            print("[DEBUG] Modo web detectado - ejecutando pensamientos sin threads")
+            # En web, iniciar el primer sonido directamente y manejar el resto con update_thoughts()
+            if sounds:
+                sound_obj, _ = sounds[0]
+                if sound_obj:
+                    sound_obj.play()
+            if images:
+                img_surface, img_duration = images[0]
+                self.showing_image = True
+                self.image_surface = img_surface
+                self.image_duration = img_duration
+                current_time = pygame.time.get_ticks()
+                self.image_start_time = current_time
+                self.image_end_time = current_time + img_duration
+            if subtitles:
+                text, duration = subtitles[0]
+                self.showing_subtitles = True
+                self.subtitle_text = text
+                self.subtitle_duration = duration
+                current_time = pygame.time.get_ticks()
+                self.subtitle_start_time = current_time
+                self.subtitle_end_time = current_time + duration
+            print("[DEBUG] Pensamiento iniciado en modo web")
+            return
+        
+        # Crear y lanzar el thread (solo en sistemas nativos)
         self.thought_thread = threading.Thread(
             target=self._thought_worker,
             args=(sounds, images, subtitles),
@@ -444,13 +476,8 @@ class AudioManager:
         self.thought_thread.start()
         
         # Intentar aumentar la prioridad del thread en sistemas Unix/Linux/macOS
-        # (Solo en sistemas nativos, no en versión web)
         try:
-            # Detectar si estamos en un entorno web (Pygbag/Pyodide)
-            import sys
-            is_web = hasattr(sys, 'platform') and 'emscripten' in sys.platform.lower()
-            
-            if not is_web and hasattr(os, 'nice'):
+            if hasattr(os, 'nice'):
                 os.nice(-10)  # Aumentar prioridad del proceso completo
         except (ImportError, PermissionError, OSError, AttributeError):
             # Si no tiene permisos o falla, continuar sin prioridad
@@ -476,13 +503,35 @@ class AudioManager:
             print("[DEBUG] Cancelación de pensamiento solicitada")
     
     def update_thoughts(self):
-        """Actualiza el estado de los pensamientos (ahora manejado por threads)."""
-        # El thread maneja todo automáticamente, solo verificamos si terminó
-        if self.thought_thread and not self.thought_thread.is_alive():
-            with self._thought_lock:
-                if not self.thought_active:
-                    self.thought_thread = None
-                    self._cancel_thought = False  # Reset flag de cancelación
+        """Actualiza el estado de los pensamientos."""
+        if IS_WEB:
+            # En modo web, manejamos el estado manualmente (sin threads)
+            current_time = pygame.time.get_ticks()
+            
+            # Verificar si la imagen debe ocultarse
+            if self.showing_image and self.image_end_time and current_time >= self.image_end_time:
+                self.showing_image = False
+                self.image_surface = None
+                self.image_end_time = None
+            
+            # Verificar si los subtítulos deben ocultarse
+            if self.showing_subtitles and self.subtitle_end_time and current_time >= self.subtitle_end_time:
+                self.showing_subtitles = False
+                self.current_subtitle = None
+                self.subtitle_end_time = None
+            
+            # Si no hay imagen ni subtítulos activos, el pensamiento ha terminado
+            if not self.showing_image and not self.showing_subtitles:
+                with self._thought_lock:
+                    self.thought_active = False
+                    self._cancel_thought = False
+        else:
+            # Modo nativo con threads
+            if self.thought_thread and not self.thought_thread.is_alive():
+                with self._thought_lock:
+                    if not self.thought_active:
+                        self.thought_thread = None
+                        self._cancel_thought = False  # Reset flag de cancelación
     
     def play_footstep(self):
         """Reproduce un sonido de paso alternando entre paso1 y paso2."""
