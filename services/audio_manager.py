@@ -444,14 +444,16 @@ class AudioManager:
         self.thought_thread.start()
         
         # Intentar aumentar la prioridad del thread en sistemas Unix/Linux/macOS
+        # (Solo en sistemas nativos, no en versión web)
         try:
-            import psutil
-            p = psutil.Process(os.getpid())
-            # Establecer prioridad alta (en macOS: -20 es la más alta, 20 la más baja)
-            # Para el thread actual usamos nice value
-            os.nice(-10)  # Aumentar prioridad del proceso completo
-        except (ImportError, PermissionError, OSError):
-            # Si no tiene permisos o psutil no está instalado, continuar sin prioridad
+            # Detectar si estamos en un entorno web (Pygbag/Pyodide)
+            import sys
+            is_web = hasattr(sys, 'platform') and 'emscripten' in sys.platform.lower()
+            
+            if not is_web and hasattr(os, 'nice'):
+                os.nice(-10)  # Aumentar prioridad del proceso completo
+        except (ImportError, PermissionError, OSError, AttributeError):
+            # Si no tiene permisos o falla, continuar sin prioridad
             pass
         
         print("[DEBUG] Thread lanzado con prioridad máxima")
