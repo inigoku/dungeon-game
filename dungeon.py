@@ -411,14 +411,13 @@ class DungeonBoard:
         self.show_path = False  # F4 para mostrar el camino completo
         self.auto_reveal_mode = False  # F2 para activar/desactivar revelación automática
         
-        # Detección de entorno web
+        # Detección de entorno web y limpieza de eventos iniciales
         self.is_web = hasattr(sys, 'platform') and 'emscripten' in sys.platform.lower()
-        self.first_key_ignored = not self.is_web  # En web False (necesita ignorar), en nativo True (ya ignorada)
         
-        # En web, limpiar cola de eventos al inicio
+        # Limpiar cualquier tecla presionada durante la carga (antes del título)
         if self.is_web:
             pygame.event.clear()
-            print("[DEBUG] Modo web detectado - primera tecla será ignorada")
+            print("[DEBUG] Modo web detectado - eventos iniciales limpiados")
     
     def get_view_offset(self):
         """Interpola la cámara hacia la posición del jugador y retorna el offset redondeado."""
@@ -2815,12 +2814,6 @@ class DungeonBoard:
                             self.showing_title = False
                             self.intro_anim_active = True
                             self.intro_anim_start_time = pygame.time.get_ticks()
-                        continue
-                    
-                    # En web, ignorar la primera tecla DESPUÉS de salir de la pantalla de título
-                    if self.is_web and not self.first_key_ignored:
-                        self.first_key_ignored = True
-                        print("[DEBUG] Primera tecla después del título ignorada")
                         continue
                     
                     # Tecla ESC durante el juego
