@@ -441,28 +441,55 @@ class AudioManager:
         # En entorno web, ejecutar sin threads (simplificado)
         if IS_WEB:
             print("[DEBUG] Modo web detectado - ejecutando pensamientos sin threads")
+            
+            # Mantener thought_active en True hasta que termine
+            # (importante para sincronización con dungeon.py)
+            # No reseteamos aquí, update_thoughts() lo hará cuando termine
+            
             # En web, iniciar el primer sonido directamente y manejar el resto con update_thoughts()
+            sound_duration = 0
             if sounds:
-                sound_obj, _ = sounds[0]
+                sound_obj, duration = sounds[0]
                 if sound_obj:
-                    sound_obj.play()
+                    try:
+                        sound_obj.play()
+                        # Si duration es 0, obtener duración real del sonido
+                        if duration == 0:
+                            try:
+                                sound_duration = int(sound_obj.get_length() * 1000)
+                            except:
+                                sound_duration = 3000  # Duración por defecto si falla
+                        else:
+                            sound_duration = duration
+                    except Exception as e:
+                        print(f"[ERROR] No se pudo reproducir sonido en modo web: {e}")
+                        sound_duration = 3000
+            
+            current_time = pygame.time.get_ticks()
+            
             if images:
                 img_surface, img_duration = images[0]
                 self.showing_image = True
                 self.image_surface = img_surface
+                # Si duración es 0, usar duración del sonido
+                if img_duration == 0:
+                    img_duration = sound_duration
                 self.image_duration = img_duration
-                current_time = pygame.time.get_ticks()
                 self.image_start_time = current_time
-                self.image_end_time = current_time + img_duration
+                self.image_end_time = current_time + img_duration if img_duration > 0 else current_time + 3000
+            
             if subtitles:
                 text, duration = subtitles[0]
                 self.showing_subtitles = True
                 self.subtitle_text = text
+                # Si duración es 0, usar duración del sonido
+                if duration == 0:
+                    duration = sound_duration
                 self.subtitle_duration = duration
-                current_time = pygame.time.get_ticks()
                 self.subtitle_start_time = current_time
-                self.subtitle_end_time = current_time + duration
-            print("[DEBUG] Pensamiento iniciado en modo web")
+                self.subtitle_end_time = current_time + duration if duration > 0 else current_time + 3000
+            
+            print(f"[DEBUG] Pensamiento iniciado en modo web - sound_duration: {sound_duration}ms")
             return
         
         # Crear y lanzar el thread (solo en sistemas nativos)
