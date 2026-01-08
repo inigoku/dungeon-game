@@ -77,6 +77,13 @@ class AudioManager:
         if 'intro' in self.music_sounds:
             self.intro_sound = self.music_sounds['intro']
     
+        # Reproducir adagio desde el principio en loop
+        if 'adagio' in self.music_sounds:
+            self.current_music = 'adagio'
+            self.music_channel.play(self.music_sounds['adagio'], loops=-1)
+            self.music_channel.set_volume(self.music_volume)
+            self.intro_played = True
+        
     def _load_music_file(self, key, path):
         """Carga un archivo de música."""
         try:
@@ -412,11 +419,6 @@ class AudioManager:
         if subtitles: components.append(f"{len(subtitles)} subtítulos")
         print(f"[DEBUG] trigger_thought: {', '.join(components) if components else 'vacío'}, blocks={blocks_movement}, active={self.thought_active}")
         
-        # No iniciar un nuevo pensamiento si ya hay uno activo
-        if self.thought_active:
-            print("[DEBUG] Ya hay un pensamiento activo, ignorando")
-            return
-        
         # Validar duraciones (0 es válido para imágenes si hay sonido)
         if images:
             for img, duration in images:
@@ -599,3 +601,19 @@ class AudioManager:
         self.update_fades()
         self.update_subtitles()
         self.update_thoughts()
+
+    def start_fade_out(self, next_music_name=None, loop=False):
+        """Inicia un fade out de la música actual."""
+        self.fading_out = True
+        self.fade_start_time = pygame.time.get_ticks()
+        self.fade_from_volume = self.music_channel.get_volume()
+        self.fade_to_volume = 0.0
+        self.pending_music_load = (next_music_name, loop)
+    
+    def start_fade_in(self, target_volume=0.5):
+        """Inicia un fade in de la música actual."""
+        self.fading_in = True
+        self.fade_start_time = pygame.time.get_ticks()
+        self.fade_from_volume = 0.0
+        self.fade_to_volume = target_volume
+        self.music_channel.set_volume(0.0)

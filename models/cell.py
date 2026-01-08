@@ -26,8 +26,11 @@ class Cell:
     """Represents a single cell in the dungeon."""
     cell_type: CellType
     exits: Set[Direction] = field(default_factory=set)
+    adjacent_torch_counts_by_dir: dict = field(default_factory=dict)
     
     def __post_init__(self) -> None:
         # Ensure exits is always a set, even if None was passed
         if self.exits is None:
             object.__setattr__(self, 'exits', set())
+        if self.adjacent_torch_counts_by_dir is None:
+            object.__setattr__(self, 'adjacent_torch_counts_by_dir', {})
