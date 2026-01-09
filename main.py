@@ -37,12 +37,6 @@ async def main():
         # DungeonBoard automáticamente usa los módulos refactorizados
         game = dungeon.DungeonBoard()
         
-        # Mostrar información de arquitectura
-        if dungeon.REFACTORED_MODULES:
-            print("✅ Arquitectura modular activa")
-        else:
-            print("⚠️  Usando versión legacy")
-        
         # Ejecutar el loop principal del juego
         await game.run()
         
