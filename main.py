@@ -60,7 +60,7 @@ if __name__ == "__main__":
     print("=" * 50)
     print("🎮 Dungeon Game")
     print("=" * 50)
-    
+    print("=== INICIO main.py ===")
     # Ejecutar el juego
     asyncio.run(main())
 

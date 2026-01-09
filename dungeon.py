@@ -41,6 +41,10 @@ DEFAULT_VIEW_SIZE = 7
 DEFAULT_CELL_SIZE = 90
 
 class DungeonBoard:
+    def __init__(self, *args, **kwargs):
+        print("=== INICIO DungeonBoard ===")
+        # ...existing code...
+        # El resto del constructor sigue igual
     def __init__(self, size=DEFAULT_BOARD_SIZE, view_size=DEFAULT_VIEW_SIZE, cell_size=DEFAULT_CELL_SIZE):
         self.size = size
         self.initial_view_size = view_size  # Vista inicial de 7x7
