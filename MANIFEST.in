@@ -1,0 +1,7 @@
+include main.py
+default_include dungeon.py
+include dungeon.py
+recursive-include services *.py
+recursive-include rendering *.py
+recursive-include models *.py
+recursive-include images *
