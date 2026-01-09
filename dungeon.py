@@ -10,30 +10,15 @@ from dataclasses import dataclass
 # Importar módulos refactorizados
 from services.lighting_system import LightingSystem
 from services.audio_manager import AudioManager
+from models.cell import Cell, CellType, Direction
 from rendering.decorations import DecorationRenderer
 from rendering.effects import EffectsRenderer
 
-class CellType(Enum):
-    EMPTY = 0
-    INICIO = 1
-    PASILLO = 2
-    HABITACION = 3
-    SALIDA = 4
-
-class Direction(Enum):
-    N = "N"
-    E = "E"
-    S = "S"
-    O = "O"
-
-@dataclass
-class Cell:
-    cell_type: CellType
-    exits: set = None
-    
-    def __post_init__(self):
-        if self.exits is None:
-            self.exits = set()
+# Intentar importar el InputHandler si existe (para compatibilidad gradual)
+try:
+    from game.input_handler import InputHandler
+except ImportError:
+    InputHandler = None
 
 # Constantes de configuración
 DEFAULT_BOARD_SIZE = 101
@@ -342,6 +327,10 @@ class DungeonBoard:
         
         # Detección de entorno web y limpieza de eventos iniciales
         self.is_web = hasattr(sys, 'platform') and 'emscripten' in sys.platform.lower()
+        
+        # Inicializar InputHandler si está disponible
+        if InputHandler:
+            self.input_handler = InputHandler(self)
         
         # Limpiar cualquier tecla presionada durante la carga (antes del título)
         if self.is_web:
@@ -2854,6 +2843,12 @@ class DungeonBoard:
                     self.next_ambient_sound_delay = random.randint(5000, 15000)
             
             for event in pygame.event.get():
+                # Usar el nuevo InputHandler si está disponible
+                if hasattr(self, 'input_handler'):
+                    if not self.input_handler.handle_input(event):
+                        running = False
+                    continue
+
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
