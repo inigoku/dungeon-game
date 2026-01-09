@@ -26,6 +26,10 @@ Uso:
 import asyncio
 import sys
 
+# Importaciones explícitas para asegurar que Pygbag empaquete estos módulos
+import models.cell
+import game.input_handler
+
 # Importar el juego
 import dungeon
 
@@ -57,4 +61,3 @@ if __name__ == "__main__":
     print("=== INICIO main.py ===")
     # Ejecutar el juego
     asyncio.run(main())
-

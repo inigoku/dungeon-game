@@ -13,12 +13,7 @@ from services.audio_manager import AudioManager
 from models.cell import Cell, CellType, Direction
 from rendering.decorations import DecorationRenderer
 from rendering.effects import EffectsRenderer
-
-# Intentar importar el InputHandler si existe (para compatibilidad gradual)
-try:
-    from game.input_handler import InputHandler
-except ImportError:
-    InputHandler = None
+from game.input_handler import InputHandler
 
 # Constantes de configuración
 DEFAULT_BOARD_SIZE = 101
@@ -26,10 +21,6 @@ DEFAULT_VIEW_SIZE = 7
 DEFAULT_CELL_SIZE = 90
 
 class DungeonBoard:
-    def __init__(self, *args, **kwargs):
-        print("=== INICIO DungeonBoard ===")
-        # ...existing code...
-        # El resto del constructor sigue igual
     def __init__(self, size=DEFAULT_BOARD_SIZE, view_size=DEFAULT_VIEW_SIZE, cell_size=DEFAULT_CELL_SIZE):
         self.size = size
         self.initial_view_size = view_size  # Vista inicial de 7x7
@@ -329,8 +320,7 @@ class DungeonBoard:
         self.is_web = hasattr(sys, 'platform') and 'emscripten' in sys.platform.lower()
         
         # Inicializar InputHandler si está disponible
-        if InputHandler:
-            self.input_handler = InputHandler(self)
+        self.input_handler = InputHandler(self)
         
         # Limpiar cualquier tecla presionada durante la carga (antes del título)
         if self.is_web:
