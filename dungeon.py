@@ -2786,6 +2786,9 @@ class DungeonBoard:
                     # Las antorchas parpadean durante 5 segundos
                     self.flicker_duration = 5000  #  5 segundos
                     
+                    # Guardar zoom actual para restaurarlo al final
+                    self.original_zoom_index = self.current_zoom_index
+                    
                     # Hacer zoom in máximo al empezar el parpadeo
                     self.current_zoom_index = 0  # Zoom máximo (7x7)
                     self.view_size = self.zoom_levels[self.current_zoom_index]
