@@ -29,10 +29,11 @@ class EffectsRenderer:
         # Asegurar que el color tiene valores enteros
         if isinstance(color, (int, float)):
             # Si color es un solo número, convertir a tupla gris
-            int_color: Tuple[int, int, int] = (int(color), int(color), int(color))
+            val = max(0, min(255, int(color)))
+            int_color: Tuple[int, int, int] = (val, val, val)
         else:
             # Si color es una tupla, convertir cada componente a int
-            int_color = tuple(int(c) for c in color)  # type: ignore
+            int_color = tuple(max(0, min(255, int(c))) for c in color)  # type: ignore
         
         # Usar posición + line_id como semilla para reproducibilidad
         seed = board_row * 100000 + board_col * 100 + line_id
@@ -85,6 +86,32 @@ class EffectsRenderer:
         for i in range(len(points) - 1):
             pygame.draw.line(self.screen, int_color, points[i], points[i + 1], width)
     
+    def draw_rough_floor(self, x: int, y: int, width: int, height: int, color: Tuple[int, int, int], board_row: int, board_col: int) -> None:
+        """Dibuja un suelo con textura rugosa (ruido)."""
+        # Dibujar base
+        pygame.draw.rect(self.screen, color, (x, y, width, height))
+        
+        # Si el color es muy oscuro, no dibujar detalles para ahorrar rendimiento
+        if color[0] < 20:
+            return
+
+        seed = board_row * 100000 + board_col
+        rnd = random.Random(seed)
+        
+        # Densidad de puntos (8% de cobertura)
+        num_spots = int(width * height * 0.08)
+        
+        for _ in range(num_spots):
+            sx = x + rnd.randint(0, width - 2)
+            sy = y + rnd.randint(0, height - 2)
+            
+            # Variación de color
+            variation = rnd.randint(-15, 15)
+            
+            # Aplicar variación y dibujar punto
+            r, g, b = [max(0, min(255, c + variation)) for c in color]
+            self.screen.fill((r, g, b), (sx, sy, 2, 2))
+
     def draw_stone_texture(self, board_row: int, board_col: int, x: int, y: int) -> None:
         """Dibuja una textura de piedra en la celda dada usando un patrón determinista por celda.
 

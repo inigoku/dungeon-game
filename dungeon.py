@@ -17,20 +17,46 @@ from game.input_handler import InputHandler
 
 # Constantes de configuración
 DEFAULT_BOARD_SIZE = 101
-DEFAULT_VIEW_SIZE = 7
-DEFAULT_CELL_SIZE = 90
+DEFAULT_VIEW_SIZE = 5
+DEFAULT_CELL_SIZE = 126
+
+@dataclass
+class DeepOne:
+    row: int
+    col: int
+    last_action_time: int = 0
+    state: str = "IDLE"
+    state_start_time: int = 0
+    next_action_delay: int = 2000
+    # Campos para animación de movimiento suave
+    animating: bool = False
+    anim_start_time: int = 0
+    anim_duration: int = 450
+    from_row: int = 0
+    from_col: int = 0
+    dead: bool = False
+    death_time: int = 0
+    alerted: bool = False
+    alert_start_time: int = 0
+    ignoring_player: bool = False
+    
+    def __post_init__(self):
+        self.last_action_time = pygame.time.get_ticks() + random.randint(0, 2000)
+        self.next_action_delay = random.randint(1500, 2500)
+        self.from_row = self.row
+        self.from_col = self.col
 
 class DungeonBoard:
     def __init__(self, size=DEFAULT_BOARD_SIZE, view_size=DEFAULT_VIEW_SIZE, cell_size=DEFAULT_CELL_SIZE):
         self.size = size
-        self.initial_view_size = view_size  # Vista inicial de 7x7
+        self.initial_view_size = view_size  # Vista inicial de 5x5
         self.view_size = view_size
         self.base_cell_size = cell_size  # Tamaño base de celda
         self.cell_size = cell_size
         
-        # Sistema de zoom: 5 niveles de 7x7 hasta el tamaño completo del tablero
-        self.zoom_levels = [7, 11, 21, 51, size]  # 5 niveles de zoom
-        self.current_zoom_index = 0  # Empieza en el más cercano (7x7)
+        # Sistema de zoom: 6 niveles de 5x5 hasta el tamaño completo del tablero
+        self.zoom_levels = [5, 7, 11, 21, 51, size]  # 6 niveles de zoom
+        self.current_zoom_index = 0  # Empieza en el más cercano (5x5)
         
         # Tamaño fijo de ventana
         self.fixed_window_size = view_size * cell_size  # 630x630 pixels
@@ -89,6 +115,17 @@ class DungeonBoard:
         self.camera_offset_row = float(center - view_size // 2)
         self.camera_offset_col = float(center - view_size // 2)
         self.camera_speed = 0.03  # Factor de interpolación (0-1), mayor = más rápido
+        
+        # Temblor de cámara
+        self.shake_intensity = 0.0
+        self.shake_duration = 0
+        self.shake_start_time = 0
+        
+        # Flash de pantalla
+        self.flash_active = False
+        self.flash_start_time = 0
+        self.flash_duration = 0
+        self.flash_color = (255, 0, 0)
         
         pygame.init()
         pygame.mixer.init()
@@ -196,7 +233,7 @@ class DungeonBoard:
             print(f"No se pudo cargar sound/antorchas.ogg: {e}")
         
         self.torch_thought_triggered = False  # Flag para el pensamiento de antorchas
-        self.intro_thought_triggered = False  # Flag para el pensamiento de intro
+        self.intro_thought_triggered = False  # Flag para el pensamiento de intro (se activa en run)
         self.intro_thought_finished = False  # Flag para cuando termina el pensamiento de intro
         
         # Sonido de sangre (usado para pensamientos)
@@ -234,6 +271,22 @@ class DungeonBoard:
         except pygame.error as e:
             print(f"No se pudo cargar sound/abominacion.ogg: {e}")
         
+        # Sonido de gruñido (para los monstruos)
+        self.grunido_sound = None
+        try:
+            self.grunido_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/grunido.ogg"))
+            self.grunido_sound.set_volume(0.8)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/grunido.ogg: {e}")
+        
+        # Sonido de mordisco (Game Over)
+        self.bite_sound = None
+        try:
+            self.bite_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/mordisco.ogg"))
+            self.bite_sound.set_volume(1.0)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/mordisco.ogg: {e}")
+        
         # Sonidos de pasos
         self.footstep_sounds = []
         try:
@@ -267,6 +320,35 @@ class DungeonBoard:
         self.audio.thought_image_start_time = 0
         self.torches_extinguished = False  # Flag para apagar antorchas después de la losa
         
+        # Game Over state
+        self.showing_game_over = False
+        self.game_over_start_time = 0
+        self.game_over_block_duration = 0
+        self.game_over_thought_finished_time = 0
+        self.thought_pending = False  # Flag para bloquear movimiento mientras se espera un pensamiento
+        self.restart_requested = False
+        self.restart_button_rect = None
+        
+        # Salud del jugador
+        self.max_health = 2
+        self.player_health = self.max_health
+        self.invulnerable = False
+        self.invulnerable_duration = 2000  # 2 segundos de invulnerabilidad
+        self.last_damage_time = 0
+        
+        # Monstruos (Profundos)
+        self.deep_ones = []  # Lista de objetos DeepOne
+        self.deep_ones_spawned = False
+        self.monster_footprints = {}  # Diccionario {(row, col): [lista_huellas]}
+        self.has_encountered_monsters = False  # Flag para saber si ha chocado con monstruos
+        self.exit_visited = False  # Flag para saber si ha visitado la salida
+        self.has_sword_power = False  # Flag para el poder de la espada
+        self.sword_thought_triggered = False  # Flag para pensamiento de espada
+        self.sword_music_started = False  # Flag para música de espada
+        
+        # Barrier effects
+        self.active_barriers = []
+        
         # Cargar imagen de losa (salida)
         try:
             original_image = pygame.image.load(os.path.join(script_dir, "images/losa.png"))
@@ -286,6 +368,43 @@ class DungeonBoard:
             print(f"[DEBUG] Imagen de losa cargada: {new_width}x{new_height}")
         except pygame.error as e:
             print(f"No se pudo cargar images/losa.png: {e}")
+        
+        # Cargar imagen de profundo (Game Over)
+        self.profundo_image = None
+        try:
+            profundo_img = pygame.image.load(os.path.join(script_dir, "images/profundo.png"))
+            # Escalar
+            # Reservar espacio generoso para subtítulos (200px) para evitar solapamiento al centrar
+            max_width = self.width * 0.9
+            max_height = self.height - 200
+            
+            scale = min(max_width / profundo_img.get_width(), max_height / profundo_img.get_height())
+            new_w = int(profundo_img.get_width() * scale)
+            new_h = int(profundo_img.get_height() * scale)
+            self.profundo_image = pygame.transform.smoothscale(profundo_img, (new_w, new_h))
+        except pygame.error as e:
+            print(f"No se pudo cargar images/profundo.png: {e}")
+        
+        # Cargar imagen de espada (Pensamiento)
+        self.sword_image = None
+        try:
+            sword_img = pygame.image.load(os.path.join(script_dir, "images/espada.png"))
+            # Escalar
+            max_size = min(self.width, self.height) * 0.8
+            scale = max_size / max(sword_img.get_width(), sword_img.get_height())
+            new_w = int(sword_img.get_width() * scale)
+            new_h = int(sword_img.get_height() * scale)
+            self.sword_image = pygame.transform.smoothscale(sword_img, (new_w, new_h))
+        except pygame.error as e:
+            print(f"No se pudo cargar images/espada.png: {e}")
+
+        # Sonido espada
+        self.sword_sound = None
+        try:
+            self.sword_sound = pygame.mixer.Sound(os.path.join(script_dir, "sound/espada.ogg"))
+            self.sword_sound.set_volume(0.8)
+        except pygame.error as e:
+            print(f"No se pudo cargar sound/espada.ogg: {e}")
         
         # Cargar imagen de antorcha
         try:
@@ -326,6 +445,148 @@ class DungeonBoard:
         if self.is_web:
             pygame.event.clear()
             print("[DEBUG] Modo web detectado - eventos iniciales limpiados")
+    
+    def trigger_camera_shake(self, intensity, duration):
+        """Inicia un efecto de temblor en la cámara."""
+        self.shake_intensity = intensity
+        self.shake_duration = duration
+        self.shake_start_time = pygame.time.get_ticks()
+    
+    def trigger_screen_flash(self, color, duration):
+        """Inicia un efecto de flash en la pantalla."""
+        self.flash_active = True
+        self.flash_start_time = pygame.time.get_ticks()
+        self.flash_duration = duration
+        self.flash_color = color
+    
+    def trigger_barrier_effect(self, row, col):
+        """Activa el efecto visual de barrera en una celda."""
+        current_time = pygame.time.get_ticks()
+        # Check if barrier already active for this cell to avoid spam/overlap
+        for barrier in self.active_barriers:
+            if barrier['row'] == row and barrier['col'] == col:
+                barrier['start_time'] = current_time # Refresh
+                return
+        
+        self.active_barriers.append({
+            'row': row,
+            'col': col,
+            'start_time': current_time,
+            'duration': 800  # 800ms duration
+        })
+
+    def draw_barriers(self, offset_row_float, offset_col_float):
+        """Dibuja los efectos de barrera mágica activos."""
+        current_time = pygame.time.get_ticks()
+        # Filter expired
+        self.active_barriers = [b for b in self.active_barriers if current_time - b['start_time'] < b['duration']]
+        
+        for barrier in self.active_barriers:
+            row, col = barrier['row'], barrier['col']
+            
+            # Calculate screen position
+            view_row = row - offset_row_float
+            view_col = col - offset_col_float
+            
+            # Draw if visible
+            if -1 <= view_row <= self.view_size and -1 <= view_col <= self.view_size:
+                x = int(view_col * self.cell_size)
+                y = int(view_row * self.cell_size)
+                
+                elapsed = current_time - barrier['start_time']
+                progress = elapsed / barrier['duration']
+                
+                # Alpha fades out
+                alpha = int(180 * (1.0 - progress))
+                
+                s = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
+                
+                # Force field effect: concentric squares/circles or static
+                color = (100, 200, 255, alpha)
+                
+                # Border
+                pygame.draw.rect(s, color, (0, 0, self.cell_size, self.cell_size), 4)
+                
+                # Diagonal lines (X)
+                pygame.draw.line(s, color, (0, 0), (self.cell_size, self.cell_size), 3)
+                pygame.draw.line(s, color, (self.cell_size, 0), (0, self.cell_size), 3)
+                
+                # Inner glow
+                s.fill((100, 200, 255, int(alpha * 0.3)), special_flags=pygame.BLEND_RGBA_ADD)
+                
+                self.screen.blit(s, (x, y))
+
+    def take_damage(self):
+        """Maneja el daño al jugador."""
+        current_time = pygame.time.get_ticks()
+        
+        # Si está invulnerable, ignorar daño
+        if self.invulnerable:
+            return
+
+        self.player_health -= 1
+        self.last_damage_time = current_time
+        self.invulnerable = True
+        self.has_encountered_monsters = True
+        
+        # Flash rojo intenso al recibir daño
+        self.trigger_screen_flash((255, 0, 0), 300)
+        
+        if self.player_health <= 0:
+            self.trigger_game_over()
+        else:
+            # Sonido de dolor
+            if self.bite_sound:
+                channel = pygame.mixer.find_channel(True)
+                if channel:
+                    channel.play(self.bite_sound)
+                else:
+                    self.bite_sound.play()
+            
+            # Mensaje de advertencia
+            self.audio.show_subtitle("¡Has sido herido! ¡Huye!", 2000)
+            
+            # Temblor de cámara
+            self.trigger_camera_shake(5.0, 500)
+    
+    def trigger_game_over(self):
+        """Activa el estado de Game Over."""
+        if self.showing_game_over:
+            return
+            
+        print("[GAME OVER] El jugador ha sido devorado.")
+        self.showing_game_over = True
+        self.game_over_start_time = pygame.time.get_ticks()
+        
+        # Detener música y pensamientos
+        self.audio.stop_music()
+        if self.audio.thought_active:
+            self.audio.cancel_thought()
+            
+        # Reproducir sonido de mordisco inmediatamente
+        if self.bite_sound:
+            # Forzar un canal para asegurar que se oiga (evita "no se oye")
+            channel = pygame.mixer.find_channel(True)
+            if channel:
+                channel.play(self.bite_sound)
+            else:
+                self.bite_sound.play()
+            
+        # Flash rojo al morder
+        self.trigger_screen_flash((200, 0, 0), 200)
+            
+        async def delayed_game_over_thought():
+            await asyncio.sleep(1.0)
+            # Iniciar pensamiento de Game Over
+            # Duración basada en el sonido de mordisco o default 3s
+            duration = int(self.bite_sound.get_length() * 1000) if self.bite_sound else 3000
+            self.audio.trigger_thought(
+                sounds=[], # Evitar doble reproducción (ya sonó arriba)
+                images=[(self.profundo_image, duration + 1500)] if self.profundo_image else None,
+                subtitles=[("¡¡¡AAAARRRRGGGHH!!!!", duration + 1500)],
+                blocks_movement=True
+            )
+        asyncio.create_task(delayed_game_over_thought())
     
     def get_view_offset(self):
         """Interpola la cámara hacia la posición del jugador y retorna el offset redondeado."""
@@ -473,6 +734,7 @@ class DungeonBoard:
             # Calcular direcciones posibles
             directions = []
             for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                
                 next_row = current_row + dr
                 next_col = current_col + dc
                 next_pos = (next_row, next_col)
@@ -493,8 +755,8 @@ class DungeonBoard:
                     break
                 continue
             
-            # 70% de probabilidad de ir hacia el objetivo, 30% aleatorio (más tortuoso)
-            if random.random() < 0.70:
+            # 80% de probabilidad de ir hacia el objetivo, 20% aleatorio (menos complicado)
+            if random.random() < 0.80:
                 # Elegir la dirección que más se acerque al objetivo
                 directions.sort(key=lambda x: x[1])
                 next_pos = directions[0][0]
@@ -598,13 +860,21 @@ class DungeonBoard:
                 remaining = list(all_directions - exits)
                 
                 if cell_type == CellType.PASILLO:
-                    # 20% de probabilidad de agregar 1 salida extra
-                    if remaining and random.random() < 0.20:
+                    # 80% de probabilidad de agregar 1 salida extra (antes 60%)
+                    if remaining and random.random() < 0.80:
                         exits.add(random.choice(remaining))
+                        # 40% de probabilidad de agregar una segunda salida extra (cruce)
+                        remaining = list(all_directions - exits)
+                        if remaining and random.random() < 0.40:
+                            exits.add(random.choice(remaining))
                 else:  # HABITACION
-                    # 10% de probabilidad de agregar 1 salida extra
-                    if remaining and random.random() < 0.10:
+                    # 70% de probabilidad de agregar 1 salida extra (antes 50%)
+                    if remaining and random.random() < 0.70:
                         exits.add(random.choice(remaining))
+                        # 30% de probabilidad de agregar una segunda salida extra
+                        remaining = list(all_directions - exits)
+                        if remaining and random.random() < 0.30:
+                            exits.add(random.choice(remaining))
                 
                 self.board[row][col] = Cell(cell_type, exits)
         
@@ -683,6 +953,21 @@ class DungeonBoard:
         # Primero: actualizar el viewport (mueve la cámara)
         offset_row_float, offset_col_float = self.get_view_offset()
         
+        # Aplicar temblor de cámara si está activo
+        if self.shake_duration > 0:
+            current_time = pygame.time.get_ticks()
+            elapsed = current_time - self.shake_start_time
+            if elapsed < self.shake_duration:
+                # Decaimiento lineal
+                progress = elapsed / self.shake_duration
+                current_intensity = self.shake_intensity * (1.0 - progress)
+                
+                # Desplazamiento aleatorio
+                offset_row_float += (random.random() * 2 - 1) * current_intensity
+                offset_col_float += (random.random() * 2 - 1) * current_intensity
+            else:
+                self.shake_duration = 0
+        
         # Calcular offset de píxeles para scroll suave
         offset_row_int = int(offset_row_float)
         offset_col_int = int(offset_col_float)
@@ -700,12 +985,20 @@ class DungeonBoard:
                     view_col = col
                     self.draw_cell(board_row, board_col, view_row, view_col, pixel_offset_x, pixel_offset_y)
 
-        # Dibujar aberturas (pasajes) conectadas en negro entre celdas.
-        # Se hace después de dibujar todas las celdas para sobreescribir bordes.
-        self.draw_openings(offset_row_int, offset_col_int, pixel_offset_x, pixel_offset_y)
-
-        # Tercero: dibujar monigote en la posición actual (después del viewport)
-        self.draw_player(offset_row_float, offset_col_float)
+        # Dibujar barreras mágicas
+        self.draw_barriers(offset_row_float, offset_col_float)
+        
+        if self.showing_game_over:
+            # Si el jugador está muerto, dibujarlo antes que los monstruos (para que lo tapen)
+            self.draw_player(offset_row_float, offset_col_float)
+            self.draw_monsters(offset_row_float, offset_col_float)
+        else:
+            # Si el jugador está vivo, dibujarlo después de los monstruos (para que los tape)
+            self.draw_monsters(offset_row_float, offset_col_float)
+            self.draw_player(offset_row_float, offset_col_float)
+        
+        # Cuarto: dibujar la losa de salida por encima del jugador
+        self.draw_exit_slab_overlay(offset_row_float, offset_col_float)
         
         # Debug: mostrar información de navegación solo si está activado
         if self.debug_mode:
@@ -729,10 +1022,310 @@ class DungeonBoard:
         if self.asking_main_menu_confirmation:
             self.draw_main_menu_confirmation()
         
+        # Mostrar pantalla de Game Over si está activa (encima de todo)
+        if self.showing_game_over:
+            self.draw_game_over()
+        
+        # Dibujar overlay de peligro (salud baja o monstruos cerca)
+        self.draw_danger_overlay()
+        
+        # Dibujar flash si está activo
+        if self.flash_active:
+            self.draw_screen_flash()
+        
         pygame.display.flip()
+    
+    def draw_monsters(self, offset_row_float, offset_col_float):
+        """Dibuja los monstruos (Profundos) visibles en la pantalla."""
+        # Ordenar: muertos primero, vivos después para que los vivos se dibujen encima
+        sorted_monsters = sorted(self.deep_ones, key=lambda m: 0 if m.dead else 1)
+        
+        for monster in sorted_monsters:
+            # Si está muerto, usar posición fija (no interpolar)
+            if monster.dead:
+                m_row, m_col = float(monster.row), float(monster.col)
+                monster.animating = False # Asegurar que no anime si está muerto
+            else:
+                m_row, m_col = float(monster.row), float(monster.col)
+            
+            m_row, m_col = float(monster.row), float(monster.col)
+            
+            # Interpolar posición si está animando
+            if monster.animating:
+                t_now = pygame.time.get_ticks()
+                elapsed = t_now - monster.anim_start_time
+                t = min(1.0, elapsed / monster.anim_duration) if monster.anim_duration > 0 else 1.0
+                
+                m_row = monster.from_row + (monster.row - monster.from_row) * t
+                m_col = monster.from_col + (monster.col - monster.from_col) * t
+                
+                if t >= 1.0:
+                    monster.animating = False
+            
+            # Calcular posición relativa a la vista
+            view_row = m_row - offset_row_float
+            view_col = m_col - offset_col_float
+            
+            # Dibujar solo si está dentro o cerca de la vista (margen ampliado para animación)
+            if -1.5 <= view_row <= self.view_size + 0.5 and -1.5 <= view_col <= self.view_size + 0.5:
+                x = int(view_col * self.cell_size)
+                y = int(view_row * self.cell_size)
+                
+                center_x = x + self.cell_size // 2
+                center_y = y + self.cell_size // 2
+                sprite_size = int(self.cell_size * 0.45)  # Tamaño del guerrero
+                
+                if monster.dead:
+                    # Dibujar charco de sangre
+                    seed = int(monster.row * 1000 + monster.col)
+                    self.draw_blood_pool(center_x, center_y, monster.death_time, seed)
+                    
+                    # Dibujar monstruo rotado 90 grados (tendido)
+                    temp_size = int(self.cell_size)
+                    temp_surf = pygame.Surface((temp_size, temp_size), pygame.SRCALPHA)
+                    
+                    # Dibujar en superficie temporal centrada
+                    self.draw_deep_one_sprite(temp_size//2, temp_size//2, sprite_size, monster, target_surface=temp_surf)
+                    
+                    # Rotar y dibujar
+                    rotated_surf = pygame.transform.rotate(temp_surf, 90)
+                    rect = rotated_surf.get_rect(center=(center_x, center_y))
+                    self.screen.blit(rotated_surf, rect)
+                    continue
+                
+                self.draw_deep_one_sprite(center_x, center_y, sprite_size, monster)
+
+    def draw_exit_slab_overlay(self, offset_row_float, offset_col_float):
+        """Dibuja la losa de salida si es visible, para que quede encima del jugador."""
+        exit_row, exit_col = self.exit_position
+        
+        # Solo dibujar si la celda ha sido visitada
+        if (exit_row, exit_col) not in self.visited_cells:
+            return
+            
+        # Calcular posición relativa a la vista
+        view_row = exit_row - offset_row_float
+        view_col = exit_col - offset_col_float
+        
+        # Dibujar solo si está dentro o cerca de la vista
+        if -1 <= view_row <= self.view_size and -1 <= view_col <= self.view_size:
+            x = int(view_col * self.cell_size)
+            y = int(view_row * self.cell_size)
+            
+            # Dibuja una losa más estrecha, más oscura y con rayitas negras
+            losa_w = int(self.cell_size * 0.28)
+            losa_h = int(self.cell_size * 0.16)
+            losa_x = x + (self.cell_size - losa_w) // 2
+            losa_y = y + self.cell_size // 2 + int(self.cell_size * 0.13)
+            losa_color = (90, 90, 90)
+            borde_color = (60, 60, 60)
+            pygame.draw.rect(self.screen, losa_color, (losa_x, losa_y, losa_w, losa_h))
+            pygame.draw.rect(self.screen, borde_color, (losa_x, losa_y, losa_w, losa_h), 2)
+            # Rayitas negras simulando inscripción
+            n_rayas = 4
+            for i in range(n_rayas):
+                ry = losa_y + int(losa_h * (0.25 + 0.15 * i))
+                pygame.draw.line(self.screen, (20, 20, 20), (losa_x + 6, ry), (losa_x + losa_w - 6, ry), 1)
+
+    def draw_danger_overlay(self):
+        """Dibuja un tinte rojo si hay peligro o poca salud."""
+        if self.showing_game_over:
+            return
+
+        danger_alpha = 0
+        current_time = pygame.time.get_ticks()
+        
+        # 1. Por salud baja (pulsante)
+        if self.player_health < self.max_health:
+            # Pulsar entre 30 y 100
+            pulse = (math.sin(current_time * 0.005) + 1) * 0.5  # 0 to 1
+            danger_alpha = 30 + int(pulse * 70)
+            
+        # 2. Por proximidad de monstruos
+        if self.has_encountered_monsters:
+            closest_dist = float('inf')
+            for monster in self.deep_ones:
+                if not monster.dead:
+                    dist = abs(monster.row - self.current_position[0]) + abs(monster.col - self.current_position[1])
+                    if dist < closest_dist:
+                        closest_dist = dist
+            
+            if closest_dist < 6:
+                # Aumentar rojo si hay monstruos cerca (max 100 alpha)
+                proximity_factor = 1.0 - (closest_dist / 6.0)
+                proximity_alpha = int(proximity_factor * 100)
+                
+                # Combinar (max 200)
+                danger_alpha = min(200, danger_alpha + proximity_alpha)
+
+        if danger_alpha > 0:
+            overlay = pygame.Surface((self.width, self.height))
+            overlay.set_alpha(danger_alpha)
+            overlay.fill((255, 0, 0))
+            self.screen.blit(overlay, (0, 0))
+
+    def draw_deep_one_sprite(self, cx: int, cy: int, size: int, monster=None, target_surface=None):
+        """Dibuja un sprite de un Profundo (zombie marino) más detallado."""
+        surface = target_surface if target_surface else self.screen
+        s = max(8, int(size))
+        
+        # Colores
+        skin_col = (40, 140, 100)      # Verde azulado pantanoso
+        skin_dark = (30, 110, 80)      # Sombra/bordes
+        belly_col = (60, 160, 120)     # Un poco más claro
+        eye_col = (255, 230, 50)       # Amarillo brillante
+        pupil_col = (0, 0, 0)
+        mouth_col = (20, 60, 40)       # Boca oscura
+        
+        # Animación de respiración/flotación
+        t = pygame.time.get_ticks()
+        breath = math.sin(t * 0.003) * (s * 0.03)
+        
+        # Cuerpo (jorobado/ovalado)
+        body_w = int(s * 0.55)
+        body_h = int(s * 0.65)
+        body_y = cy - body_h // 4 + int(breath)
+        
+        # Estado de animación
+        is_roaring = monster and monster.state == "ROARING"
+        roar_t = (pygame.time.get_ticks() - monster.state_start_time) if is_roaring else 0
+        
+        # Espinas dorsales (detrás del cuerpo)
+        spine_w = int(s * 0.08)
+        spine_h = int(s * 0.15)
+        for i in range(3):
+            sy = body_y - body_h//2 + i * (spine_h + 2)
+            # Izquierda
+            pygame.draw.polygon(surface, skin_dark, [
+                (cx - body_w//2 + 5, sy + spine_h),
+                (cx - body_w//2 - spine_w, sy + spine_h//2),
+                (cx - body_w//2 + 5, sy)
+            ])
+            # Derecha
+            pygame.draw.polygon(surface, skin_dark, [
+                (cx + body_w//2 - 5, sy + spine_h),
+                (cx + body_w//2 + spine_w, sy + spine_h//2),
+                (cx + body_w//2 - 5, sy)
+            ])
+
+        # Piernas (humanoides)
+        leg_w = int(s * 0.16)
+        leg_h = int(s * 0.45)
+        leg_y = body_y + body_h // 3
+        
+        # Animación de caminar
+        walk_offset = 0
+        if monster and monster.animating:
+            anim_t = pygame.time.get_ticks() - monster.anim_start_time
+            walk_offset = int(math.sin(anim_t * 0.02) * (s * 0.1))
+        
+        # Pierna izquierda
+        pygame.draw.ellipse(surface, skin_col, (cx - body_w//4 - leg_w//2, leg_y + walk_offset, leg_w, leg_h))
+        # Pierna derecha
+        pygame.draw.ellipse(surface, skin_col, (cx + body_w//4 - leg_w//2, leg_y - walk_offset, leg_w, leg_h))
+
+        # Brazos largos y colgantes
+        arm_w = int(s * 0.14)
+        arm_h = int(s * 0.55)
+        
+        if is_roaring:
+            # Brazos levantados/agitándose
+            arm_offset_y = -int(math.sin(roar_t * 0.02) * (s * 0.15)) - (s * 0.25)
+            pygame.draw.ellipse(surface, skin_col, (cx - body_w//2 - arm_w, body_y + arm_offset_y, arm_w, arm_h))
+            pygame.draw.ellipse(surface, skin_col, (cx + body_w//2, body_y + arm_offset_y, arm_w, arm_h))
+        else:
+            pygame.draw.ellipse(surface, skin_col, (cx - body_w//2 - arm_w//2, body_y, arm_w, arm_h))
+            pygame.draw.ellipse(surface, skin_col, (cx + body_w//2 - arm_w//2, body_y, arm_w, arm_h))
+        
+        # Cuerpo principal
+        pygame.draw.ellipse(surface, skin_col, (cx - body_w//2, body_y - body_h//2, body_w, body_h))
+        
+        # Vientre
+        belly_rect = (cx - body_w//3, body_y - body_h//3, body_w//1.5, body_h//1.5)
+        pygame.draw.ellipse(surface, belly_col, belly_rect)
+        
+        # Escamas (pequeños arcos)
+        for i in range(3):
+            sy = body_y - body_h//4 + i * (s * 0.1)
+            pygame.draw.arc(surface, skin_dark, (cx - s*0.1, sy, s*0.2, s*0.1), 0, 3.14, 1)
+        
+        # Cabeza (grande y de pez)
+        head_w = int(s * 0.5)
+        head_h = int(s * 0.55)
+        head_y = body_y - body_h//2 - head_h//3
+        
+        # Cresta de la cabeza
+        pygame.draw.polygon(surface, skin_dark, [
+            (cx, head_y - head_h//2 - int(s*0.1)),
+            (cx - int(s*0.1), head_y - head_h//2 + int(s*0.1)),
+            (cx + int(s*0.1), head_y - head_h//2 + int(s*0.1))
+        ])
+        
+        pygame.draw.ellipse(surface, skin_col, (cx - head_w//2, head_y - head_h//2, head_w, head_h))
+        
+        # Boca ancha de pez
+        mouth_y = head_y + int(head_h * 0.25)
+        mouth_w = int(head_w * 0.6)
+        if is_roaring:
+            # Boca abierta
+            pygame.draw.ellipse(surface, mouth_col, (cx - mouth_w//2, mouth_y, mouth_w, int(head_h * 0.25)))
+        else:
+            # Boca cerrada (línea curva)
+            pygame.draw.arc(surface, mouth_col, (cx - mouth_w//2, mouth_y - 5, mouth_w, 10), 3.14, 2*3.14, 2)
+
+        # Ojos (grandes, laterales y saltones)
+        eye_r = int(s * 0.13)
+        eye_y_pos = head_y - int(head_h * 0.1)
+        
+        # Pupilas moviéndose si ruge/mira
+        pupil_offset = int(math.sin(roar_t * 0.015) * (eye_r * 0.5)) if is_roaring else 0
+        
+        # Ojo izquierdo
+        pygame.draw.circle(surface, eye_col, (cx - int(head_w*0.35), eye_y_pos), eye_r)
+        pygame.draw.circle(surface, pupil_col, (cx - int(head_w*0.35) + pupil_offset, eye_y_pos), max(1, int(eye_r*0.3)))
+        
+        # Ojo derecho
+        pygame.draw.circle(surface, eye_col, (cx + int(head_w*0.35), eye_y_pos), eye_r)
+        pygame.draw.circle(surface, pupil_col, (cx + int(head_w*0.35) + pupil_offset, eye_y_pos), max(1, int(eye_r*0.3)))
+        
+        # Branquias/Aletas laterales
+        fin_w = int(s * 0.18)
+        fin_h = int(s * 0.25)
+        pygame.draw.polygon(surface, skin_col, [
+            (cx - head_w//2 + 5, head_y),
+            (cx - head_w//2 - fin_w, head_y - fin_h//2),
+            (cx - head_w//2 - fin_w, head_y + fin_h//2)
+        ])
+        pygame.draw.polygon(surface, skin_col, [
+            (cx + head_w//2 - 5, head_y),
+            (cx + head_w//2 + fin_w, head_y - fin_h//2),
+            (cx + head_w//2 + fin_w, head_y + fin_h//2)
+        ])
+        
+        # Indicador de alerta (!)
+        if monster and monster.alerted and not monster.dead:
+            # Animación de flotación suave
+            alert_anim_offset = int(math.sin(pygame.time.get_ticks() * 0.01) * 2)
+            
+            alert_x = cx
+            alert_y = head_y - head_h // 2 - int(s * 0.3) + alert_anim_offset
+            alert_color = (255, 0, 0) # Rojo brillante
+            
+            # Punto
+            dot_size = max(2, int(s * 0.08))
+            pygame.draw.circle(surface, alert_color, (alert_x, alert_y), dot_size)
+            # Línea
+            line_w = max(2, int(s * 0.06))
+            line_h = int(s * 0.25)
+            pygame.draw.rect(surface, alert_color, (alert_x - line_w//2, alert_y - dot_size - 2 - line_h, line_w, line_h))
     
     def draw_player(self, offset_row_float, offset_col_float):
         """Dibuja un monigote en la posición actual del jugador (con interpolación si está animando)."""
+        # Parpadeo si es invulnerable
+        if self.invulnerable:
+            if (pygame.time.get_ticks() // 100) % 2 == 0:
+                return
+
         # Si está animando, interpolar entre from_pos y to_pos
         if self.player_animating:
             t_now = pygame.time.get_ticks()
@@ -765,7 +1358,33 @@ class DungeonBoard:
 
         # Dibujar un sprite de guerrero procedimental escalable
         sprite_size = int(self.cell_size * 0.6)
-        self.draw_warrior_sprite(center_x, center_y, sprite_size)
+        
+        # Verificar si estamos en el delay inicial del Game Over (antes del pensamiento)
+        in_game_over_delay = self.showing_game_over and (pygame.time.get_ticks() - self.game_over_start_time < 1000)
+        
+        # Si es Game Over y el pensamiento terminó, dibujar al guerrero tendido (rotado 90 grados)
+        if self.showing_game_over and not self.audio.thought_active and not in_game_over_delay:
+            # Dibujar sangre expandiéndose debajo del cuerpo
+            if self.game_over_thought_finished_time > 0:
+                p_row, p_col = self.current_position
+                seed = int(p_row * 1000 + p_col)
+                self.draw_blood_pool(center_x, center_y, self.game_over_thought_finished_time, seed)
+
+            # Crear superficie temporal para rotar
+            temp_size = int(self.cell_size)
+            temp_surf = pygame.Surface((temp_size, temp_size), pygame.SRCALPHA)
+            
+            # Dibujar guerrero centrado en la superficie temporal
+            self.draw_warrior_sprite(temp_size//2, temp_size//2, sprite_size, target_surface=temp_surf)
+            
+            # Rotar 90 grados
+            rotated_surf = pygame.transform.rotate(temp_surf, 90)
+            
+            # Dibujar en pantalla centrado
+            rect = rotated_surf.get_rect(center=(center_x, center_y))
+            self.screen.blit(rotated_surf, rect)
+        else:
+            self.draw_warrior_sprite(center_x, center_y, sprite_size)
     
     def draw_debug_info(self):
         """Muestra información de debug para ayudar a encontrar la salida."""
@@ -929,11 +1548,172 @@ class DungeonBoard:
         self.screen.blit(title_text, (title_x, title_y))
         self.screen.blit(subtitle_text, (subtitle_x, subtitle_y))
 
-    def draw_warrior_sprite(self, cx: int, cy: int, size: int):
+    def draw_game_over(self):
+        """Dibuja la pantalla de Game Over."""
+        current_time = pygame.time.get_ticks()
+        elapsed = current_time - self.game_over_start_time
+        
+        # Durante el primer segundo: efecto de escala de grises gradual
+        if elapsed < 1000:
+            progress = elapsed / 1000.0
+            try:
+                if hasattr(pygame.transform, 'grayscale'):
+                    gray_surface = pygame.transform.grayscale(self.screen)
+                    gray_surface.set_alpha(int(255 * progress))
+                    self.screen.blit(gray_surface, (0, 0))
+                else:
+                    # Fallback para versiones antiguas: overlay gris
+                    overlay = pygame.Surface((self.width, self.height))
+                    overlay.fill((50, 50, 50))
+                    overlay.set_alpha(int(200 * progress))
+                    self.screen.blit(overlay, (0, 0), special_flags=pygame.BLEND_MULT)
+            except Exception:
+                pass
+            return
+
+        # Solo mostrar después de que termine el pensamiento
+        if self.audio.thought_active:
+            return
+            
+        # Subtítulo parpadeante: 2 segundos visible, 2 segundos invisible (ciclo de 4s)
+        cycle_time = (current_time - self.game_over_start_time) % 4000
+        
+        if cycle_time < 2000:
+            font = pygame.font.Font(None, 64)
+            text_surface = font.render("GAME OVER", True, (200, 0, 0))
+            
+            # Fondo semi-transparente para el texto
+            bg_rect = text_surface.get_rect(center=(self.width // 2, self.height - 100))
+            bg_surface = pygame.Surface((bg_rect.width + 40, bg_rect.height + 20))
+            bg_surface.set_alpha(180)
+            bg_surface.fill((0, 0, 0))
+            
+            self.screen.blit(bg_surface, (bg_rect.x - 20, bg_rect.y - 10))
+            self.screen.blit(text_surface, bg_rect)
+            
+        # Fade to black gradual (10 segundos)
+        if self.game_over_thought_finished_time > 0:
+            fade_elapsed = current_time - self.game_over_thought_finished_time
+            fade_duration = 10000
+            
+            if fade_elapsed > 0:
+                alpha = min(255, int(255 * (fade_elapsed / fade_duration)))
+                if alpha > 0:
+                    fade_surface = pygame.Surface((self.width, self.height))
+                    fade_surface.fill((0, 0, 0))
+                    fade_surface.set_alpha(alpha)
+                    self.screen.blit(fade_surface, (0, 0))
+            
+            # Botón de reiniciar (aparece después del fade black)
+            if fade_elapsed > fade_duration:
+                restart_elapsed = fade_elapsed - fade_duration
+                restart_duration = 2000 # 2 segundos para aparecer
+                
+                restart_alpha = min(255, int(255 * (restart_elapsed / restart_duration)))
+                
+                # Dibujar botón
+                button_width = 200
+                button_height = 50
+                button_x = (self.width - button_width) // 2
+                button_y = (self.height - button_height) // 2 + 100
+                
+                self.restart_button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
+                
+                # Superficie para el botón con transparencia
+                btn_surface = pygame.Surface((button_width, button_height), pygame.SRCALPHA)
+                
+                # Color del botón (gris oscuro/rojo muy oscuro)
+                pygame.draw.rect(btn_surface, (50, 0, 0, restart_alpha), (0, 0, button_width, button_height))
+                pygame.draw.rect(btn_surface, (150, 0, 0, restart_alpha), (0, 0, button_width, button_height), 2)
+                
+                # Texto
+                font = pygame.font.Font(None, 36)
+                text = font.render("REINICIAR (R)", True, (255, 255, 255))
+                text.set_alpha(restart_alpha)
+                text_rect = text.get_rect(center=(button_width//2, button_height//2))
+                btn_surface.blit(text, text_rect)
+                
+                self.screen.blit(btn_surface, (button_x, button_y))
+
+    def draw_screen_flash(self):
+        """Dibuja el efecto de flash en la pantalla."""
+        current_time = pygame.time.get_ticks()
+        elapsed = current_time - self.flash_start_time
+        
+        if elapsed >= self.flash_duration:
+            self.flash_active = False
+            return
+            
+        # Calcular opacidad (fade out)
+        progress = elapsed / self.flash_duration
+        alpha = int(180 * (1.0 - progress))
+        
+        flash_surface = pygame.Surface((self.width, self.height))
+        flash_surface.set_alpha(alpha)
+        flash_surface.fill(self.flash_color)
+        self.screen.blit(flash_surface, (0, 0))
+
+    def draw_blood_pool(self, cx, cy, start_time=None, seed_val=None):
+        """Dibuja un charco de sangre que se expande lentamente."""
+        if start_time is None:
+            start_time = self.game_over_thought_finished_time
+            
+        elapsed = pygame.time.get_ticks() - start_time
+        
+        # Expansión lenta durante 8 segundos
+        duration = 8000
+        progress = min(1.0, elapsed / duration)
+        
+        if progress <= 0:
+            return
+
+        # Radio máximo (casi el tamaño de la celda)
+        max_radius = int(self.cell_size * 0.65)
+        current_radius = int(max_radius * progress)
+        
+        if current_radius < 1:
+            return
+            
+        # Usar semilla proporcionada o posición en pantalla (fallback)
+        if seed_val is None:
+            seed_val = int(cx * cy)
+        seed = seed_val
+        rnd = random.Random(seed)
+        
+        # Animación de pulsación/ondulación para simular líquido
+        t = pygame.time.get_ticks()
+        
+        # Dibujar múltiples círculos superpuestos para formar un charco irregular
+        num_blobs = 15
+        for i in range(num_blobs):
+            angle = rnd.uniform(0, 2 * math.pi)
+            # Distribución más densa en el centro
+            dist = current_radius * (rnd.random() ** 0.5)
+            
+            blob_x = cx + int(dist * math.cos(angle))
+            blob_y = cy + int(dist * math.sin(angle))
+            
+            # Variación individual por blob para que no pulsen todos igual
+            # Esto crea un efecto de "hervor" o movimiento líquido
+            blob_pulse = math.sin(t * 0.005 + i * 13.0) * 0.15 + 1.0
+            
+            # Tamaño de cada gota/mancha
+            blob_size = int(current_radius * rnd.uniform(0.2, 0.5) * blob_pulse)
+            if blob_size < 1: continue
+            
+            # Variación de color rojo oscuro
+            r = rnd.randint(60, 100)
+            color = (r, 0, 0)
+            
+            pygame.draw.circle(self.screen, color, (blob_x, blob_y), blob_size)
+
+    def draw_warrior_sprite(self, cx: int, cy: int, size: int, target_surface=None):
         """Dibuja un sprite de guerrero sencillo (procedimental) centrado en (cx, cy).
 
         El sprite es vectorial (formas) y escala con `size`.
         """
+        surface = target_surface if target_surface else self.screen
+        
         # Sizing
         s = max(8, int(size))
         head_r = max(4, s // 6)
@@ -980,27 +1760,12 @@ class DungeonBoard:
                 self.intro_show_weapons = True
                 if self.is_web:
                     print("[DEBUG WEB] Intro anim completada")
-                
-                # Activar pensamiento de intro cuando el personaje entra en el calabozo
-                if not self.intro_thought_triggered and self.audio.intro_sound:
-                    # Duración de intro.ogg: 0 = auto (duración del audio)
-                    self.audio.trigger_thought(
-                        sounds=[(self.audio.intro_sound, 0)],
-                        subtitles=[("Usa A, W, S y D para moverte.", 4000),
-                         ("Haz zoom con Z y X.", 4000),
-                         ("Explora la mazmorra... encuentra la salida...", 6000),
-                         ("Ten cuidado con lo que acecha en las sombras.", 6000),
-                         ("¡Buena suerte, valiente guerrero!", 14000),  # Resto del audio
-                         ],
-                        blocks_movement=False  # La intro no bloquea el movimiento
-                    )
-                    self.intro_thought_triggered = True
         
         cy += intro_offset_y
         
         # Sombras / base
         shadow_w = int(body_w * 1.2)
-        pygame.draw.ellipse(self.screen, (10, 10, 10), (cx - shadow_w//2, cy + body_h//2, shadow_w, max(4, s//6)))
+        pygame.draw.ellipse(surface, (10, 10, 10), (cx - shadow_w//2, cy + body_h//2, shadow_w, max(4, s//6)))
 
         # Animación simple basada en tiempo (oscilación seno) — solo cuando se está moviendo
         t = pygame.time.get_ticks()
@@ -1017,30 +1782,40 @@ class DungeonBoard:
         lx = cx - body_w//4
         rx = cx + body_w//4
         leg_y0 = cy + body_h//2
-        pygame.draw.line(self.screen, (60, 60, 60), (lx, leg_y0), (lx, leg_y0 + leg_h + left_leg_offset), 3)
-        pygame.draw.line(self.screen, (60, 60, 60), (rx, leg_y0), (rx, leg_y0 + leg_h + right_leg_offset), 3)
+        pygame.draw.line(surface, (60, 60, 60), (lx, leg_y0), (lx, leg_y0 + leg_h + left_leg_offset), 3)
+        pygame.draw.line(surface, (60, 60, 60), (rx, leg_y0), (rx, leg_y0 + leg_h + right_leg_offset), 3)
 
         # Cuerpo (armadura)
         body_rect = pygame.Rect(cx - body_w//2, cy - body_h//4, body_w, body_h)
-        pygame.draw.rect(self.screen, armor_col, body_rect)
-        pygame.draw.rect(self.screen, trim_col, body_rect, 2)
+        pygame.draw.rect(surface, armor_col, body_rect)
+        pygame.draw.rect(surface, trim_col, body_rect, 2)
 
         # Brazos/guanteletes (se mueven ligeramente)
         arm_w = max(4, s // 10)
         arm_y = cy - body_h//8 + int(-phase * (body_h//8))
-        pygame.draw.rect(self.screen, armor_col, (cx - body_w//2 - arm_w, arm_y, arm_w, body_h//3))
-        pygame.draw.rect(self.screen, armor_col, (cx + body_w//2, arm_y, arm_w, body_h//3))
-        pygame.draw.rect(self.screen, trim_col, (cx - body_w//2 - arm_w, arm_y, arm_w, body_h//3), 1)
-        pygame.draw.rect(self.screen, trim_col, (cx + body_w//2, arm_y, arm_w, body_h//3), 1)
+        pygame.draw.rect(surface, armor_col, (cx - body_w//2 - arm_w, arm_y, arm_w, body_h//3))
+        pygame.draw.rect(surface, armor_col, (cx + body_w//2, arm_y, arm_w, body_h//3))
+        pygame.draw.rect(surface, trim_col, (cx - body_w//2 - arm_w, arm_y, arm_w, body_h//3), 1)
+        pygame.draw.rect(surface, trim_col, (cx + body_w//2, arm_y, arm_w, body_h//3), 1)
 
         # Escudo y espada solo se muestran después de la intro
         if self.intro_show_weapons:
+            # Brillo de la espada si tiene poder
+            if self.has_sword_power:
+                sword_glow_radius = max(15, s // 2)
+                sword_glow_x = cx + body_w//2 + arm_w + 2 + int(phase * 2)
+                sword_glow_y = cy - body_h//2 + int(-phase * 2)
+                
+                glow_surf = pygame.Surface((sword_glow_radius*2, sword_glow_radius*2), pygame.SRCALPHA)
+                pygame.draw.circle(glow_surf, (200, 240, 255, 100), (sword_glow_radius, sword_glow_radius), sword_glow_radius)
+                surface.blit(glow_surf, (sword_glow_x - sword_glow_radius, sword_glow_y - sword_glow_radius))
+
             # Escudo (izquierda) - se desplaza ligeramente con la fase
             shield_r = max(8, s // 6)
             shield_x = cx - body_w//2 - arm_w - shield_r//2 + int(-phase * 3)
             shield_y = cy + int(phase * 2)
-            pygame.draw.circle(self.screen, shield_col, (shield_x, shield_y), shield_r)
-            pygame.draw.circle(self.screen, shield_trim, (shield_x, shield_y), shield_r, 2)
+            pygame.draw.circle(surface, shield_col, (shield_x, shield_y), shield_r)
+            pygame.draw.circle(surface, shield_trim, (shield_x, shield_y), shield_r, 2)
 
             # Espada (derecha) - mango y hoja simple, se balancea con la fase
             sword_h = max(12, s // 3)
@@ -1048,31 +1823,39 @@ class DungeonBoard:
             sword_x = cx + body_w//2 + arm_w + 2 + int(phase * 2)
             sword_y1 = cy - body_h//8 + int(-phase * 2)
             sword_y2 = sword_y1 - sword_h + int(phase * 4)
-            pygame.draw.line(self.screen, sword_handle_col, (sword_x, sword_y1), (sword_x, sword_y1 + 6), sword_w + 2)
-            pygame.draw.line(self.screen, sword_blade_col, (sword_x, sword_y1), (sword_x, sword_y2), sword_w)
+            
+            # Espada brillante si tiene poder
+            blade_col = (220, 250, 255) if self.has_sword_power else sword_blade_col
+            
+            pygame.draw.line(surface, sword_handle_col, (sword_x, sword_y1), (sword_x, sword_y1 + 6), sword_w + 2)
+            pygame.draw.line(surface, blade_col, (sword_x, sword_y1), (sword_x, sword_y2), sword_w)
 
         # Cabeza y casco
         head_x = cx + head_turn_offset
         head_y = cy - body_h//2 + head_r
         # Cara
-        pygame.draw.circle(self.screen, skin_col, (head_x, head_y), head_r)
+        pygame.draw.circle(surface, skin_col, (head_x, head_y), head_r)
         # Casco
         helmet_h = max(6, head_r + 2)
         helmet_rect = pygame.Rect(head_x - head_r - 2, head_y - helmet_h, head_r*2 + 4, helmet_h)
-        pygame.draw.rect(self.screen, trim_col, helmet_rect)
-        pygame.draw.rect(self.screen, (160, 160, 160), helmet_rect, 1)
+        pygame.draw.rect(surface, trim_col, helmet_rect)
+        pygame.draw.rect(surface, (160, 160, 160), helmet_rect, 1)
         # Visor (línea)
-        pygame.draw.line(self.screen, (30, 30, 30), (head_x - head_r//1, head_y - 1), (head_x + head_r//1, head_y - 1), 2)
+        pygame.draw.line(surface, (30, 30, 30), (head_x - head_r//1, head_y - 1), (head_x + head_r//1, head_y - 1), 2)
         # Ojos
         eye_y = head_y - 1
-        pygame.draw.circle(self.screen, (10, 10, 10), (head_x - head_r//2, eye_y), max(1, head_r//4))
-        pygame.draw.circle(self.screen, (10, 10, 10), (head_x + head_r//2, eye_y), max(1, head_r//4))
+        pygame.draw.circle(surface, (10, 10, 10), (head_x - head_r//2, eye_y), max(1, head_r//4))
+        pygame.draw.circle(surface, (10, 10, 10), (head_x + head_r//2, eye_y), max(1, head_r//4))
     
     def draw_cell(self, board_row, board_col, view_row, view_col, pixel_offset_x=0, pixel_offset_y=0):
         """Dibuja una celda del tablero en las coordenadas de la vista."""
         cell = self.board[board_row][board_col]
         x = view_col * self.cell_size - pixel_offset_x
         y = view_row * self.cell_size - pixel_offset_y
+        
+        # Inicializar variables de color y brillo
+        floor_color = (0, 0, 0)
+        brightness_factor = 0.0
         
         # Verificar si esta celda debe ser revelada por show_path
         should_reveal_for_path = False
@@ -1153,66 +1936,18 @@ class DungeonBoard:
         
         # Color / textura based on type
         torch_by_dir = getattr(cell, 'adjacent_torch_counts_by_dir', {})
-        if cell.cell_type == CellType.EMPTY:
-            # Pared negra (EMPTY debe verse negra)
-            pygame.draw.rect(self.screen, (0, 0, 0), (x, y, self.cell_size, self.cell_size))
-            # Borde visible en gris para las celdas vacías
-            pygame.draw.rect(self.screen, (90, 90, 90), (x, y, self.cell_size, self.cell_size), 3)
-            # Iluminación por borde según antorchas adyacentes conectadas (depuración)
-            for dir, count in torch_by_dir.items():
-                if count > 0:
-                    if dir == Direction.N:
-                        color = (255, 0, 0)
-                    elif dir == Direction.S:
-                        color = (0, 255, 0)
-                    elif dir == Direction.E:
-                        color = (0, 0, 255)
-                    elif dir == Direction.O:
-                        color = (255, 255, 0)
-                    else:
-                        color = (255, 255, 255)
-                    pygame.draw.rect(self.screen, color, (
-                        x if dir != Direction.E else x + self.cell_size - self.cell_size // 5,
-                        y if dir != Direction.S else y + self.cell_size - self.cell_size // 5,
-                        self.cell_size if dir in [Direction.N, Direction.S] else self.cell_size // 5,
-                        self.cell_size // 5 if dir in [Direction.N, Direction.S] else self.cell_size
-                    ))
-        elif cell.cell_type == CellType.INICIO:
-            # Calcular número de antorchas para iluminación
-            torch_count = self.count_torches(board_row, board_col, cell)
-            # En el inicio, el brillo base es bajo (oscuro) independientemente de la distancia
-            base_brightness = 10
-            torch_brightness = min(130, torch_count * 31)
-            brightness = max(0, base_brightness + torch_brightness)
+        
+        # --- 1. Calcular color del suelo ---
+        if cell.cell_type == CellType.INICIO:
+            # La celda de inicio tiene iluminación de 4 antorchas (124)
+            brightness = 4 * 31
             floor_color = (brightness, brightness, brightness)
-            # Calcular factor de brillo para aplicar a todos los elementos (0.0 a 1.0)
             brightness_factor = brightness / 255.0
-            # Inicio es como una habitación: fondo con iluminación
-            pygame.draw.rect(self.screen, floor_color, (x, y, self.cell_size, self.cell_size))
-            # Marco del inicio en gris oscurecido
-            marco_color = tuple(int(120 * brightness_factor) for _ in range(3))
-            pygame.draw.rect(self.screen, marco_color, (x, y, self.cell_size, self.cell_size), 3)
-            # Iluminación por borde según antorchas adyacentes conectadas (depuración)
-            for dir, count in torch_by_dir.items():
-                if count > 0:
-                    if dir == Direction.N:
-                        color = (255, 0, 0)
-                    elif dir == Direction.S:
-                        color = (0, 255, 0)
-                    elif dir == Direction.E:
-                        color = (0, 0, 255)
-                    elif dir == Direction.O:
-                        color = (255, 255, 0)
-                    else:
-                        color = (255, 255, 255)
-                    pygame.draw.rect(self.screen, color, (
-                        x if dir != Direction.E else x + self.cell_size - self.cell_size // 5,
-                        y if dir != Direction.S else y + self.cell_size - self.cell_size // 5,
-                        self.cell_size if dir in [Direction.N, Direction.S] else self.cell_size // 5,
-                        self.cell_size // 5 if dir in [Direction.N, Direction.S] else self.cell_size
-                    ))
-            # Dibujar textura de piedra en las paredes
+            self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
+            # Dibujar paredes
             self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
+            inset = int(self.cell_size * 0.15)
+            self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
         elif cell.cell_type == CellType.PASILLO:
             torch_count = self.count_torches(board_row, board_col, cell)
             # Calcular oscurecimiento basado en distancia desde la entrada
@@ -1229,29 +1964,11 @@ class DungeonBoard:
             brightness = max(0, base_brightness + torch_brightness)
             floor_color = (brightness, brightness, brightness)
             brightness_factor = brightness / 255.0
-            pygame.draw.rect(self.screen, floor_color, (x, y, self.cell_size, self.cell_size))
-            marco_color = tuple(int(120 * brightness_factor) for _ in range(3))
-            pygame.draw.rect(self.screen, marco_color, (x, y, self.cell_size, self.cell_size), 3)
-            for dir, count in torch_by_dir.items():
-                if count > 0:
-                    if dir == Direction.N:
-                        color = (255, 0, 0)
-                    elif dir == Direction.S:
-                        color = (0, 255, 0)
-                    elif dir == Direction.E:
-                        color = (0, 0, 255)
-                    elif dir == Direction.O:
-                        color = (255, 255, 0)
-                    else:
-                        color = (255, 255, 255)
-                    pygame.draw.rect(self.screen, color, (
-                        x if dir != Direction.E else x + self.cell_size - self.cell_size // 5,
-                        y if dir != Direction.S else y + self.cell_size - self.cell_size // 5,
-                        self.cell_size if dir in [Direction.N, Direction.S] else self.cell_size // 5,
-                        self.cell_size // 5 if dir in [Direction.N, Direction.S] else self.cell_size
-                    ))
+            self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
+            # Dibujar paredes
             self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
-            # Las líneas se dibujan más adelante (después de las piedras, antes de la sangre)
+            inset = int(self.cell_size * 0.15)
+            self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
         elif cell.cell_type == CellType.HABITACION:
             torch_count = self.count_torches(board_row, board_col, cell)
             start_row, start_col = self.start_position
@@ -1267,9 +1984,14 @@ class DungeonBoard:
             brightness = max(0, base_brightness + torch_brightness)
             floor_color = (brightness, brightness, brightness)
             brightness_factor = brightness / 255.0
-            pygame.draw.rect(self.screen, floor_color, (x, y, self.cell_size, self.cell_size))
-            marco_color = tuple(int(120 * brightness_factor) for _ in range(3))
-            pygame.draw.rect(self.screen, marco_color, (x, y, self.cell_size, self.cell_size), 3)
+            self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
+            
+            # Dibujar paredes
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
+            # Dibujar cuadrado que tapa parcialmente el muro para dar amplitud
+            inset = int(self.cell_size * 0.15)
+            self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
+            
             for dir, count in torch_by_dir.items():
                 if count > 0:
                     if dir == Direction.N:
@@ -1288,16 +2010,26 @@ class DungeonBoard:
                         self.cell_size if dir in [Direction.N, Direction.S] else self.cell_size // 5,
                         self.cell_size // 5 if dir in [Direction.N, Direction.S] else self.cell_size
                     ))
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
             # Las líneas se dibujan más adelante (después de las piedras, antes de la sangre)
         elif cell.cell_type == CellType.SALIDA:
             torch_count = self.count_torches(board_row, board_col, cell)
-            base_brightness = 0
+            base_brightness = 40
             torch_brightness = min(130, torch_count * 31)
             brightness = max(0, base_brightness + torch_brightness)
             room_color = (brightness, brightness, brightness)
             brightness_factor = brightness / 255.0
-            pygame.draw.rect(self.screen, room_color, (x, y, self.cell_size, self.cell_size))
+            
+            # Fondo de pared (gris oscuro)
+            wall_color_val = int(50 * brightness_factor)
+            wall_color = (wall_color_val, wall_color_val, wall_color_val)
+            pygame.draw.rect(self.screen, wall_color, (x, y, self.cell_size, self.cell_size))
+            
+            # Dibujar paredes
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
+            # Dibujar cuadrado que tapa parcialmente el muro para dar amplitud
+            inset = int(self.cell_size * 0.15)
+            self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, room_color, board_row, board_col)
+            
             for dir, count in torch_by_dir.items():
                 if count > 0:
                     if dir == Direction.N:
@@ -1316,22 +2048,8 @@ class DungeonBoard:
                         self.cell_size if dir in [Direction.N, Direction.S] else self.cell_size // 5,
                         self.cell_size // 5 if dir in [Direction.N, Direction.S] else self.cell_size
                     ))
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
-            # Dibuja una losa más estrecha, más oscura y con rayitas negras
-            losa_w = int(self.cell_size * 0.28)
-            losa_h = int(self.cell_size * 0.16)
-            losa_x = x + (self.cell_size - losa_w) // 2
-            losa_y = y + self.cell_size // 2 + int(self.cell_size * 0.13)
-            losa_color = (90, 90, 90)
-            borde_color = (60, 60, 60)
-            pygame.draw.rect(self.screen, losa_color, (losa_x, losa_y, losa_w, losa_h))
-            pygame.draw.rect(self.screen, borde_color, (losa_x, losa_y, losa_w, losa_h), 2)
-            # Rayitas negras simulando inscripción
-            n_rayas = 4
-            for i in range(n_rayas):
-                ry = losa_y + int(losa_h * (0.25 + 0.15 * i))
-                pygame.draw.line(self.screen, (20, 20, 20), (losa_x + 6, ry), (losa_x + losa_w - 6, ry), 1)
-        
+
+        # --- 4. Dibujar overlay de debug y líneas ---
         # Marcar celdas del camino principal si show_path está activo
         if self.show_path and (board_row, board_col) in self.main_path:
             # Overlay azul semitransparente sobre la celda
@@ -1339,37 +2057,6 @@ class DungeonBoard:
             overlay.set_alpha(80)
             overlay.fill((0, 100, 255))
             self.screen.blit(overlay, (x, y))
-        
-        # Calcular brightness_factor para las líneas de túneles y salidas
-        # (se aplica con 50% de intensidad respecto al resto)
-        lines_brightness_factor = 1.0
-        if cell.cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
-            # Calcular oscurecimiento basado en distancia desde la entrada
-            start_row, start_col = self.start_position
-            exit_row, exit_col = self.exit_position
-            distance_from_start = abs(start_row - board_row) + abs(start_col - board_col)
-            total_distance = abs(exit_row - start_row) + abs(exit_col - start_col)
-            
-            if total_distance > 0:
-                progress = distance_from_start / total_distance
-            else:
-                progress = 0.5
-            
-            # Calcular brillo base sin antorchas
-            base_brightness = int(50 * (1.0 - progress))
-            # Para las líneas, aplicar 100% del oscurecimiento si está activado, o 0% si está desactivado
-            if self.lighting.lines_darkening_enabled:
-                lines_brightness_factor = base_brightness / 255.0
-            else:
-                lines_brightness_factor = 1.0  # Sin oscurecimiento
-        elif cell.cell_type == CellType.INICIO:
-            # En inicio, usar el mismo brillo base que tendría si estuviera en el camino (50)
-            # porque está en la posición más alejada de la salida
-            if self.lighting.lines_darkening_enabled:
-                base_brightness = 50
-                lines_brightness_factor = base_brightness / 255.0
-            else:
-                lines_brightness_factor = 1.0  # Sin oscurecimiento
         
         # Para pasillos, habitaciones, inicio y salida: dibujar camino desde el centro hacia las salidas
         if cell.cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.INICIO, CellType.SALIDA]:
@@ -1393,95 +2080,89 @@ class DungeonBoard:
                 mid_y_D = y + 0.8*self.cell_size // 2
                 mid_y_U = y + 1.2*self.cell_size // 2
             
-            # Las líneas internas oscurecidas con 50% de intensidad
-            base_line_color = 150
-            darkened_value = int(base_line_color * lines_brightness_factor)
-            inner_color = (darkened_value, darkened_value, darkened_value)
+            # Helper para color de líneas
+            def get_line_color(direction=None):
+                if self.lighting.lines_darkening_enabled:
+                    # MODO F5: Contraste alto
+                    return (150, 150, 150)
+                else:
+                    # MODO NORMAL: Un par de puntos más oscuro que el suelo
+                    line_brightness = max(0, floor_color[0] - 20)
+                    return (line_brightness, line_brightness, line_brightness)
             
             # North
             if Direction.N in cell.exits:
-                if self.lighting.lines_darkening_enabled:
-                    self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_L, y + 0.1*self.cell_size), 3, board_row, board_col, 1)
-                    self.effects.draw_broken_line(inner_color, (mid_x_R, center_y_D), (mid_x_R, y + 0.1*self.cell_size), 3, board_row, board_col, 2)
-                else:
-                    pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_D), (mid_x_L, y + 0.1*self.cell_size), 3)
-                    pygame.draw.line(self.screen, inner_color, (mid_x_R, center_y_D), (mid_x_R, y + 0.1*self.cell_size), 3)
+                inner_color = get_line_color()
+                self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_L, y + 0.1*self.cell_size), 3, board_row, board_col, 1)
+                self.effects.draw_broken_line(inner_color, (mid_x_R, center_y_D), (mid_x_R, y + 0.1*self.cell_size), 3, board_row, board_col, 2)
             else:
                 # Cerrar el norte si no hay salida (siempre gris oscuro)
-                if self.lighting.lines_darkening_enabled:
-                    self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_R, center_y_D), 3, board_row,  board_col, 3)
-                else:
-                    pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_D), (mid_x_R, center_y_D), 3)
+                inner_color = get_line_color()
+                self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_D), (mid_x_R, center_y_D), 3, board_row,  board_col, 3)
             
             # South
             if Direction.S in cell.exits:
-                if self.lighting.lines_darkening_enabled:
-                    self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_L, y + 0.9*self.cell_size), 3, board_row, board_col, 4)
-                    self.effects.draw_broken_line(inner_color, (mid_x_R, center_y_U), (mid_x_R, y + 0.9*self.cell_size), 3, board_row, board_col, 5)
-                else:
-                    pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_U), (mid_x_L, y + 0.9*self.cell_size), 3)
-                    pygame.draw.line(self.screen, inner_color, (mid_x_R, center_y_U), (mid_x_R, y + 0.9*self.cell_size), 3)
+                inner_color = get_line_color()
+                self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_L, y + 0.9*self.cell_size), 3, board_row, board_col, 4)
+                self.effects.draw_broken_line(inner_color, (mid_x_R, center_y_U), (mid_x_R, y + 0.9*self.cell_size), 3, board_row, board_col, 5)
             else:
                 # Cerrar el sur si no hay salida (siempre gris oscuro)
-                if self.lighting.lines_darkening_enabled:
-                    self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_R, center_y_U), 3, board_row, board_col, 6)
-                else:
-                    pygame.draw.line(self.screen, inner_color, (mid_x_L, center_y_U), (mid_x_R, center_y_U), 3)
+                inner_color = get_line_color()
+                self.effects.draw_broken_line(inner_color, (mid_x_L, center_y_U), (mid_x_R, center_y_U), 3, board_row, board_col, 6)
             
             # East
             if Direction.E in cell.exits:
-                if self.lighting.lines_darkening_enabled:
-                    self.effects.draw_broken_line(inner_color, (center_x_R, mid_y_D), (x + 0.9*self.cell_size, mid_y_D), 3, board_row, board_col, 7)
-                    self.effects.draw_broken_line(inner_color, (center_x_R, mid_y_U), (x + 0.9*self.cell_size, mid_y_U), 3, board_row, board_col, 8)
-                else:
-                    pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_D), (x + 0.9*self.cell_size, mid_y_D), 3)
-                    pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_U), (x + 0.9*self.cell_size, mid_y_U), 3)
+                inner_color = get_line_color()
+                self.effects.draw_broken_line(inner_color, (center_x_R, mid_y_D), (x + 0.9*self.cell_size, mid_y_D), 3, board_row, board_col, 7)
+                self.effects.draw_broken_line(inner_color, (center_x_R, mid_y_U), (x + 0.9*self.cell_size, mid_y_U), 3, board_row, board_col, 8)
             else:
                 # Cerrar el este si no hay salida (siempre gris oscuro)
-                if self.lighting.lines_darkening_enabled:
-                    self.effects.draw_broken_line(inner_color, (center_x_R, mid_y_D), (center_x_R, mid_y_U), 3, board_row, board_col, 9)
-                else:
-                    pygame.draw.line(self.screen, inner_color, (center_x_R, mid_y_D), (center_x_R, mid_y_U), 3)
+                inner_color = get_line_color()
+                self.effects.draw_broken_line(inner_color, (center_x_R, mid_y_D), (center_x_R, mid_y_U), 3, board_row, board_col, 9)
             
             # West
             if Direction.O in cell.exits:
-                if self.lighting.lines_darkening_enabled:
-                    self.effects.draw_broken_line(inner_color, (center_x_L, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 3, board_row, board_col, 10)
-                    self.effects.draw_broken_line(inner_color, (center_x_L, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 3, board_row, board_col, 11)
-                else:
-                    pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 3)
-                    pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 3)
+                inner_color = get_line_color()
+                self.effects.draw_broken_line(inner_color, (center_x_L, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), 3, board_row, board_col, 10)
+                self.effects.draw_broken_line(inner_color, (center_x_L, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), 3, board_row, board_col, 11)
             else:
                 # Cerrar el oeste si no hay salida (siempre gris oscuro)
-                if self.lighting.lines_darkening_enabled:
-                    self.effects.draw_broken_line(inner_color, (center_x_L, mid_y_D), (center_x_L, mid_y_U), 3, board_row, board_col, 12)
-                else:
-                    pygame.draw.line(self.screen, inner_color, (center_x_L, mid_y_D), (center_x_L, mid_y_U), 3)
+                inner_color = get_line_color()
+                self.effects.draw_broken_line(inner_color, (center_x_L, mid_y_D), (center_x_L, mid_y_U), 3, board_row, board_col, 12)
         
         # Draw exits
         if cell.cell_type != CellType.EMPTY:
-            self.draw_exits(board_row, board_col, x, y, cell.exits, cell.cell_type, lines_brightness_factor)
+            self.draw_exits(board_row, board_col, x, y, cell.exits, cell.cell_type)
         
         # Dibujar manchas de sangre después de las líneas
         if cell.cell_type in [CellType.PASILLO, CellType.HABITACION]:
             self.decorations.draw_blood_stains(board_row, board_col, x, y, brightness_factor, self.exit_position)
         elif cell.cell_type == CellType.SALIDA:
             self.decorations.draw_blood_stains(board_row, board_col, x, y, brightness_factor, self.exit_position)
+            
+        # Dibujar huellas de monstruos
+        if (board_row, board_col) in self.monster_footprints:
+            self.decorations.draw_wet_footprints(x, y, self.monster_footprints[(board_row, board_col)])
         
         # Dibujar fuente y escaleras después de la sangre
         if cell.cell_type == CellType.INICIO:
-            self.decorations.draw_fountain(x, y)
+            self.decorations.draw_fountain(x, y, brightness_factor)
+            self.decorations.draw_dust_particles(x, y, board_row, board_col, brightness_factor)
         elif cell.cell_type == CellType.SALIDA:
             self.decorations.draw_spiral_stairs(x, y)
+        
+        # Dibujar telarañas en habitaciones
+        if cell.cell_type == CellType.HABITACION:
+            self.decorations.draw_cobwebs(x, y, board_row, board_col, brightness_factor)
             
         # Dibujar antorchas al final (encima de todo)
         # SOLO en celdas visitadas (no en celdas reveladas pero no visitadas)
         if (board_row, board_col) in self.visited_cells:
             if cell.cell_type in [CellType.INICIO, CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
-                num_torches = self.count_torches(board_row, board_col, cell)
+                num_torches = self.count_torches(board_row, board_col, cell, include_sword=False)
                 self.decorations.draw_torches(board_row, board_col, x, y, cell, num_torches)
     
-    def draw_exits(self, row,  col, x, y, exits, cell_type, brightness_factor: float = 1.0):
+    def draw_exits(self, row,  col, x, y, exits, cell_type):
 
         # --- Variables y funciones auxiliares internas ---
         delta = {
@@ -1500,10 +2181,8 @@ class DungeonBoard:
             if cell.cell_type == CellType.EMPTY:
                 return (0, 0, 0)
             elif cell.cell_type == CellType.INICIO:
-                torch_count = self.count_torches(board_row, board_col, cell)
-                base_brightness = 10
-                torch_brightness = min(130, torch_count * 31)
-                brightness = max(0, base_brightness + torch_brightness)
+                # Coincidir con la iluminación de draw_cell (4 antorchas)
+                brightness = 4 * 31
                 return (brightness, brightness, brightness)
             elif cell.cell_type in [CellType.PASILLO, CellType.HABITACION]:
                 torch_count = self.count_torches(board_row, board_col, cell)
@@ -1521,7 +2200,7 @@ class DungeonBoard:
                 return (brightness, brightness, brightness)
             elif cell.cell_type == CellType.SALIDA:
                 torch_count = self.count_torches(board_row, board_col, cell)
-                base_brightness = 0
+                base_brightness = 40
                 torch_brightness = min(130, torch_count * 31)
                 brightness = max(0, base_brightness + torch_brightness)
                 return (brightness, brightness, brightness)
@@ -1535,42 +2214,47 @@ class DungeonBoard:
                 if neighbor.cell_type != CellType.EMPTY and self.get_opposite_direction(direction) in neighbor.exits:
                     color1 = get_floor_color_for_cell(row, col)
                     color2 = get_floor_color_for_cell(nr, nc)
-                    avg_color = tuple((c1 + c2) // 2 for c1, c2 in zip(color1, color2))
+                    
+                    # Usar brillo para gradiente (asumiendo escala de grises)
+                    b1 = color1[0]
+                    b2 = color2[0]
+                    avg_b = (b1 + b2) // 2
+                    
                     rect_thickness = int(self.cell_size * 0.22)
+                    
                     if direction == Direction.N:
-                        rect = (x + self.cell_size * 0.28, y, self.cell_size * 0.44, rect_thickness)
+                        rx = x + int(self.cell_size * 0.28)
+                        ry = y
+                        rw = int(self.cell_size * 0.44)
+                        rh = rect_thickness
+                        # Gradiente: Borde (avg) -> Centro (b1)
+                        self.draw_gradient_rect(rx, ry, rw, rh, avg_b, b1, vertical=True)
                     elif direction == Direction.S:
-                        rect = (x + self.cell_size * 0.28, y + self.cell_size - rect_thickness, self.cell_size * 0.44, rect_thickness)
+                        rx = x + int(self.cell_size * 0.28)
+                        ry = y + self.cell_size - rect_thickness
+                        rw = int(self.cell_size * 0.44)
+                        rh = rect_thickness
+                        # Gradiente: Centro (b1) -> Borde (avg)
+                        self.draw_gradient_rect(rx, ry, rw, rh, b1, avg_b, vertical=True)
                     elif direction == Direction.E:
-                        rect = (x + self.cell_size - rect_thickness, y + self.cell_size * 0.28, rect_thickness, self.cell_size * 0.44)
+                        rx = x + self.cell_size - rect_thickness
+                        ry = y + int(self.cell_size * 0.28)
+                        rw = rect_thickness
+                        rh = int(self.cell_size * 0.44)
+                        # Gradiente: Centro (b1) -> Borde (avg)
+                        self.draw_gradient_rect(rx, ry, rw, rh, b1, avg_b, vertical=False)
                     elif direction == Direction.O:
-                        rect = (x, y + self.cell_size * 0.28, rect_thickness, self.cell_size * 0.44)
-                    else:
-                        return
-                    pygame.draw.rect(self.screen, avg_color, rect)
-
-        side_circle_radius = int(self.cell_size * 0.08)
-        side_circle_offset = int(self.cell_size * 0.03)
-        side_circle_color = (220, 220, 220)
-
-        def draw_side_circle(direction):
-            if direction == Direction.N:
-                pos = (x + self.cell_size // 2, y + side_circle_offset)
-            elif direction == Direction.S:
-                pos = (x + self.cell_size // 2, y + self.cell_size - side_circle_offset)
-            elif direction == Direction.E:
-                pos = (x + self.cell_size - side_circle_offset, y + self.cell_size // 2)
-            elif direction == Direction.O:
-                pos = (x + side_circle_offset, y + self.cell_size // 2)
-            else:
-                return
-            pygame.draw.circle(self.screen, side_circle_color, pos, side_circle_radius)
+                        rx = x
+                        ry = y + int(self.cell_size * 0.28)
+                        rw = rect_thickness
+                        rh = int(self.cell_size * 0.44)
+                        # Gradiente: Borde (avg) -> Centro (b1)
+                        self.draw_gradient_rect(rx, ry, rw, rh, avg_b, b1, vertical=False)
 
         # --- Dibujo de conexiones y círculos de borde ---
         for direction in [Direction.N, Direction.S, Direction.E, Direction.O]:
             if direction in exits:
                 draw_floor_connection(direction)
-                draw_side_circle(direction)
 
         # --- Dibujo de líneas y agujeros de salida (resto de la función original) ---
         exit_size = 5
@@ -1578,15 +2262,8 @@ class DungeonBoard:
         mid_x_R = x + 1.2*self.cell_size // 2
         mid_y_D = y + 0.8*self.cell_size // 2
         mid_y_U = y + 1.2*self.cell_size // 2
-        exit_color = (0, 0, 0)
+        exit_color = (150, 150, 150)
         exit_thickness = 8
-        hole_radius = int(self.cell_size * 0.13)
-        hole_centers = {
-            Direction.N: (x + self.cell_size // 2, y + int(0.07 * self.cell_size)),
-            Direction.S: (x + self.cell_size // 2, y + int(0.93 * self.cell_size)),
-            Direction.E: (x + int(0.93 * self.cell_size), y + self.cell_size // 2),
-            Direction.O: (x + int(0.07 * self.cell_size), y + self.cell_size // 2),
-        }
 
         def is_at_edge(dir_: Direction) -> bool:
             """Retorna True si la salida está hacia el borde del tablero."""
@@ -1618,31 +2295,13 @@ class DungeonBoard:
                     connected = True
 
             # Dibuja la línea negra gruesa
-            if self.lighting.lines_darkening_enabled and cell_type != CellType.SALIDA:
+            if self.lighting.lines_darkening_enabled:
                 self.effects.draw_broken_line(exit_color, (mid_x_L, y), (mid_x_L, y + 0.1*self.cell_size), exit_thickness, row, col, 20)
                 self.effects.draw_broken_line(exit_color, (mid_x_R, y), (mid_x_R, y + 0.1*self.cell_size), exit_thickness, row, col, 21)
-            else:
-                pygame.draw.line(self.screen, exit_color, (mid_x_L, y), (mid_x_L, y + 0.1*self.cell_size), exit_thickness)
-                pygame.draw.line(self.screen, exit_color, (mid_x_R, y), (mid_x_R, y + 0.1*self.cell_size), exit_thickness)
-            # Dibuja el círculo con el color promedio si conecta dos celdas, negro si da al vacío
-            nr, nc = neighbor_coords(Direction.N)
-            if 0 <= nr < self.size and 0 <= nc < self.size:
-                neighbor = self.board[nr][nc]
-                if neighbor.cell_type != CellType.EMPTY and self.get_opposite_direction(Direction.N) in neighbor.exits:
-                    color1 = get_floor_color_for_cell(row, col)
-                    color2 = get_floor_color_for_cell(nr, nc)
-                    avg_color = tuple((c1 + c2) // 2 for c1, c2 in zip(color1, color2))
-                    pygame.draw.circle(self.screen, avg_color, hole_centers[Direction.N], hole_radius)
-                else:
-                    pygame.draw.circle(self.screen, (0, 0, 0), hole_centers[Direction.N], hole_radius)
-            else:
-                pygame.draw.circle(self.screen, (0, 0, 0), hole_centers[Direction.N], hole_radius)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar la salida en negro
             if is_at_edge(Direction.N) or (not connected and not neighbor_empty):
-                if self.lighting.lines_darkening_enabled and cell_type != CellType.SALIDA:
-                    self.effects.draw_broken_line((0, 0, 0), (mid_x_L, y + 0.05*self.cell_size), (mid_x_R, y + 0.05*self.cell_size), exit_thickness, row, col, 22)
-                else:
-                    pygame.draw.line(self.screen, (0, 0, 0), (mid_x_L, y + 0.05*self.cell_size), (mid_x_R, y + 0.05*self.cell_size), exit_thickness)
+                if self.lighting.lines_darkening_enabled:
+                    self.effects.draw_broken_line(exit_color, (mid_x_L, y + 0.05*self.cell_size), (mid_x_R, y + 0.05*self.cell_size), exit_thickness, row, col, 22)
 
         # North (complementaria): si la vecina tiene N pero yo no, dibujar cruz en la vecina
         if Direction.N not in exits:
@@ -1657,7 +2316,8 @@ class DungeonBoard:
                         neighbor_y = nr * self.cell_size
                         neighbor_mid_x_L = nc * self.cell_size + 0.8*self.cell_size // 2
                         neighbor_mid_x_R = nc * self.cell_size + 1.2*self.cell_size // 2
-                        pygame.draw.line(self.screen, (0, 0, 0), (neighbor_mid_x_L, neighbor_y + self.cell_size - 0.05*self.cell_size), (neighbor_mid_x_R, neighbor_y + self.cell_size - 0.05*self.cell_size), 2)
+                        if self.lighting.lines_darkening_enabled:
+                            pygame.draw.line(self.screen, exit_color, (neighbor_mid_x_L, neighbor_y + self.cell_size - 0.05*self.cell_size), (neighbor_mid_x_R, neighbor_y + self.cell_size - 0.05*self.cell_size), 2)
 
         # South
         if Direction.S in exits:
@@ -1672,31 +2332,13 @@ class DungeonBoard:
                     connected = True
 
             # Dibuja la línea negra gruesa
-            if self.lighting.lines_darkening_enabled and cell_type != CellType.SALIDA:
+            if self.lighting.lines_darkening_enabled:
                 self.effects.draw_broken_line(exit_color, (mid_x_L, y + self.cell_size), (mid_x_L, y + 0.8*self.cell_size), exit_thickness, row, col, 30)
                 self.effects.draw_broken_line(exit_color, (mid_x_R, y + self.cell_size), (mid_x_R, y + 0.8*self.cell_size), exit_thickness, row, col, 31)
-            else:
-                pygame.draw.line(self.screen, exit_color, (mid_x_L, y + self.cell_size), (mid_x_L, y + 0.8*self.cell_size), exit_thickness)
-                pygame.draw.line(self.screen, exit_color, (mid_x_R, y + self.cell_size), (mid_x_R, y + 0.8*self.cell_size), exit_thickness)
-            # Dibuja el círculo con el color promedio si conecta dos celdas, negro si da al vacío
-            nr, nc = neighbor_coords(Direction.S)
-            if 0 <= nr < self.size and 0 <= nc < self.size:
-                neighbor = self.board[nr][nc]
-                if neighbor.cell_type != CellType.EMPTY and self.get_opposite_direction(Direction.S) in neighbor.exits:
-                    color1 = get_floor_color_for_cell(row, col)
-                    color2 = get_floor_color_for_cell(nr, nc)
-                    avg_color = tuple((c1 + c2) // 2 for c1, c2 in zip(color1, color2))
-                    pygame.draw.circle(self.screen, avg_color, hole_centers[Direction.S], hole_radius)
-                else:
-                    pygame.draw.circle(self.screen, (0, 0, 0), hole_centers[Direction.S], hole_radius)
-            else:
-                pygame.draw.circle(self.screen, (0, 0, 0), hole_centers[Direction.S], hole_radius)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar
             if is_at_edge(Direction.S) or (not connected and not neighbor_empty):
-                if self.lighting.lines_darkening_enabled and cell_type != CellType.SALIDA:
-                    self.effects.draw_broken_line((0, 0, 0), (mid_x_L, y + self.cell_size - 0.05*self.cell_size), (mid_x_R, y + self.cell_size - 0.05*self.cell_size), exit_thickness, row, col, 32)
-                else:
-                    pygame.draw.line(self.screen, (0, 0, 0), (mid_x_L, y + self.cell_size - 0.05*self.cell_size), (mid_x_R, y + self.cell_size - 0.05*self.cell_size), exit_thickness)
+                if self.lighting.lines_darkening_enabled:
+                    self.effects.draw_broken_line(exit_color, (mid_x_L, y + self.cell_size - 0.05*self.cell_size), (mid_x_R, y + self.cell_size - 0.05*self.cell_size), exit_thickness, row, col, 32)
 
         # South (complementaria)
         if Direction.S not in exits:
@@ -1709,7 +2351,8 @@ class DungeonBoard:
                         neighbor_y = nr * self.cell_size
                         neighbor_mid_x_L = nc * self.cell_size + 0.8*self.cell_size // 2
                         neighbor_mid_x_R = nc * self.cell_size + 1.2*self.cell_size // 2
-                        pygame.draw.line(self.screen, (0, 0, 0), (neighbor_mid_x_L, neighbor_y + 0.05*self.cell_size), (neighbor_mid_x_R, neighbor_y + 0.05*self.cell_size), 2)
+                        if self.lighting.lines_darkening_enabled:
+                            pygame.draw.line(self.screen, exit_color, (neighbor_mid_x_L, neighbor_y + 0.05*self.cell_size), (neighbor_mid_x_R, neighbor_y + 0.05*self.cell_size), 2)
 
         # East
         if Direction.E in exits:
@@ -1724,31 +2367,13 @@ class DungeonBoard:
                     connected = True
 
             # Dibuja la línea negra gruesa
-            if self.lighting.lines_darkening_enabled and cell_type != CellType.SALIDA:
+            if self.lighting.lines_darkening_enabled:
                 self.effects.draw_broken_line(exit_color, (x + self.cell_size, mid_y_D), (x + 0.8*self.cell_size, mid_y_D), exit_thickness, row, col, 40)
                 self.effects.draw_broken_line(exit_color, (x + self.cell_size, mid_y_U), (x + 0.8*self.cell_size, mid_y_U), exit_thickness, row, col, 41)
-            else:
-                pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_D), (x + 0.8*self.cell_size, mid_y_D), exit_thickness)
-                pygame.draw.line(self.screen, exit_color, (x + self.cell_size, mid_y_U), (x + 0.8*self.cell_size, mid_y_U), exit_thickness)
-            # Dibuja el círculo con el color promedio si conecta dos celdas, negro si da al vacío
-            nr, nc = neighbor_coords(Direction.E)
-            if 0 <= nr < self.size and 0 <= nc < self.size:
-                neighbor = self.board[nr][nc]
-                if neighbor.cell_type != CellType.EMPTY and self.get_opposite_direction(Direction.E) in neighbor.exits:
-                    color1 = get_floor_color_for_cell(row, col)
-                    color2 = get_floor_color_for_cell(nr, nc)
-                    avg_color = tuple((c1 + c2) // 2 for c1, c2 in zip(color1, color2))
-                    pygame.draw.circle(self.screen, avg_color, hole_centers[Direction.E], hole_radius)
-                else:
-                    pygame.draw.circle(self.screen, (0, 0, 0), hole_centers[Direction.E], hole_radius)
-            else:
-                pygame.draw.circle(self.screen, (0, 0, 0), hole_centers[Direction.E], hole_radius)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar
             if is_at_edge(Direction.E) or (not connected and not neighbor_empty):
-                if self.lighting.lines_darkening_enabled and cell_type != CellType.SALIDA:
-                    self.effects.draw_broken_line((0, 0, 0), (x + self.cell_size - 0.05*self.cell_size, mid_y_D), (x + self.cell_size - 0.05*self.cell_size, mid_y_U), exit_thickness, row, col, 42)
-                else:
-                    pygame.draw.line(self.screen, (0, 0, 0), (x + self.cell_size - 0.05*self.cell_size, mid_y_D), (x + self.cell_size - 0.05*self.cell_size, mid_y_U), exit_thickness)
+                if self.lighting.lines_darkening_enabled:
+                    self.effects.draw_broken_line(exit_color, (x + self.cell_size - 0.05*self.cell_size, mid_y_D), (x + self.cell_size - 0.05*self.cell_size, mid_y_U), exit_thickness, row, col, 42)
 
         # East (complementaria)
         if Direction.E not in exits:
@@ -1759,9 +2384,10 @@ class DungeonBoard:
                     opposite = self.get_opposite_direction(Direction.E)
                     if opposite in neighbor.exits:
                         neighbor_x = nc * self.cell_size
-                        neighbor_mid_y_D = nr * selfcell_size + 0.8*self.cell_size // 2
-                        neighbor_mid_y_U = nr * selfcell_size + 1.2*self.cell_size // 2
-                        pygame.draw.line(self.screen, (0, 0, 0), (neighbor_x + 0.05*self.cell_size, neighbor_mid_y_D), (neighbor_x + 0.05*self.cell_size, neighbor_mid_y_U), 2)
+                        neighbor_mid_y_D = nr * self.cell_size + 0.8*self.cell_size // 2
+                        neighbor_mid_y_U = nr * self.cell_size + 1.2*self.cell_size // 2
+                        if self.lighting.lines_darkening_enabled:
+                            pygame.draw.line(self.screen, exit_color, (neighbor_x + 0.05*self.cell_size, neighbor_mid_y_D), (neighbor_x + 0.05*self.cell_size, neighbor_mid_y_U), 2)
 
         # West
         if Direction.O in exits:
@@ -1776,31 +2402,13 @@ class DungeonBoard:
                     connected = True
 
             # Dibuja la línea negra gruesa
-            if self.lighting.lines_darkening_enabled and cell_type != CellType.SALIDA:
+            if self.lighting.lines_darkening_enabled:
                 self.effects.draw_broken_line(exit_color, (x, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), exit_thickness, row, col, 50)
                 self.effects.draw_broken_line(exit_color, (x, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), exit_thickness, row, col, 51)
-            else:
-                pygame.draw.line(self.screen, exit_color, (x, mid_y_D), (x + 0.1*self.cell_size, mid_y_D), exit_thickness)
-                pygame.draw.line(self.screen, exit_color, (x, mid_y_U), (x + 0.1*self.cell_size, mid_y_U), exit_thickness)
-            # Dibuja el círculo con el color promedio si conecta dos celdas, negro si da al vacío
-            nr, nc = neighbor_coords(Direction.O)
-            if 0 <= nr < self.size and 0 <= nc < self.size:
-                neighbor = self.board[nr][nc]
-                if neighbor.cell_type != CellType.EMPTY and self.get_opposite_direction(Direction.O) in neighbor.exits:
-                    color1 = get_floor_color_for_cell(row, col)
-                    color2 = get_floor_color_for_cell(nr, nc)
-                    avg_color = tuple((c1 + c2) // 2 for c1, c2 in zip(color1, color2))
-                    pygame.draw.circle(self.screen, avg_color, hole_centers[Direction.O], hole_radius)
-                else:
-                    pygame.draw.circle(self.screen, (0, 0, 0), hole_centers[Direction.O], hole_radius)
-            else:
-                pygame.draw.circle(self.screen, (0, 0, 0), hole_centers[Direction.O], hole_radius)
             # Si está al borde o la vecina no tiene la salida complementaria, tachar
             if is_at_edge(Direction.O) or (not connected and not neighbor_empty):
-                if self.lighting.lines_darkening_enabled and cell_type != CellType.SALIDA:
-                    self.effects.draw_broken_line((0, 0, 0), (x + 0.05*self.cell_size, mid_y_D), (x + 0.05*self.cell_size, mid_y_U), exit_thickness, row, col, 52)
-                else:
-                    pygame.draw.line(self.screen, (0, 0, 0), (x + 0.05*self.cell_size, mid_y_D), (x + 0.05*self.cell_size, mid_y_U), exit_thickness)
+                if self.lighting.lines_darkening_enabled:
+                    self.effects.draw_broken_line(exit_color, (x + 0.05*self.cell_size, mid_y_D), (x + 0.05*self.cell_size, mid_y_U), exit_thickness, row, col, 52)
 
         # West (complementaria)
         if Direction.O not in exits:
@@ -1813,7 +2421,28 @@ class DungeonBoard:
                         neighbor_x = nc * self.cell_size
                         neighbor_mid_y_D = nr * self.cell_size + 0.8*self.cell_size // 2
                         neighbor_mid_y_U = nr * self.cell_size + 1.2*self.cell_size // 2
-                        pygame.draw.line(self.screen, (0, 0, 0), (neighbor_x + self.cell_size - 0.05*self.cell_size, neighbor_mid_y_D), (neighbor_x + self.cell_size - 0.05*self.cell_size, neighbor_mid_y_U), 2)
+                        if self.lighting.lines_darkening_enabled:
+                            pygame.draw.line(self.screen, exit_color, (neighbor_x + self.cell_size - 0.05*self.cell_size, neighbor_mid_y_D), (neighbor_x + self.cell_size - 0.05*self.cell_size, neighbor_mid_y_U), 2)
+
+    def draw_gradient_rect(self, x, y, w, h, start_brightness, end_brightness, vertical=True):
+        """Dibuja un rectángulo con gradiente de brillo."""
+        if w <= 0 or h <= 0:
+            return
+            
+        if vertical:
+            for i in range(h):
+                t = i / max(1, h - 1)
+                b = int(start_brightness + (end_brightness - start_brightness) * t)
+                b = max(0, min(255, b))
+                color = (b, b, b)
+                pygame.draw.rect(self.screen, color, (x, y + i, w, 1))
+        else:
+            for i in range(w):
+                t = i / max(1, w - 1)
+                b = int(start_brightness + (end_brightness - start_brightness) * t)
+                b = max(0, min(255, b))
+                color = (b, b, b)
+                pygame.draw.rect(self.screen, color, (x + i, y, 1, h))
 
     def draw_openings(self, offset_row: int, offset_col: int, pixel_offset_x: int = 0, pixel_offset_y: int = 0):
         """Dibuja las aberturas negras entre celdas conectadas (sobre los bordes).
@@ -1878,8 +2507,6 @@ class DungeonBoard:
                     # Calcular el brillo promedio entre esta celda y la vecina
                     brightness_current = self.get_cell_brightness(board_r, board_c)
                     brightness_neighbor = self.get_cell_brightness(nr, nc)
-                    avg_brightness = (brightness_current + brightness_neighbor) // 2
-                    opening_color = (avg_brightness, avg_brightness, avg_brightness)
                     
                     # Los rects deben respetar las líneas perpendiculares para que sea invisible la transición
                     if dir_ == Direction.N:
@@ -1888,38 +2515,58 @@ class DungeonBoard:
                         ry = int(y - open_thickness // 2)
                         rw = int(mid_x_R - mid_x_L) - 4
                         rh = int(open_thickness)
-                        pygame.draw.rect(self.screen, opening_color, (rx, ry, rw, rh))
+                        self.draw_gradient_rect(rx, ry, rw, rh, brightness_neighbor, brightness_current, vertical=True)
                     elif dir_ == Direction.S:
                         # Sur: rect horizontal entre mid_x_L y mid_x_R, respetando líneas verticales
                         rx = int(mid_x_L) + 2
                         ry = int(y + self.cell_size - open_thickness // 2)
                         rw = int(mid_x_R - mid_x_L) - 4
                         rh = int(open_thickness)
-                        pygame.draw.rect(self.screen, opening_color, (rx, ry, rw, rh))
+                        self.draw_gradient_rect(rx, ry, rw, rh, brightness_current, brightness_neighbor, vertical=True)
                     elif dir_ == Direction.E:
                         # Este: rect vertical entre mid_y_D y mid_y_U, respetando líneas horizontales
                         rx = int(x + self.cell_size - open_thickness // 2)
                         ry = int(mid_y_D) + 2
                         rw = int(open_thickness)
                         rh = int(mid_y_U - mid_y_D) - 4
-                        pygame.draw.rect(self.screen, opening_color, (rx, ry, rw, rh))
+                        self.draw_gradient_rect(rx, ry, rw, rh, brightness_current, brightness_neighbor, vertical=False)
                     elif dir_ == Direction.O:
                         # Oeste: rect vertical entre mid_y_D y mid_y_U, respetando líneas horizontales
                         rx = int(x - open_thickness // 2)
                         ry = int(mid_y_D) + 2
                         rw = int(open_thickness)
                         rh = int(mid_y_U - mid_y_D) - 4
-                        pygame.draw.rect(self.screen, opening_color, (rx, ry, rw, rh))
+                        self.draw_gradient_rect(rx, ry, rw, rh, brightness_neighbor, brightness_current, vertical=False)
 
     def get_cell_brightness(self, board_row: int, board_col: int) -> int:
         """Calcula el brillo de una celda basándose en su número de antorchas."""
         cell = self.board[board_row][board_col]
         if cell.cell_type == CellType.EMPTY:
             return 0
-        else:
-            # INICIO, PASILLO, HABITACION, SALIDA: todas usan el mismo sistema de iluminación
+        elif cell.cell_type == CellType.INICIO:
+            return 4 * 31  # 124
+        elif cell.cell_type == CellType.SALIDA:
             torch_count = self.count_torches(board_row, board_col, cell)
-            return 10 + min(130, torch_count * 31)
+            base_brightness = 40
+            torch_brightness = min(130, torch_count * 31)
+            return max(0, base_brightness + torch_brightness)
+        else:
+            # PASILLO, HABITACION
+            torch_count = self.count_torches(board_row, board_col, cell)
+            
+            start_row, start_col = self.start_position
+            exit_row, exit_col = self.exit_position
+            distance_from_start = abs(start_row - board_row) + abs(start_col - board_col)
+            total_distance = abs(exit_row - start_row) + abs(exit_col - start_col)
+            
+            if total_distance > 0:
+                progress = distance_from_start / total_distance
+            else:
+                progress = 0.5
+            
+            base_brightness = int(20 * (1.0 - progress))
+            torch_brightness = min(130, torch_count * 31)
+            return max(0, base_brightness + torch_brightness)
     
     def get_opposite_direction(self, direction: Direction) -> Direction:
         """Retorna la dirección opuesta."""
@@ -2134,6 +2781,13 @@ class DungeonBoard:
                     footstep.play()
                     self.last_footstep_index += 1
                 
+                # Sonido de chapoteo si hay sangre
+                if self.has_blood_stains(target_row, target_col):
+                    if 'dos-gotas' in self.ambient_sounds:
+                        splash = self.ambient_sounds['dos-gotas']
+                        splash.set_volume(0.3)
+                        splash.play()
+                
                 # Iniciar animación suave del muñeco desde posición antigua a nueva
                 self.player_anim_from_pos = self.current_position
                 self.player_anim_to_pos = (target_row, target_col)
@@ -2143,6 +2797,24 @@ class DungeonBoard:
                 
                 # Actualizar posición lógica (la cámara se moverá suavemente hacia esta posición)
                 self.current_position = (target_row, target_col)
+                
+                # Resetear estado de ignorar de los monstruos al moverse el jugador
+                for monster in self.deep_ones:
+                    monster.ignoring_player = False
+                
+                # Verificar si el jugador caminó hacia un monstruo
+                for monster in self.deep_ones:
+                    if (monster.row, monster.col) == self.current_position:
+                        if self.has_sword_power:
+                            if not monster.dead:
+                                monster.dead = True
+                                monster.death_time = pygame.time.get_ticks()
+                                monster.state = "DEAD"
+                                # No return, el jugador ocupa la misma casilla que el cadáver
+                        else:
+                            self.take_damage()
+                            return
+                
                 # Marcar la celda como visitada
                 self.visited_cells.add((target_row, target_col))
                 # Calcular antorchas adyacentes conectadas por dirección
@@ -2161,13 +2833,32 @@ class DungeonBoard:
                 self.adjacent_torch_counts_by_dir[(target_row, target_col)] = adj_torch_count_by_dir
                 self.reveal_adjacent_cells(target_row, target_col)
                 
+                # Verificar si volvió al inicio tras visitar la salida (Poder de la Espada)
+                if (target_row, target_col) == self.start_position and self.exit_visited and not self.has_sword_power:
+                    self.has_sword_power = True
+                    self.thought_pending = True
+                    self.sword_thought_triggered = True
+                    
+                    # Fade out de la música actual para dar paso al pensamiento
+                    self.audio.start_fade_out(500)
+                    
+                    async def delayed_sword_thought():
+                        await asyncio.sleep(0.5)
+                        self.audio.trigger_thought(
+                            sounds=[(self.sword_sound, 0)] if self.sword_sound else [],
+                            images=[(self.sword_image, 5000)] if self.sword_image else None,
+                            subtitles=[("¡El poder de la espada sagrada!", 5000)],
+                            blocks_movement=True
+                        )
+                        self.thought_pending = False
+                    asyncio.create_task(delayed_sword_thought())
+
                 # POST-CHECK: Activar pensamientos DESPUÉS de entrar en la celda
                 # Verificar si hay manchas de sangre en la celda actual
                 if not self.blood_thought_triggered and self.blood_sound and self.has_blood_stains(target_row, target_col):
                     self.blood_thought_triggered = True
 
-                    self.audio.thought_active = True
-                    self.audio.thought_blocks_movement = True
+                    self.thought_pending = True
                     
                     async def delayed_blood_thought():
                         await asyncio.sleep(1.0)  # Esperar 1 segundo
@@ -2177,6 +2868,7 @@ class DungeonBoard:
                             subtitles=[("¿Es eso... sangre?!?", 6000)],
                             blocks_movement=True
                         )
+                        self.thought_pending = False
                     asyncio.create_task(delayed_blood_thought())
                     return  # BLOQUEAR ahora que ya entró
                 
@@ -2186,8 +2878,7 @@ class DungeonBoard:
                 if not self.torch_thought_triggered and self.torch_sound and self.has_torches(target_row, target_col) and self.count_torches(target_row, target_col, cell) > 0:
                     self.torch_thought_triggered = True
 
-                    self.audio.thought_active = True
-                    self.audio.thought_blocks_movement = True
+                    self.thought_pending = True
                     
                     async def delayed_torch_thought():
                         await asyncio.sleep(1.0)  # Esperar 1 segundo
@@ -2197,6 +2888,7 @@ class DungeonBoard:
                             subtitles=[("Una antorcha encendida... ¡Interesante!", 6000)],
                             blocks_movement=True
                         )
+                        self.thought_pending = False
                     asyncio.create_task(delayed_torch_thought())
                     return  # BLOQUEAR ahora que ya entró
                 
@@ -2204,6 +2896,7 @@ class DungeonBoard:
                 if (target_row, target_col) == self.exit_position and not self.exit_image_shown:
                     self.exit_image_shown = True
                     self.exit_image_start_time = pygame.time.get_ticks()
+                    self.exit_visited = True  # Marcar salida como visitada
                     self.exit_thought_active = True  # Marcar que estamos en pensamiento de salida
 
                     async def delayed_exit_thought():
@@ -2263,6 +2956,13 @@ class DungeonBoard:
             footstep = self.footstep_sounds[self.last_footstep_index % len(self.footstep_sounds)]
             footstep.play()
             self.last_footstep_index += 1
+            
+        # Sonido de chapoteo si hay sangre
+        if self.has_blood_stains(target_row, target_col):
+            if 'dos-gotas' in self.ambient_sounds:
+                splash = self.ambient_sounds['dos-gotas']
+                splash.set_volume(0.3)
+                splash.play()
         
         # Iniciar animación suave del muñeco desde posición antigua a nueva
         self.player_anim_from_pos = self.current_position
@@ -2273,6 +2973,17 @@ class DungeonBoard:
         
         # Actualizar posición lógica (la cámara se moverá suavemente hacia esta posición)
         self.current_position = (target_row, target_col)
+        
+        # Resetear estado de ignorar de los monstruos al moverse el jugador
+        for monster in self.deep_ones:
+            monster.ignoring_player = False
+        
+        # Verificar si el jugador caminó hacia un monstruo (aunque es improbable en celdas nuevas)
+        for monster in self.deep_ones:
+            if (monster.row, monster.col) == self.current_position:
+                self.take_damage()
+                return
+
         # Marcar la celda como visitada
         self.visited_cells.add((target_row, target_col))
         # Calcular antorchas adyacentes conectadas por dirección
@@ -2314,10 +3025,14 @@ class DungeonBoard:
                     # Revelar todas las celdas con salidas conectadas
                     self.visited_cells.add((adj_row, adj_col))
     
-    def count_torches(self, board_row, board_col, cell):
+    def count_torches(self, board_row, board_col, cell, include_sword=True):
         """Cuenta cuántas antorchas se dibujarán realmente en esta celda.
         Solo aparecen en celdas del camino principal.
         La probabilidad aumenta conforme se acerca a la salida."""
+        # Iluminación mágica de la espada: si el jugador está aquí y tiene poder, ilumina como 3 antorchas
+        if include_sword and self.has_sword_power and (board_row, board_col) == self.current_position:
+            return 3
+            
         # Si las antorchas están apagadas, no hay antorchas
         if self.torches_extinguished:
             return 0
@@ -2326,29 +3041,6 @@ class DungeonBoard:
         if self.torches_flickering:
             current_time = pygame.time.get_ticks()
             elapsed = current_time - self.flicker_start_time
-            
-            # Después de 3 segundos, hacer zoom out 3 veces (una vez)
-            if elapsed >= 3000 and not self.zoom_out_triggered:
-                print("[DEBUG] Haciendo zoom out 3 veces")
-                for _ in range(3):
-                    self.zoom_out()
-                self.zoom_out_triggered = True
-            
-            # Si ya pasó la duración del parpadeo (5 segundos), apagar definitivamente
-            if elapsed >= self.flicker_duration:
-                self.torches_flickering = False
-                self.torches_extinguished = True
-                print("[DEBUG] Antorchas apagadas definitivamente")
-                
-                # Restaurar el zoom original
-                if hasattr(self, 'original_zoom_index'):
-                    self.current_zoom_index = self.original_zoom_index
-                    self.view_size = self.zoom_levels[self.current_zoom_index]
-                    self.cell_size = self.fixed_window_size // self.view_size
-                    self.update_camera_target()
-                    print(f"[DEBUG] Zoom restaurado a nivel {self.original_zoom_index}")
-                
-                return 0
             
             # Parpadeo: alternar entre visible/invisible cada vez más rápido
             # Primeros 3 segundos: parpadeo lento (500ms)
@@ -2639,6 +3331,18 @@ class DungeonBoard:
     
     def update_music_volume_by_distance(self):
         """Actualizar volumen de música según distancia al inicio y al final"""
+        # Si tiene el poder de la espada, mantener música de ataque
+        if self.has_sword_power:
+            # Esperar a que la música de espada haya arrancado oficialmente
+            if not self.sword_music_started:
+                return
+                
+            if self.audio.current_music != 'alataque' and 'alataque' in self.audio.music_sounds:
+                self.audio.current_music = 'alataque'
+                self.audio.music_channel.play(self.audio.music_sounds['alataque'], loops=-1)
+                self.audio.music_channel.set_volume(0.8)
+            return
+
         # Calcular distancias
         start_row, start_col = self.start_position
         exit_row, exit_col = self.exit_position
@@ -2707,6 +3411,9 @@ class DungeonBoard:
             self.view_size = self.zoom_levels[self.current_zoom_index]
             # Ajustar el tamaño de las celdas para mantener ventana fija
             self.cell_size = self.fixed_window_size // self.view_size
+            # Actualizar tamaño de celda en renderizadores
+            self.effects.cell_size = self.cell_size
+            self.decorations.cell_size = self.cell_size
             # Recentrar la cámara en la posición actual
             self.update_camera_target()
     
@@ -2717,6 +3424,9 @@ class DungeonBoard:
             self.view_size = self.zoom_levels[self.current_zoom_index]
             # Ajustar el tamaño de las celdas para mantener ventana fija
             self.cell_size = self.fixed_window_size // self.view_size
+            # Actualizar tamaño de celda en renderizadores
+            self.effects.cell_size = self.cell_size
+            self.decorations.cell_size = self.cell_size
             # Recentrar la cámara en la posición actual
             self.update_camera_target()
     
@@ -2743,9 +3453,62 @@ class DungeonBoard:
         self.camera_offset_row = float(target_offset_row)
         self.camera_offset_col = float(target_offset_col)
     
+    def get_lines_base_brightness(self, row, col):
+        """Calcula el brillo base para las líneas de una celda."""
+        if not (0 <= row < self.size and 0 <= col < self.size):
+            return 0
+            
+        cell = self.board[row][col]
+        
+        if cell.cell_type == CellType.INICIO:
+            return 255
+            
+        if cell.cell_type in [CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
+            start_row, start_col = self.start_position
+            exit_row, exit_col = self.exit_position
+            distance_from_start = abs(start_row - row) + abs(start_col - col)
+            total_distance = abs(exit_row - start_row) + abs(exit_col - start_col)
+            
+            if total_distance > 0:
+                progress = distance_from_start / total_distance
+            else:
+                progress = 0.5
+            
+            base_brightness = int(50 * (1.0 - progress))
+            return max(0, base_brightness)
+            
+        return 0
+
     async def run(self):
         running = True
+        
+        # Dibujar el primer frame (título) para que se vea antes del audio
+        self.draw()
+        
+        # Iniciar pensamiento de intro si estamos en título
+        if self.showing_title and not self.intro_thought_triggered and self.audio.intro_sound:
+            self.intro_thought_triggered = True
+            self.audio.trigger_thought(
+                sounds=[(self.audio.intro_sound, 0)],
+                subtitles=[("Usa A, W, S y D para moverte.", 4000),
+                 ("Haz zoom con Z y X.", 4000),
+                 ("Explora la mazmorra... encuentra la salida...", 6000),
+                 ("Ten cuidado con lo que acecha en las sombras.", 6000),
+                 ("¡Buena suerte, valiente guerrero!", 14000),
+                 ],
+                blocks_movement=False
+            )
+            
         while running:
+            # Verificar si se solicitó reinicio
+            if self.restart_requested:
+                return True
+                
+            # Actualizar estado de invulnerabilidad
+            if self.invulnerable:
+                if pygame.time.get_ticks() - self.last_damage_time > self.invulnerable_duration:
+                    self.invulnerable = False
+
             # Actualizar fade de música si está activo
             self.audio.update_fades()
             
@@ -2768,9 +3531,23 @@ class DungeonBoard:
                 self.intro_thought_finished = True
                 print("[DEBUG] Pensamiento de intro terminado - antorchas ahora disponibles")
             
+            # Si el pensamiento de la espada acaba de terminar, arrancar música
+            if self.was_active and not self.audio.thought_active and self.sword_thought_triggered and not self.sword_music_started:
+                self.sword_music_started = True
+                
+                if 'alataque' in self.audio.music_sounds:
+                    self.audio.current_music = 'alataque'
+                    self.audio.music_channel.play(self.audio.music_sounds['alataque'], loops=-1)
+                    self.audio.start_fade_in(1000, 0.8) # Fade in de 1 segundo
+                
+                # Iniciar zumbido de la espada
+                self.audio.play_sword_hum()
+            
             # Si el pensamiento de salida acaba de terminar, activar ráfaga
             if self.was_active and not self.audio.thought_active and self.exit_thought_active and not self.rafaga_thought_triggered:
-                print("[DEBUG] Pensamiento de salida terminado - activando ráfaga inmediatamente")
+                print("[DEBUG] Pensamiento de salida terminado - iniciando secuencia de ráfaga")
+                self.rafaga_thought_triggered = True
+                
                 if self.rafaga_sound:
                     # Parar la música de Cthulhu
                     self.audio.music_channel.stop()
@@ -2780,7 +3557,6 @@ class DungeonBoard:
                         sounds=[(self.rafaga_sound, 0)],
                         blocks_movement=True
                     )
-                    self.rafaga_thought_triggered = True
                     self.torches_flickering = True
                     self.flicker_start_time = pygame.time.get_ticks()
                     # Las antorchas parpadean durante 5 segundos
@@ -2789,25 +3565,67 @@ class DungeonBoard:
                     # Guardar zoom actual para restaurarlo al final
                     self.original_zoom_index = self.current_zoom_index
                     
-                    # Hacer zoom in máximo al empezar el parpadeo
-                    self.current_zoom_index = 0  # Zoom máximo (7x7)
+                    # 1. Zoom OUT (al máximo) al empezar
+                    self.current_zoom_index = len(self.zoom_levels) - 1  # Zoom máximo out
                     self.view_size = self.zoom_levels[self.current_zoom_index]
                     self.cell_size = self.fixed_window_size // self.view_size
+                    self.effects.cell_size = self.cell_size
+                    self.decorations.cell_size = self.cell_size
                     self.update_camera_target()
-                    print("[DEBUG] Zoom in máximo aplicado")
+                    print("[DEBUG] Zoom out máximo aplicado")
                     
-                    # Inicializar contadores para zoom out
-                    self.zoom_out_count = 0
-                    self.zoom_out_triggered = False
+                    # Secuencia: Esperar 5s (flicker) -> Apagar -> Spawn -> Esperar 1s -> Zoom IN
+                    async def rafaga_sequence():
+                        # Esperar a que termine el parpadeo
+                        await asyncio.sleep(5.0)
+                        
+                        # Apagar antorchas y spawnear monstruos
+                        self.torches_flickering = False
+                        self.torches_extinguished = True
+                        
+                        if not self.deep_ones_spawned:
+                            self.deep_ones_spawned = True
+                            path_list = list(self.main_path)
+                            valid_spawn_points = [p for p in path_list if p != self.start_position and p != self.exit_position and (abs(p[0] - self.current_position[0]) + abs(p[1] - self.current_position[1])) >= 7]
+                            num_monsters = min(len(valid_spawn_points), random.randint(5, 10))
+                            if valid_spawn_points:
+                                spawn_positions = random.sample(valid_spawn_points, num_monsters)
+                                self.deep_ones = [DeepOne(r, c) for r, c in spawn_positions]
+                                print(f"[DEBUG] Spawning {len(self.deep_ones)} Deep Ones")
+                        
+                        # Esperar 1 segundo en oscuridad
+                        await asyncio.sleep(1.0)
+                        
+                        # Zoom IN (al máximo)
+                        self.current_zoom_index = 0  # Zoom máximo (5x5)
+                        self.view_size = self.zoom_levels[self.current_zoom_index]
+                        self.cell_size = self.fixed_window_size // self.view_size
+                        self.effects.cell_size = self.cell_size
+                        self.decorations.cell_size = self.cell_size
+                        self.update_camera_target()
+                        print("[DEBUG] Zoom in máximo aplicado tras apagón + 1s")
+                        
+                        # Iniciar música de viento al final de la secuencia
+                        if 'viento' in self.audio.music_sounds:
+                            self.audio.current_music = 'viento'
+                            self.audio.music_channel.play(self.audio.music_sounds['viento'], loops=-1)
+                            self.audio.music_channel.set_volume(1.0)
                     
-                    # Iniciar música de viento inmediatamente con volumen máximo
-                    if 'viento' in self.audio.music_sounds:
-                        self.audio.current_music = 'viento'
-                        self.audio.music_channel.play(self.audio.music_sounds['viento'], loops=-1)
-                        self.audio.music_channel.set_volume(1.0)  # Volumen máximo desde el inicio
+                    asyncio.create_task(rafaga_sequence())
+            
+            # Si el pensamiento de Game Over acaba de terminar
+            if self.was_active and not self.audio.thought_active and self.showing_game_over and self.game_over_thought_finished_time == 0:
+                self.game_over_thought_finished_time = pygame.time.get_ticks()
             
             # Guardar estado anterior de thought_active
             self.was_active = self.audio.thought_active
+            
+            # Actualizar monstruos
+            self.update_monsters()
+            
+            # Limpiar huellas viejas periódicamente (cada ~1 segundo)
+            if pygame.time.get_ticks() % 60 < 2:
+                self.cleanup_footprints()
 
             # Actualizar volumen de música según distancia (solo durante el juego, no durante fade)
             if not self.showing_title and not self.intro_anim_active and not self.audio.fading_out and not self.audio.fading_in and not self.wind_fading_in:
@@ -2876,6 +3694,11 @@ class DungeonBoard:
                         else:
                             # Cualquier otra tecla inicia el juego
                             self.showing_title = False
+                            
+                            # Cancelar pensamiento de intro si sigue activo
+                            if self.audio.thought_active:
+                                self.audio.cancel_thought()
+                            
                             self.intro_anim_active = True
                             self.intro_anim_start_time = pygame.time.get_ticks()
                         continue
@@ -2931,8 +3754,195 @@ class DungeonBoard:
             self.clock.tick(60)
             await asyncio.sleep(0) # Yield control to browser
         
-        pygame.quit()
-        sys.exit()
+        return False
+        
+    def cleanup_footprints(self):
+        """Elimina huellas antiguas para liberar memoria."""
+        current_time = pygame.time.get_ticks()
+        keys_to_remove = []
+        for pos, footprints in self.monster_footprints.items():
+            # Mantener solo huellas de menos de 15 segundos
+            self.monster_footprints[pos] = [fp for fp in footprints if current_time - fp['time'] < 15000]
+            if not self.monster_footprints[pos]:
+                keys_to_remove.append(pos)
+        for k in keys_to_remove:
+            del self.monster_footprints[k]
+
+    def has_line_of_sight(self, start_pos, end_pos):
+        """Verifica si hay línea de visión directa entre dos puntos."""
+        r0, c0 = start_pos
+        r1, c1 = end_pos
+        
+        # Distancia en pasos (máxima diferencia de coordenadas)
+        steps = max(abs(r1 - r0), abs(c1 - c0))
+        if steps == 0:
+            return True
+            
+        for i in range(1, steps + 1):
+            t = i / steps
+            r = int(r0 + (r1 - r0) * t + 0.5)
+            c = int(c0 + (c1 - c0) * t + 0.5)
+            
+            if not (0 <= r < self.size and 0 <= c < self.size):
+                return False
+            if self.board[r][c].cell_type == CellType.EMPTY:
+                return False
+        return True
+
+    def update_monsters(self):
+        """Actualiza el comportamiento de los Profundos."""
+        current_time = pygame.time.get_ticks()
+        for monster in self.deep_ones:
+            if monster.dead:
+                continue
+            
+            # Actualizar estado de alerta visual
+            if not self.has_sword_power:
+                if self.has_line_of_sight((monster.row, monster.col), self.current_position) and not monster.ignoring_player:
+                    monster.alerted = True
+                    monster.alert_start_time = current_time
+                elif current_time - monster.alert_start_time > 1000:
+                    monster.alerted = False
+            else:
+                monster.alerted = False
+                
+            # Resetear estado de rugido después de 1.5 segundos
+            if monster.state == "ROARING" and current_time - monster.state_start_time > 1500:
+                monster.state = "IDLE"
+
+            # Acción con intervalo variable (2000ms +/- 500ms)
+            if current_time - monster.last_action_time > monster.next_action_delay:
+                monster.last_action_time = current_time
+                
+                # Calcular distancia para determinar velocidad (persecución si dist <= 5)
+                dist = abs(monster.row - self.current_position[0]) + abs(monster.col - self.current_position[1])
+                monster.next_action_delay = random.randint(800, 1200) if dist <= 5 else random.randint(1500, 2500)
+                
+                roll = random.random()
+                
+                # Si el jugador tiene la espada, los monstruos huyen (alta probabilidad de moverse)
+                fleeing = self.has_sword_power
+                move_prob = 0.8 if fleeing else 0.25
+                
+                if roll < move_prob:
+                    new_row, new_col = None, None
+                    
+                    if fleeing:
+                        # Lógica de huida (solo movimientos válidos)
+                        candidates = []
+                        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                            nr, nc = monster.row + dr, monster.col + dc
+                            if (nr, nc) in self.main_path:
+                                if (nr, nc) == self.start_position or (nr, nc) == self.exit_position:
+                                    self.trigger_barrier_effect(nr, nc)
+                                    continue
+                                occupied = any(m.row == nr and m.col == nc for m in self.deep_ones)
+                                if not occupied:
+                                    candidates.append((nr, nc))
+                        
+                        if candidates:
+                            player_r, player_c = self.current_position
+                            candidates.sort(key=lambda p: abs(p[0]-player_r) + abs(p[1]-player_c), reverse=True)
+                            new_row, new_col = candidates[0]
+                    else:
+                        # Si tiene línea de visión, perseguir al jugador
+                        if self.has_line_of_sight((monster.row, monster.col), self.current_position) and not monster.ignoring_player:
+                            player_r, player_c = self.current_position
+                            
+                            # Evaluar todos los vecinos (incluso fuera del camino)
+                            neighbors = []
+                            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                                neighbors.append((monster.row + dr, monster.col + dc))
+                            
+                            # Ordenar por distancia ascendente (acercarse)
+                            neighbors.sort(key=lambda p: abs(p[0]-player_r) + abs(p[1]-player_c))
+                            target_r, target_c = neighbors[0]
+                            
+                            # Verificar si el movimiento es válido
+                            if (target_r, target_c) not in self.main_path:
+                                # Intenta salir del camino -> Barrera
+                                self.trigger_barrier_effect(target_r, target_c)
+                                monster.ignoring_player = True
+                                monster.alerted = False
+                            elif (target_r, target_c) == self.start_position or (target_r, target_c) == self.exit_position:
+                                # Intenta entrar a inicio/salida -> Barrera
+                                self.trigger_barrier_effect(target_r, target_c)
+                                monster.ignoring_player = True
+                                monster.alerted = False
+                            else:
+                                # Camino válido, verificar ocupación
+                                occupied = any(m.row == target_r and m.col == target_c for m in self.deep_ones)
+                                if not occupied:
+                                    new_row, new_col = target_r, target_c
+                        else:
+                            # Movimiento aleatorio si no ve al jugador
+                            candidates = []
+                            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                                nr, nc = monster.row + dr, monster.col + dc
+                                if (nr, nc) in self.main_path:
+                                    if (nr, nc) == self.start_position or (nr, nc) == self.exit_position:
+                                        continue
+                                    occupied = any(m.row == nr and m.col == nc for m in self.deep_ones)
+                                    if not occupied:
+                                        candidates.append((nr, nc))
+                            
+                            if candidates:
+                                new_row, new_col = random.choice(candidates)
+                    
+                    if new_row is not None:
+                        
+                        # Añadir huella húmeda en la posición actual
+                        if (monster.row, monster.col) not in self.monster_footprints:
+                            self.monster_footprints[(monster.row, monster.col)] = []
+                        
+                        self.monster_footprints[(monster.row, monster.col)].append({
+                            'rel_x': int(self.cell_size * random.uniform(0.3, 0.7)),
+                            'rel_y': int(self.cell_size * random.uniform(0.3, 0.7)),
+                            'time': current_time
+                        })
+                        
+                        # Sonido de pisada húmeda si está cerca
+                        dist = abs(monster.row - self.current_position[0]) + abs(monster.col - self.current_position[1])
+                        if dist < 12:
+                            vol = max(0.1, 0.5 - (dist / 12.0) * 0.4)
+                            if self.footstep_sounds:
+                                sound = random.choice(self.footstep_sounds)
+                                sound.set_volume(vol)
+                                sound.play()
+                        
+                        # Iniciar animación
+                        monster.from_row = monster.row
+                        monster.from_col = monster.col
+                        monster.row = new_row
+                        monster.col = new_col
+                        monster.animating = True
+                        monster.anim_start_time = current_time
+                        
+                        # Verificar si alcanzó al jugador
+                        if (monster.row, monster.col) == self.current_position:
+                            if self.has_sword_power:
+                                monster.dead = True
+                                monster.death_time = current_time
+                                monster.state = "DEAD"
+                            else:
+                                self.take_damage()
+                        
+                elif roll < (move_prob + 0.25):
+                    # 25% Rugir y animar
+                    monster.state = "ROARING"
+                    monster.state_start_time = current_time
+                    # Reproducir sonido si está cerca
+                    if dist < 10 and self.grunido_sound:
+                        # Volumen basado en distancia
+                        vol = max(0.1, 0.8 - (dist / 10.0) * 0.7)
+                        self.grunido_sound.set_volume(vol)
+                        self.grunido_sound.play()
+                        
+                        # Temblor de cámara si está muy cerca (< 6 celdas)
+                        if dist < 6:
+                            intensity = 0.2 * (1.0 - dist / 6.0)
+                            self.trigger_camera_shake(intensity, 500)
+                # 50% No hacer nada (IDLE)
 
 if __name__ == "__main__":
     dungeon = DungeonBoard()

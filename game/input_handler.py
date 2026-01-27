@@ -29,9 +29,32 @@ class InputHandler:
         if event.type == pygame.KEYDOWN:
             return self._handle_keydown(event)
             
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            return self._handle_mousedown(event)
+            
         return True
 
     def _handle_keydown(self, event):
+        # 0. Game Over (prioridad máxima)
+        if self.game.showing_game_over:
+            # Bloquear TODO (incluido ESC) durante el primer segundo (animación de mordisco/entrada)
+            if pygame.time.get_ticks() - self.game.game_over_start_time < 1000:
+                return True
+                
+            # Permitir reiniciar con R si el botón es visible
+            if event.key == pygame.K_r and self.game.restart_button_rect:
+                self.game.restart_requested = True
+                return True
+                
+            # Permitir salir solo con ESC
+            if event.key == pygame.K_ESCAPE:
+                return False
+            return True  # Bloquear cualquier otra tecla
+            
+        # Bloquear input si hay un pensamiento pendiente (esperando delay de 1s)
+        if getattr(self.game, 'thought_pending', False):
+            return True
+            
         # 1. Confirmaciones modales (tienen prioridad)
         if self.game.asking_exit_confirmation:
             if event.key == pygame.K_s:
@@ -68,6 +91,16 @@ class InputHandler:
             self.game.show_path = not self.game.show_path
         elif event.key == pygame.K_F5:
             self.game.lighting.toggle_lines_darkening()
+        elif event.key == pygame.K_F6:
+            self.game.current_position = self.game.start_position
+            self.game.player_animating = False
+            self.game.center_camera_instantly(*self.game.start_position)
+            self.game.visited_cells.add(self.game.current_position)
+        elif event.key == pygame.K_F7:
+            self.game.current_position = self.game.exit_position
+            self.game.player_animating = False
+            self.game.center_camera_instantly(*self.game.exit_position)
+            self.game.visited_cells.add(self.game.current_position)
         elif event.key == pygame.K_z:
             self.game.zoom_in()
         elif event.key == pygame.K_x:
@@ -81,6 +114,14 @@ class InputHandler:
         
         return True
 
+    def _handle_mousedown(self, event):
+        # Click en botón de reiniciar
+        if self.game.showing_game_over and self.game.restart_button_rect:
+            if event.button == 1: # Click izquierdo
+                if self.game.restart_button_rect.collidepoint(event.pos):
+                    self.game.restart_requested = True
+        return True
+
     def _return_to_main_menu(self):
         self.game.showing_title = True
         self.game.asking_main_menu_confirmation = False
@@ -90,6 +131,13 @@ class InputHandler:
 
     def _start_game(self):
         self.game.showing_title = False
+        
+        # Cancelar pensamiento de intro si sigue activo al iniciar
+        if self.game.audio.thought_active:
+            self.game.audio.cancel_thought()
+            # Asegurar que el juego sepa que la intro terminó (para que aparezcan las antorchas)
+            self.game.intro_thought_finished = True
+            
         self.game.intro_anim_active = True
         self.game.intro_anim_start_time = pygame.time.get_ticks()
 

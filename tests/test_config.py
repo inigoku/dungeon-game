@@ -13,12 +13,12 @@ class TestBoardConfiguration:
     
     def test_default_view_size(self):
         """Verificar tamaño de vista por defecto."""
-        assert config.DEFAULT_VIEW_SIZE == 7
+        assert config.DEFAULT_VIEW_SIZE == 5
         assert config.DEFAULT_VIEW_SIZE % 2 == 1  # Debe ser impar
     
     def test_default_cell_size(self):
         """Verificar tamaño de celda por defecto."""
-        assert config.DEFAULT_CELL_SIZE == 90
+        assert config.DEFAULT_CELL_SIZE == 126
         assert config.DEFAULT_CELL_SIZE > 0
 
 
@@ -27,11 +27,11 @@ class TestZoomLevels:
     
     def test_zoom_levels_count(self):
         """Verificar que hay 5 niveles de zoom."""
-        assert len(config.ZOOM_LEVELS) == 5
+        assert len(config.ZOOM_LEVELS) == 6
     
     def test_zoom_levels_values(self):
         """Verificar valores de zoom."""
-        assert config.ZOOM_LEVELS == [7, 11, 21, 51, 101]
+        assert config.ZOOM_LEVELS == [5, 7, 11, 21, 51, 101]
     
     def test_zoom_levels_all_odd(self):
         """Verificar que todos los niveles son impares."""
@@ -59,7 +59,7 @@ class TestRendering:
         """Verificar tamaño de ventana fijo."""
         expected_size = config.DEFAULT_VIEW_SIZE * config.DEFAULT_CELL_SIZE
         assert config.FIXED_WINDOW_SIZE == expected_size
-        assert config.FIXED_WINDOW_SIZE == 630  # 7 * 90
+        assert config.FIXED_WINDOW_SIZE == 630  # 5 * 126
     
     def test_window_size_positive(self):
         """Verificar que el tamaño de ventana es positivo."""

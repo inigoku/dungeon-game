@@ -9,7 +9,7 @@ Arquitectura modular:
 - models/: Estructuras de datos (Cell, CellType, Direction)
 - config.py: Constantes del juego
 - services/: Lógica de negocio (iluminación, audio, generación)
-- rendering/: Renderizado visual (decoraciones, efectos, celdas)
+- rendering/: Renderizado visual (decoraciones, efec    tos, celdas)
 
 La clase DungeonBoard en dungeon.py automáticamente detecta y usa
 los módulos refactorizados si están disponibles, cayendo a la versión
@@ -25,6 +25,7 @@ Uso:
 
 import asyncio
 import sys
+import pygame
 
 # Importaciones explícitas para asegurar que Pygbag empaquete estos módulos
 import models.cell
@@ -37,12 +38,17 @@ import dungeon
 async def main():
     """Punto de entrada principal del juego."""
     try:
-        # Crear instancia del juego
-        # DungeonBoard automáticamente usa los módulos refactorizados
-        game = dungeon.DungeonBoard()
+        while True:
+            # Crear instancia del juego
+            # DungeonBoard automáticamente usa los módulos refactorizados
+            game = dungeon.DungeonBoard()
+            
+            # Ejecutar el loop principal del juego
+            # Si retorna True, reiniciamos el juego. Si retorna False, salimos.
+            if not await game.run():
+                break
         
-        # Ejecutar el loop principal del juego
-        await game.run()
+        pygame.quit()
         
     except KeyboardInterrupt:
         print("\n¡Juego interrumpido por el usuario!")

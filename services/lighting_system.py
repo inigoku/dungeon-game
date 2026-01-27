@@ -15,7 +15,7 @@ class LightingSystem:
     """Maneja todos los cálculos de iluminación del dungeon."""
     
     def __init__(self) -> None:
-        self.lines_darkening_enabled: bool = True
+        self.lines_darkening_enabled: bool = False
     
     def calculate_brightness(self, base_brightness: int, torch_count: int) -> int:
         """Calcula el brillo total combinando base y antorchas."""

@@ -26,6 +26,7 @@ class AudioManager:
         self._load_music_file('adagio', "sound/adagio.ogg")
         self._load_music_file('cthulhu', "sound/cthulhu.ogg")
         self._load_music_file('viento', "sound/viento.ogg")
+        self._load_music_file('alataque', "sound/alataque.ogg")
         
         # Estado de la música
         self.current_music = None
@@ -63,6 +64,11 @@ class AudioManager:
         # Sonidos de efectos
         self.blood_sound = None
         self._load_effect('blood', "sound/sangre.ogg", 0.7)
+        
+        # Sonido de zumbido de espada
+        self.sword_hum_sound = None
+        self.sword_hum_channel = None
+        self._load_effect('sword_hum', "sound/zumbido_espada.ogg", 0.3)
         
         self.footstep_sounds = []
         self._load_footstep("sound/paso1.ogg", 0.4)
@@ -125,6 +131,7 @@ class AudioManager:
         """Detiene la música actual."""
         self.music_channel.stop()
         self.current_music = None
+        self.stop_sword_hum()
     
     def start_fade_out(self, duration=1000, next_music=None):
         """Inicia un fade out de la música.
@@ -286,13 +293,23 @@ class AudioManager:
         # Lista para guardar los canales de audio activos
         with self._thought_lock:
             self._active_sound_channels = []
+            # Verificar si se canceló antes de empezar
+            if getattr(self, '_cancel_thought', False):
+                return
         
         # Reproducir todos los sonidos al inicio de su tiempo
         for start_time, sound_obj, duration_ms in sound_timeline:
             if start_time == 0:
+                # Verificar cancelación antes de reproducir
+                with self._thought_lock:
+                    if getattr(self, '_cancel_thought', False):
+                        return
                 channel = sound_obj.play()
                 if channel:
                     with self._thought_lock:
+                        if getattr(self, '_cancel_thought', False):
+                            channel.stop()
+                            return
                         self._active_sound_channels.append(channel)
                 print(f"[DEBUG] Reproduciendo sonido (duración: {duration_ms if duration_ms > 0 else 'auto'}ms)")
         
@@ -309,9 +326,16 @@ class AudioManager:
             while current_sound_index < len(sound_timeline):
                 sound_start, sound_obj, _ = sound_timeline[current_sound_index]
                 if elapsed >= sound_start:
+                    # Verificar cancelación antes de reproducir
+                    with self._thought_lock:
+                        if getattr(self, '_cancel_thought', False):
+                            break
                     channel = sound_obj.play()
                     if channel:
                         with self._thought_lock:
+                            if getattr(self, '_cancel_thought', False):
+                                channel.stop()
+                                break
                             self._active_sound_channels.append(channel)
                     print(f"[DEBUG] Reproduciendo sonido {current_sound_index + 1}/{len(sound_timeline)}")
                     current_sound_index += 1
@@ -602,18 +626,16 @@ class AudioManager:
         self.update_subtitles()
         self.update_thoughts()
 
-    def start_fade_out(self, next_music_name=None, loop=False):
-        """Inicia un fade out de la música actual."""
-        self.fading_out = True
-        self.fade_start_time = pygame.time.get_ticks()
-        self.fade_from_volume = self.music_channel.get_volume()
-        self.fade_to_volume = 0.0
-        self.pending_music_load = (next_music_name, loop)
+    def play_sword_hum(self):
+        """Reproduce el zumbido de la espada en loop."""
+        if hasattr(self, 'sword_hum_sound') and self.sword_hum_sound:
+            # Si ya está sonando, no hacer nada
+            if self.sword_hum_channel and self.sword_hum_channel.get_busy():
+                return
+            self.sword_hum_channel = self.sword_hum_sound.play(loops=-1)
     
-    def start_fade_in(self, target_volume=0.5):
-        """Inicia un fade in de la música actual."""
-        self.fading_in = True
-        self.fade_start_time = pygame.time.get_ticks()
-        self.fade_from_volume = 0.0
-        self.fade_to_volume = target_volume
-        self.music_channel.set_volume(0.0)
+    def stop_sword_hum(self):
+        """Detiene el zumbido de la espada."""
+        if self.sword_hum_channel:
+            self.sword_hum_channel.stop()
+            self.sword_hum_channel = None

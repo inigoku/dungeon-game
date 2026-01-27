@@ -102,42 +102,47 @@ class BoardGenerator:
         return (center + max_distance, center)
     
     def calculate_main_path(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
-        """Calcula el camino principal usando A*."""
-        from heapq import heappush, heappop
+        """Calcula un camino tortuoso sin lazos desde start hasta end."""
+        path = [start]
+        current = start
+        visited = {start}
         
-        def heuristic(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
-            return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+        max_attempts = 10000
+        attempts = 0
         
-        open_set: List[Tuple[int, Tuple[int, int]]] = []
-        heappush(open_set, (0, start))
-        came_from: Dict[Tuple[int, int], Tuple[int, int]] = {}
-        g_score: Dict[Tuple[int, int], int] = {start: 0}
-        f_score: Dict[Tuple[int, int], int] = {start: heuristic(start, end)}
-        
-        while open_set:
-            _, current = heappop(open_set)
-            
-            if current == end:
-                path = []
-                while current in came_from:
-                    path.append(current)
-                    current = came_from[current]
-                path.append(start)
-                return list(reversed(path))
-            
+        while current != end and attempts < max_attempts:
+            attempts += 1
             current_row, current_col = current
+            end_row, end_col = end
+            
+            directions = []
             for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                neighbor = (current_row + dr, current_col + dc)
+                next_row = current_row + dr
+                next_col = current_col + dc
+                next_pos = (next_row, next_col)
                 
-                if not (0 <= neighbor[0] < self.size and 0 <= neighbor[1] < self.size):
-                    continue
-                
-                tentative_g_score = g_score[current] + 1
-                
-                if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g_score
-                    f_score[neighbor] = tentative_g_score + heuristic(neighbor, end)
-                    heappush(open_set, (f_score[neighbor], neighbor))
-        
-        return []
+                if (0 <= next_row < self.size and 0 <= next_col < self.size 
+                    and next_pos not in visited):
+                    dist = abs(end_row - next_row) + abs(end_col - next_col)
+                    directions.append((next_pos, dist))
+            
+            if not directions:
+                if len(path) > 1:
+                    path.pop()
+                    current = path[-1]
+                else:
+                    break
+                continue
+            
+            # 80% probabilidad hacia objetivo, 20% aleatorio
+            if random.random() < 0.80:
+                directions.sort(key=lambda x: x[1])
+                next_pos = directions[0][0]
+            else:
+                next_pos = random.choice(directions)[0]
+            
+            visited.add(next_pos)
+            path.append(next_pos)
+            current = next_pos
+            
+        return path
