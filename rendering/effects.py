@@ -156,15 +156,21 @@ class EffectsRenderer:
             mortar_color = (30, 30, 30)
             pygame.draw.line(self.screen, mortar_color, (x1, y1), (x2, y2), 2)
 
-    def draw_stone_in_walls(self, board_row: int, board_col: int, x: int, y: int, 
-                           cell: Cell, brightness_factor: float, 
-                           count_torches_callback: Callable[[int, int, Cell], int]) -> None:
+    def draw_stone_in_walls(self, board_row: int, board_col: int, x: int, y: int,
+                           cell: Cell, brightness_factor: float,
+                           count_torches_callback: Callable[[int, int, Cell], int],
+                           barranco_dirs=None) -> None:
         """Dibuja textura de piedra únicamente en las zonas de pared dentro
         de una celda de tipo PASILLO (entre el suelo/centro y los bordes).
 
         Se respeta la presencia de salidas: si existe una salida N/S/E/O, se deja
         un hueco en la pared correspondiente para el pasaje.
-        
+
+        Si un lado da al barranco, la esquina del muro perpendicular (el tramo
+        de pared que normalmente enmarca una puerta) que toca esa esquina no se
+        dibuja, para dar sensación de espacio abierto hacia el acantilado en
+        vez de parecer una puerta con marco.
+
         Args:
             board_row: Fila en el tablero
             board_col: Columna en el tablero
@@ -173,6 +179,7 @@ class EffectsRenderer:
             cell: Objeto Cell
             brightness_factor: Factor de brillo (0.0 a 1.0) para oscurecer todos los colores
             count_torches_callback: Función para contar antorchas en la celda
+            barranco_dirs: Direcciones en las que la celda linda con el barranco
         """
         seed = board_row * 100000 + board_col
         rnd = random.Random(seed + 7)
@@ -187,14 +194,20 @@ class EffectsRenderer:
         gap_w = max(8, int(size * 0.36))
         gap_h = max(8, int(size * 0.36))
 
+        barranco_dirs = set(barranco_dirs) if barranco_dirs else set()
+
         # Rects: top, bottom, left, right (cada uno representando la pared dentro de la celda)
         # Top
         top_rects = []
         if Direction.N in cell.exits:
-            # dejar hueco central
+            # dejar hueco central; si un lado da al barranco, no dibujar el
+            # tramo de marco de puerta que toca esa esquina (se rellena
+            # aparte con la textura del acantilado, ver draw_barranco_door_corners)
             left_w = (size - gap_w) // 2
-            top_rects.append((x, y, left_w, wall_thickness))
-            top_rects.append((x + left_w + gap_w, y, left_w, wall_thickness))
+            if Direction.O not in barranco_dirs:
+                top_rects.append((x, y, left_w, wall_thickness))
+            if Direction.E not in barranco_dirs:
+                top_rects.append((x + left_w + gap_w, y, left_w, wall_thickness))
         else:
             top_rects.append((x, y, size, wall_thickness))
 
@@ -202,8 +215,10 @@ class EffectsRenderer:
         bottom_rects = []
         if Direction.S in cell.exits:
             left_w = (size - gap_w) // 2
-            bottom_rects.append((x, y + size - wall_thickness, left_w, wall_thickness))
-            bottom_rects.append((x + left_w + gap_w, y + size - wall_thickness, left_w, wall_thickness))
+            if Direction.O not in barranco_dirs:
+                bottom_rects.append((x, y + size - wall_thickness, left_w, wall_thickness))
+            if Direction.E not in barranco_dirs:
+                bottom_rects.append((x + left_w + gap_w, y + size - wall_thickness, left_w, wall_thickness))
         else:
             bottom_rects.append((x, y + size - wall_thickness, size, wall_thickness))
 
@@ -211,8 +226,10 @@ class EffectsRenderer:
         left_rects = []
         if Direction.O in cell.exits:
             top_h = (size - gap_h) // 2
-            left_rects.append((x, y, wall_thickness, top_h))
-            left_rects.append((x, y + top_h + gap_h, wall_thickness, top_h))
+            if Direction.N not in barranco_dirs:
+                left_rects.append((x, y, wall_thickness, top_h))
+            if Direction.S not in barranco_dirs:
+                left_rects.append((x, y + top_h + gap_h, wall_thickness, top_h))
         else:
             left_rects.append((x, y, wall_thickness, size))
 
@@ -220,8 +237,10 @@ class EffectsRenderer:
         right_rects = []
         if Direction.E in cell.exits:
             top_h = (size - gap_h) // 2
-            right_rects.append((x + size - wall_thickness, y, wall_thickness, top_h))
-            right_rects.append((x + size - wall_thickness, y + top_h + gap_h, wall_thickness, top_h))
+            if Direction.N not in barranco_dirs:
+                right_rects.append((x + size - wall_thickness, y, wall_thickness, top_h))
+            if Direction.S not in barranco_dirs:
+                right_rects.append((x + size - wall_thickness, y + top_h + gap_h, wall_thickness, top_h))
         else:
             right_rects.append((x + size - wall_thickness, y, wall_thickness, size))
 
@@ -258,11 +277,86 @@ class EffectsRenderer:
             mortar_color = (25, 25, 25)
             pygame.draw.line(self.screen, mortar_color, (x1, y1), (x2, y2), 2)
 
+    def draw_barranco_door_corners(self, board_row: int, board_col: int, x: int, y: int, cell: Cell, barranco_dirs) -> None:
+        """Rellena, con la textura del acantilado, las esquinas de puerta que dan
+        al barranco (las que draw_stone_in_walls dejó sin dibujar).
+
+        Debe llamarse DESPUÉS del suelo interior (el que se solapa un poco con
+        el grosor del muro), para que la roca quede a ras de pared y no la
+        tape ese suelo.
+        """
+        barranco_dirs = set(barranco_dirs) if barranco_dirs else set()
+        if not barranco_dirs:
+            return
+
+        size = self.cell_size
+        wall_thickness = max(6, int(size * 0.28))
+        gap_w = max(8, int(size * 0.36))
+        gap_h = max(8, int(size * 0.36))
+
+        corners = []
+
+        if Direction.N in cell.exits:
+            left_w = (size - gap_w) // 2
+            if Direction.O in barranco_dirs:
+                corners.append((x, y, left_w, wall_thickness))
+            if Direction.E in barranco_dirs:
+                corners.append((x + left_w + gap_w, y, left_w, wall_thickness))
+
+        if Direction.S in cell.exits:
+            left_w = (size - gap_w) // 2
+            if Direction.O in barranco_dirs:
+                corners.append((x, y + size - wall_thickness, left_w, wall_thickness))
+            if Direction.E in barranco_dirs:
+                corners.append((x + left_w + gap_w, y + size - wall_thickness, left_w, wall_thickness))
+
+        if Direction.O in cell.exits:
+            top_h = (size - gap_h) // 2
+            if Direction.N in barranco_dirs:
+                corners.append((x, y, wall_thickness, top_h))
+            if Direction.S in barranco_dirs:
+                corners.append((x, y + top_h + gap_h, wall_thickness, top_h))
+
+        if Direction.E in cell.exits:
+            top_h = (size - gap_h) // 2
+            if Direction.N in barranco_dirs:
+                corners.append((x + size - wall_thickness, y, wall_thickness, top_h))
+            if Direction.S in barranco_dirs:
+                corners.append((x + size - wall_thickness, y + top_h + gap_h, wall_thickness, top_h))
+
+        seed = board_row * 100000 + board_col
+        for i, (fx, fy, fw, fh) in enumerate(corners):
+            self._draw_cliff_texture(fx, fy, fw, fh, seed + 500 + i)
+
+    CLIFF_BASE_COLOR = (34, 24, 38)
+
+    def _draw_cliff_texture(self, rx: int, ry: int, rw: int, rh: int, seed: int) -> None:
+        """Rellena un rectángulo con la textura de roca del acantilado (color base + rocas).
+
+        Se usa tanto para la franja principal del acantilado como para las
+        esquinas de puerta que se abren hacia él, para que ambas se vean
+        como una única superficie continua.
+        """
+        if rw <= 0 or rh <= 0:
+            return
+        rnd = random.Random(seed)
+        base_color = self.CLIFF_BASE_COLOR
+        pygame.draw.rect(self.screen, base_color, (rx, ry, rw, rh))
+
+        for _ in range(rnd.randint(6, 12)):
+            w = rnd.randint(max(2, int(rw * 0.1)), max(4, int(rw * 0.4)))
+            h = rnd.randint(max(2, int(rh * 0.1)), max(4, int(rh * 0.4)))
+            sx = rx + rnd.randint(0, max(0, rw - w))
+            sy = ry + rnd.randint(0, max(0, rh - h))
+            shade = rnd.randint(-20, 25)
+            color = tuple(max(0, min(255, c + shade)) for c in base_color)
+            pygame.draw.ellipse(self.screen, color, (sx, sy, w, h))
+
     def draw_cliff_side(self, x: int, y: int, direction: Direction, board_row: int, board_col: int) -> None:
         """Dibuja un borde de acantilado infranqueable en el lado de la celda que da al barranco.
 
-        Sustituye la pared normal por una roca quebrada con un borde irregular,
-        para distinguir visualmente el límite del barranco de un muro común.
+        Sustituye la pared normal por una roca quebrada, para distinguir
+        visualmente el límite del barranco de un muro común.
         """
         size = self.cell_size
         thickness = max(10, int(size * 0.34))
@@ -278,52 +372,5 @@ class EffectsRenderer:
 
         dir_offset = {Direction.N: 1, Direction.S: 2, Direction.E: 3, Direction.O: 4}[direction]
         seed = board_row * 100000 + board_col + dir_offset
-        rnd = random.Random(seed)
-
-        base_color = (55, 42, 32)
         rx, ry, rw, rh = rect
-        pygame.draw.rect(self.screen, base_color, (x + rx, y + ry, rw, rh))
-
-        # Rocas para dar aspecto de roca quebrada
-        for _ in range(rnd.randint(8, 14)):
-            w = rnd.randint(max(2, int(rw * 0.1)), max(4, int(rw * 0.4)))
-            h = rnd.randint(max(2, int(rh * 0.1)), max(4, int(rh * 0.4)))
-            sx = x + rx + rnd.randint(0, max(0, rw - w))
-            sy = y + ry + rnd.randint(0, max(0, rh - h))
-            shade = rnd.randint(-20, 25)
-            color = tuple(max(0, min(255, c + shade)) for c in base_color)
-            pygame.draw.ellipse(self.screen, color, (sx, sy, w, h))
-
-        # Borde irregular hacia el interior de la celda (silueta de roca rota)
-        edge_color = (25, 18, 14)
-        steps = 6
-        if direction == Direction.N:
-            points = [(x + rx, y + ry + rh)]
-            for i in range(steps + 1):
-                px = x + rx + int(rw * i / steps)
-                py = y + ry + rh - rnd.randint(0, int(rh * 0.5))
-                points.append((px, py))
-            points.append((x + rx + rw, y + ry + rh))
-        elif direction == Direction.S:
-            points = [(x + rx, y + ry)]
-            for i in range(steps + 1):
-                px = x + rx + int(rw * i / steps)
-                py = y + ry + rnd.randint(0, int(rh * 0.5))
-                points.append((px, py))
-            points.append((x + rx + rw, y + ry))
-        elif direction == Direction.O:
-            points = [(x + rx + rw, y + ry)]
-            for i in range(steps + 1):
-                py = y + ry + int(rh * i / steps)
-                px = x + rx + rw - rnd.randint(0, int(rw * 0.5))
-                points.append((px, py))
-            points.append((x + rx + rw, y + ry + rh))
-        else:  # Direction.E
-            points = [(x + rx, y + ry)]
-            for i in range(steps + 1):
-                py = y + ry + int(rh * i / steps)
-                px = x + rx + rnd.randint(0, int(rw * 0.5))
-                points.append((px, py))
-            points.append((x + rx, y + ry + rh))
-
-        pygame.draw.polygon(self.screen, edge_color, points)
+        self._draw_cliff_texture(x + rx, y + ry, rw, rh, seed)

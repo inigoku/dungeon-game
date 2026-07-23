@@ -725,6 +725,15 @@ class DungeonBoard:
                 dirs.append(direction)
         return dirs
 
+    def get_barranco_accessible_edge_direction(self) -> Direction:
+        """Devuelve, vista desde una celda de barranco, la dirección que da hacia
+        el lado accesible del mapa (donde está el jugador)."""
+        center = self.size // 2
+        if self.barranco_axis == 'row':
+            return Direction.N if center < self.barranco_index else Direction.S
+        else:
+            return Direction.O if center < self.barranco_index else Direction.E
+
     def get_barranco_waypoint(self):
         """Devuelve una celda segura, pegada al barranco, para forzar que el camino
         principal pase junto a él en al menos un punto."""
@@ -2110,30 +2119,26 @@ class DungeonBoard:
         pygame.draw.circle(surface, (10, 10, 10), (head_x + head_r//2, eye_y), max(1, head_r//4))
     
     def draw_barranco_cell(self, x: int, y: int, board_row: int, board_col: int) -> None:
-        """Dibuja una celda de barranco: un abismo rocoso infranqueable, siempre visible."""
+        """Dibuja una celda de barranco: un abismo negro, casi sin detalle, donde
+        solo se distingue ligeramente el borde del acantilado del lado accesible."""
         size = self.cell_size
-        base_color = (18, 14, 12)
+        base_color = (4, 4, 5)
         pygame.draw.rect(self.screen, base_color, (x, y, size, size))
 
-        rnd = random.Random(board_row * 100000 + board_col + 999)
+        # Borde del acantilado, apenas visible, solo hacia el lado accesible del mapa
+        edge_dir = self.get_barranco_accessible_edge_direction()
+        edge_thickness = max(2, int(size * 0.05))
+        edge_color = (26, 22, 20)
 
-        # Rocas oscuras dispersas para dar sensación de profundidad rocosa
-        for _ in range(rnd.randint(10, 18)):
-            w = rnd.randint(max(2, int(size * 0.05)), max(4, int(size * 0.18)))
-            h = rnd.randint(max(2, int(size * 0.04)), max(4, int(size * 0.14)))
-            sx = x + rnd.randint(0, max(0, size - w))
-            sy = y + rnd.randint(0, max(0, size - h))
-            shade = rnd.randint(-8, 15)
-            color = tuple(max(0, min(255, c + shade)) for c in base_color)
-            pygame.draw.ellipse(self.screen, color, (sx, sy, w, h))
-
-        # Grietas
-        for _ in range(rnd.randint(4, 8)):
-            x1 = x + rnd.randint(0, size)
-            y1 = y + rnd.randint(0, size)
-            x2 = x + rnd.randint(0, size)
-            y2 = y + rnd.randint(0, size)
-            pygame.draw.line(self.screen, (5, 3, 2), (x1, y1), (x2, y2), 2)
+        if edge_dir == Direction.N:
+            rect = (x, y, size, edge_thickness)
+        elif edge_dir == Direction.S:
+            rect = (x, y + size - edge_thickness, size, edge_thickness)
+        elif edge_dir == Direction.O:
+            rect = (x, y, edge_thickness, size)
+        else:  # Direction.E
+            rect = (x + size - edge_thickness, y, edge_thickness, size)
+        pygame.draw.rect(self.screen, edge_color, rect)
 
         # F4 (show_path): resaltar el barranco en rojo para que sea visible en el debug
         if self.show_path:
@@ -2245,11 +2250,15 @@ class DungeonBoard:
             brightness_factor = brightness / 255.0
             self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
             # Dibujar paredes
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
-            for cliff_dir in self.barranco_facing_directions(board_row, board_col):
-                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches, self.barranco_facing_directions(board_row, board_col))
             inset = int(self.cell_size * 0.15)
             self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
+            # El acantilado se pinta el último para que quede sólido y no lo tape
+            # el suelo interior (que se solapa un poco con el grosor del muro)
+            barranco_dirs = self.barranco_facing_directions(board_row, board_col)
+            for cliff_dir in barranco_dirs:
+                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
+            self.effects.draw_barranco_door_corners(board_row, board_col, x, y, cell, barranco_dirs)
         elif cell.cell_type == CellType.PASILLO:
             torch_count = self.count_torches(board_row, board_col, cell)
             # Calcular oscurecimiento basado en distancia desde la entrada
@@ -2268,11 +2277,15 @@ class DungeonBoard:
             brightness_factor = brightness / 255.0
             self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
             # Dibujar paredes
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
-            for cliff_dir in self.barranco_facing_directions(board_row, board_col):
-                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches, self.barranco_facing_directions(board_row, board_col))
             inset = int(self.cell_size * 0.15)
             self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
+            # El acantilado se pinta el último para que quede sólido y no lo tape
+            # el suelo interior (que se solapa un poco con el grosor del muro)
+            barranco_dirs = self.barranco_facing_directions(board_row, board_col)
+            for cliff_dir in barranco_dirs:
+                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
+            self.effects.draw_barranco_door_corners(board_row, board_col, x, y, cell, barranco_dirs)
         elif cell.cell_type == CellType.HABITACION:
             torch_count = self.count_torches(board_row, board_col, cell)
             start_row, start_col = self.start_position
@@ -2291,13 +2304,17 @@ class DungeonBoard:
             self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
             
             # Dibujar paredes
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
-            for cliff_dir in self.barranco_facing_directions(board_row, board_col):
-                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches, self.barranco_facing_directions(board_row, board_col))
             # Dibujar cuadrado que tapa parcialmente el muro para dar amplitud
             inset = int(self.cell_size * 0.15)
             self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
-            
+            # El acantilado se pinta el último para que quede sólido y no lo tape
+            # el suelo interior (que se solapa un poco con el grosor del muro)
+            barranco_dirs = self.barranco_facing_directions(board_row, board_col)
+            for cliff_dir in barranco_dirs:
+                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
+            self.effects.draw_barranco_door_corners(board_row, board_col, x, y, cell, barranco_dirs)
+
             for dir, count in torch_by_dir.items():
                 if count > 0:
                     if dir == Direction.N:
@@ -2331,13 +2348,17 @@ class DungeonBoard:
             pygame.draw.rect(self.screen, wall_color, (x, y, self.cell_size, self.cell_size))
             
             # Dibujar paredes
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
-            for cliff_dir in self.barranco_facing_directions(board_row, board_col):
-                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches, self.barranco_facing_directions(board_row, board_col))
             # Dibujar cuadrado que tapa parcialmente el muro para dar amplitud
             inset = int(self.cell_size * 0.15)
             self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, room_color, board_row, board_col)
-            
+            # El acantilado se pinta el último para que quede sólido y no lo tape
+            # el suelo interior (que se solapa un poco con el grosor del muro)
+            barranco_dirs = self.barranco_facing_directions(board_row, board_col)
+            for cliff_dir in barranco_dirs:
+                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
+            self.effects.draw_barranco_door_corners(board_row, board_col, x, y, cell, barranco_dirs)
+
             for dir, count in torch_by_dir.items():
                 if count > 0:
                     if dir == Direction.N:
