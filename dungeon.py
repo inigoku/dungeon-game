@@ -69,7 +69,17 @@ class DungeonBoard:
         # Guardar centro y estado de interacción
         self.current_position = (center, center)
         self.start_position = (center, center)  # Posición inicial para calcular distancia
-        
+
+        # Barranco: una fila o columna completa infranqueable que divide el tablero.
+        # Se coloca lejos del centro para dejar espacio de juego en el lado accesible.
+        self.barranco_axis = random.choice(['row', 'col'])
+        margin = 15
+        min_offset = 20
+        max_offset = max(min_offset, (size - center - margin) - 1)
+        offset = random.randint(min_offset, max_offset)
+        side = random.choice([1, -1])
+        self.barranco_index = max(margin, min(size - margin - 1, center + side * offset))
+
         # Generar posición de salida aleatoria y calcular camino principal
         # Reintentar hasta conseguir conectividad
         print("Generando mapa...")
@@ -90,10 +100,19 @@ class DungeonBoard:
             
             # Generar nueva posición de salida
             self.exit_position = self.generate_exit_position(center)
-            
-            # Calcular camino principal
-            self.main_path = self.calculate_main_path((center, center), self.exit_position)
-            
+
+            # Punto pegado al barranco por el que se forzará a pasar el camino principal
+            barranco_waypoint = self.get_barranco_waypoint()
+
+            # Calcular camino principal en dos tramos, pasando por el punto junto al barranco,
+            # para garantizar que el camino hacia la salida roce el barranco en algún punto.
+            # Se concatenan en orden (sin duplicar el punto de unión) para conservar un
+            # camino ordenado sin ramificaciones que generate_main_path_cells pueda recorrer.
+            path_to_waypoint = self.calculate_main_path((center, center), barranco_waypoint)
+            path_to_exit = self.calculate_main_path(barranco_waypoint, self.exit_position)
+            self.main_path_ordered = path_to_waypoint + path_to_exit[1:]
+            self.main_path = set(self.main_path_ordered)
+
             # Generar todas las celdas del camino principal
             self.generate_main_path_cells()
             
@@ -337,7 +356,15 @@ class DungeonBoard:
         self.thought_pending = False  # Flag para bloquear movimiento mientras se espera un pensamiento
         self.restart_requested = False
         self.restart_button_rect = None
-        
+
+        # Animación de caída por el barranco
+        self.player_falling_active = False
+        self.player_falling_start_time = 0
+        self.player_falling_duration = 700  # ms
+        self.player_falling_from_pos = (0, 0)
+        self.player_falling_direction = None
+        self.player_fell_into_barranco = False
+
         # Salud del jugador
         self.max_health = 2
         self.player_health = self.max_health
@@ -572,15 +599,16 @@ class DungeonBoard:
         if self.audio.thought_active:
             self.audio.cancel_thought()
             
-        # Reproducir sonido de mordisco inmediatamente
+        # Reproducir sonido de mordisco inmediatamente, muy alto y sin fade out
         if self.bite_sound:
             # Forzar un canal para asegurar que se oiga (evita "no se oye")
             channel = pygame.mixer.find_channel(True)
             if channel:
+                channel.set_volume(1.0)
                 channel.play(self.bite_sound)
             else:
                 self.bite_sound.play()
-            
+
         # Flash rojo al morder
         self.trigger_screen_flash((200, 0, 0), 200)
             
@@ -596,6 +624,55 @@ class DungeonBoard:
                 blocks_movement=True
             )
         asyncio.create_task(delayed_game_over_thought())
+
+    def fall_into_barranco(self, direction: Direction) -> None:
+        """El jugador intenta cruzar el barranco: se precipita al vacío y muere gritando."""
+        if self.showing_game_over:
+            return
+
+        print("[GAME OVER] El jugador ha caído por el barranco.")
+
+        # Viento superfuerte en el instante de la caída
+        self.audio.set_barranco_wind_volume(1.0)
+
+        self.showing_game_over = True
+        self.game_over_start_time = pygame.time.get_ticks()
+
+        # Detener música y pensamientos
+        self.audio.stop_music()
+        if self.audio.thought_active:
+            self.audio.cancel_thought()
+
+        # Animación: el muñeco se precipita por el borde hacia el barranco
+        self.player_falling_active = True
+        self.player_falling_start_time = self.game_over_start_time
+        self.player_falling_from_pos = self.current_position
+        self.player_falling_direction = direction
+        self.player_animating = False
+
+        # Grito al caer (mismo sonido que al ser devorado por un monstruo), fuerte
+        # y apagándose poco a poco como si se alejara al precipitarse al vacío
+        if self.bite_sound:
+            channel = pygame.mixer.find_channel(True)
+            if channel:
+                channel.set_volume(1.0)
+                channel.play(self.bite_sound)
+                channel.fadeout(900)
+            else:
+                self.bite_sound.play()
+
+        self.trigger_screen_flash((150, 20, 10), 250)
+
+        async def delayed_fall_thought():
+            await asyncio.sleep(1.0)
+            duration = int(self.bite_sound.get_length() * 1000) if self.bite_sound else 3000
+            self.audio.trigger_thought(
+                sounds=[],  # Evitar doble reproducción (ya sonó arriba)
+                images=None,
+                subtitles=[("¡¡¡AAAAAAHHHH!!!", duration + 1500)],
+                blocks_movement=True
+            )
+        asyncio.create_task(delayed_fall_thought())
     
     def get_view_offset(self):
         """Interpola la cámara hacia la posición del jugador y retorna el offset redondeado."""
@@ -615,7 +692,54 @@ class DungeonBoard:
         
         # Retornar valores flotantes para scroll suave en píxeles
         return self.camera_offset_row, self.camera_offset_col
-    
+
+    def is_barranco_cell(self, row: int, col: int) -> bool:
+        """Verifica si una celda pertenece a la fila/columna del barranco (infranqueable)."""
+        if self.barranco_axis == 'row':
+            return row == self.barranco_index
+        else:
+            return col == self.barranco_index
+
+    def is_valid_exit_side(self, row: int, col: int) -> bool:
+        """Verifica que una posición esté en el mismo lado del barranco que el inicio."""
+        center = self.size // 2
+        if self.barranco_axis == 'row':
+            value = row
+        else:
+            value = col
+
+        if value == self.barranco_index:
+            return False
+        if center < self.barranco_index:
+            return value < self.barranco_index
+        else:
+            return value > self.barranco_index
+
+    def barranco_facing_directions(self, board_row: int, board_col: int) -> list:
+        """Devuelve las direcciones en las que una celda linda directamente con el barranco."""
+        dirs = []
+        for direction, (dr, dc) in [(Direction.N, (-1, 0)), (Direction.S, (1, 0)),
+                                     (Direction.E, (0, 1)), (Direction.O, (0, -1))]:
+            nr, nc = board_row + dr, board_col + dc
+            if 0 <= nr < self.size and 0 <= nc < self.size and self.is_barranco_cell(nr, nc):
+                dirs.append(direction)
+        return dirs
+
+    def get_barranco_waypoint(self):
+        """Devuelve una celda segura, pegada al barranco, para forzar que el camino
+        principal pase junto a él en al menos un punto."""
+        center = self.size // 2
+        adjacent_index = self.barranco_index - 1 if center < self.barranco_index else self.barranco_index + 1
+        adjacent_index = max(0, min(self.size - 1, adjacent_index))
+
+        margin = 10
+        cross_coord = random.randint(margin, self.size - margin - 1)
+
+        if self.barranco_axis == 'row':
+            return (adjacent_index, cross_coord)
+        else:
+            return (cross_coord, adjacent_index)
+
     def check_connectivity(self, start, end):
         """Verifica si hay un camino posible entre start y end usando BFS.
         Verifica que las celdas adyacentes tengan salidas enfrentadas.
@@ -701,33 +825,41 @@ class DungeonBoard:
             
             row = center + int(distance * math.cos(angle))
             col = center + int(distance * math.sin(angle))
-            
-            # Verificar que está dentro del tablero con margen
-            if 5 <= row < self.size - 5 and 5 <= col < self.size - 5:
+
+            # Verificar que está dentro del tablero con margen y que no cruce el barranco
+            if 5 <= row < self.size - 5 and 5 <= col < self.size - 5 and self.is_valid_exit_side(row, col):
                 return (row, col)
             attempts += 1
-        
+
         # Fallback: buscar una posición válida reduciendo gradualmente la distancia
         for fallback_distance in range(max_distance, min_distance - 1, -5):
             for fallback_angle in [0, math.pi/4, math.pi/2, 3*math.pi/4, math.pi, 5*math.pi/4, 3*math.pi/2, 7*math.pi/4]:
                 row = center + int(fallback_distance * math.cos(fallback_angle))
                 col = center + int(fallback_distance * math.sin(fallback_angle))
-                
+
                 # Asegurar que está dentro del tablero
                 row = max(5, min(self.size - 6, row))
                 col = max(5, min(self.size - 6, col))
-                
-                if 5 <= row < self.size - 5 and 5 <= col < self.size - 5:
+
+                if 5 <= row < self.size - 5 and 5 <= col < self.size - 5 and self.is_valid_exit_side(row, col):
                     return (row, col)
-        
+
         # Último fallback: posición segura garantizada dentro del tablero
         safe_distance = min(min_distance, (self.size - center - 10) // 2)
-        return (center + safe_distance, center + safe_distance)
+        row = center + safe_distance
+        col = center + safe_distance
+        if not self.is_valid_exit_side(row, col):
+            if self.barranco_axis == 'row':
+                row = center - safe_distance
+            else:
+                col = center - safe_distance
+        return (row, col)
     
     def calculate_main_path(self, start, end):
         """Calcula un camino tortuoso sin lazos desde start hasta end.
         Usa random walk con preferencia hacia el objetivo pero permitiendo desviaciones.
-        Retorna un conjunto de tuplas (row, col) que forman el camino principal."""
+        Retorna una lista ORDENADA de tuplas (row, col) que forman el camino, desde
+        start hasta end (sin ramificaciones ni ciclos)."""
         path = [start]
         current = start
         visited = {start}
@@ -748,9 +880,9 @@ class DungeonBoard:
                 next_col = current_col + dc
                 next_pos = (next_row, next_col)
                 
-                # Verificar límites y que no hayamos visitado
-                if (0 <= next_row < self.size and 0 <= next_col < self.size 
-                    and next_pos not in visited):
+                # Verificar límites, que no hayamos visitado y que no sea el barranco
+                if (0 <= next_row < self.size and 0 <= next_col < self.size
+                    and next_pos not in visited and not self.is_barranco_cell(next_row, next_col)):
                     # Calcular distancia al objetivo
                     dist = abs(end_row - next_row) + abs(end_col - next_col)
                     directions.append((next_pos, dist, dr, dc))
@@ -786,54 +918,36 @@ class DungeonBoard:
             while queue:
                 (curr_row, curr_col), bfs_path = queue.popleft()
                 if (curr_row, curr_col) == end:
-                    return set(bfs_path)
+                    return bfs_path
                 
                 for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                     next_row = curr_row + dr
                     next_col = curr_col + dc
                     next_pos = (next_row, next_col)
                     
-                    if (0 <= next_row < self.size and 0 <= next_col < self.size 
-                        and next_pos not in visited_bfs):
+                    if (0 <= next_row < self.size and 0 <= next_col < self.size
+                        and next_pos not in visited_bfs and not self.is_barranco_cell(next_row, next_col)):
                         visited_bfs.add(next_pos)
                         queue.append((next_pos, bfs_path + [next_pos]))
-        
-        return set(path)
+
+        return path
     
     def generate_main_path_cells(self):
         """Genera todas las celdas del camino principal desde el inicio hasta la salida."""
         if not self.main_path:
             return
-        
-        # Reconstruir el camino ordenado desde inicio hasta salida
+
+        # El orden ya se conoce desde la construcción (start -> waypoint -> salida),
+        # sin necesidad de reconstruirlo recorriendo vecinos (evita quedarse atascado
+        # si el camino tiene alguna celda repetida por el cruce de los dos tramos).
+        path_ordered = self.main_path_ordered
         start = self.current_position
-        path_ordered = [start]
-        current = start
-        visited = {start}
-        
-        # Seguir el camino encontrando vecinos adyacentes
-        while current != self.exit_position and len(visited) < len(self.main_path):
-            row, col = current
-            found_next = False
-            
-            # Buscar el siguiente vecino en el camino
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                neighbor = (row + dr, col + dc)
-                if neighbor in self.main_path and neighbor not in visited:
-                    path_ordered.append(neighbor)
-                    visited.add(neighbor)
-                    current = neighbor
-                    found_next = True
-                    break
-            
-            if not found_next:
-                break
-        
+
         # Generar cada celda del camino
         for i in range(len(path_ordered)):
             pos = path_ordered[i]
             row, col = pos
-            
+
             # Saltar la celda inicial (ya existe)
             if pos == start:
                 # Actualizar las salidas de la celda inicial para conectar con vecinos del camino
@@ -866,14 +980,15 @@ class DungeonBoard:
                 
                 # Posibilidad de agregar salidas adicionales (menos probable para mantener camino claro)
                 all_directions = {Direction.N, Direction.E, Direction.S, Direction.O}
-                remaining = list(all_directions - exits)
-                
+                barranco_dirs = set(self.barranco_facing_directions(row, col))
+                remaining = list(all_directions - exits - barranco_dirs)
+
                 if cell_type == CellType.PASILLO:
                     # 80% de probabilidad de agregar 1 salida extra (antes 60%)
                     if remaining and random.random() < 0.80:
                         exits.add(random.choice(remaining))
                         # 40% de probabilidad de agregar una segunda salida extra (cruce)
-                        remaining = list(all_directions - exits)
+                        remaining = list(all_directions - exits - barranco_dirs)
                         if remaining and random.random() < 0.40:
                             exits.add(random.choice(remaining))
                 else:  # HABITACION
@@ -881,7 +996,7 @@ class DungeonBoard:
                     if remaining and random.random() < 0.70:
                         exits.add(random.choice(remaining))
                         # 30% de probabilidad de agregar una segunda salida extra
-                        remaining = list(all_directions - exits)
+                        remaining = list(all_directions - exits - barranco_dirs)
                         if remaining and random.random() < 0.30:
                             exits.add(random.choice(remaining))
                 
@@ -1338,6 +1453,15 @@ class DungeonBoard:
             if (pygame.time.get_ticks() // 100) % 2 == 0:
                 return
 
+        # Animación de caída por el barranco: tiene prioridad sobre el resto
+        if self.player_falling_active:
+            self.draw_player_falling(offset_row_float, offset_col_float)
+            return
+
+        # Si ya cayó por el barranco, desapareció: no queda nada que dibujar
+        if self.player_fell_into_barranco:
+            return
+
         # Si está animando, interpolar entre from_pos y to_pos
         if self.player_animating:
             t_now = pygame.time.get_ticks()
@@ -1397,6 +1521,52 @@ class DungeonBoard:
             self.screen.blit(rotated_surf, rect)
         else:
             self.draw_warrior_sprite(center_x, center_y, sprite_size)
+
+    def draw_player_falling(self, offset_row_float: float, offset_col_float: float) -> None:
+        """Dibuja al jugador precipitándose por el borde del barranco: se aleja, gira y se desvanece."""
+        elapsed = pygame.time.get_ticks() - self.player_falling_start_time
+        t = min(1.0, elapsed / self.player_falling_duration)
+
+        if t >= 1.0:
+            self.player_falling_active = False
+            self.player_fell_into_barranco = True
+            return
+
+        delta = {
+            Direction.N: (-1, 0),
+            Direction.S: (1, 0),
+            Direction.E: (0, 1),
+            Direction.O: (0, -1),
+        }
+        dr, dc = delta.get(self.player_falling_direction, (0, 0))
+        from_row, from_col = self.player_falling_from_pos
+        # Avanza más allá del borde de la celda para simular que cae por el precipicio
+        player_row = from_row + dr * 1.4 * t
+        player_col = from_col + dc * 1.4 * t
+
+        view_row = player_row - offset_row_float
+        view_col = player_col - offset_col_float
+        x = view_col * self.cell_size
+        y = view_row * self.cell_size
+        center_x = x + self.cell_size // 2
+        center_y = y + self.cell_size // 2
+
+        # Encoger y desvanecer conforme se precipita al vacío
+        scale = max(0.05, 1.0 - t)
+        sprite_size = max(2, int(self.cell_size * 0.6 * scale))
+
+        temp_size = max(4, int(self.cell_size))
+        temp_surf = pygame.Surface((temp_size, temp_size), pygame.SRCALPHA)
+        self.draw_warrior_sprite(temp_size // 2, temp_size // 2, sprite_size, target_surface=temp_surf)
+
+        # Rotación descontrolada para dar sensación de caída
+        angle = t * 220
+        rotated_surf = pygame.transform.rotate(temp_surf, angle)
+        alpha = max(0, int(255 * (1.0 - t)))
+        rotated_surf.set_alpha(alpha)
+
+        rect = rotated_surf.get_rect(center=(center_x, center_y))
+        self.screen.blit(rotated_surf, rect)
 
     def start_bat_flying_animation(self) -> None:
         """Inicia la animación de un murciélago volando a través de la celda actual."""
@@ -1939,12 +2109,50 @@ class DungeonBoard:
         pygame.draw.circle(surface, (10, 10, 10), (head_x - head_r//2, eye_y), max(1, head_r//4))
         pygame.draw.circle(surface, (10, 10, 10), (head_x + head_r//2, eye_y), max(1, head_r//4))
     
+    def draw_barranco_cell(self, x: int, y: int, board_row: int, board_col: int) -> None:
+        """Dibuja una celda de barranco: un abismo rocoso infranqueable, siempre visible."""
+        size = self.cell_size
+        base_color = (18, 14, 12)
+        pygame.draw.rect(self.screen, base_color, (x, y, size, size))
+
+        rnd = random.Random(board_row * 100000 + board_col + 999)
+
+        # Rocas oscuras dispersas para dar sensación de profundidad rocosa
+        for _ in range(rnd.randint(10, 18)):
+            w = rnd.randint(max(2, int(size * 0.05)), max(4, int(size * 0.18)))
+            h = rnd.randint(max(2, int(size * 0.04)), max(4, int(size * 0.14)))
+            sx = x + rnd.randint(0, max(0, size - w))
+            sy = y + rnd.randint(0, max(0, size - h))
+            shade = rnd.randint(-8, 15)
+            color = tuple(max(0, min(255, c + shade)) for c in base_color)
+            pygame.draw.ellipse(self.screen, color, (sx, sy, w, h))
+
+        # Grietas
+        for _ in range(rnd.randint(4, 8)):
+            x1 = x + rnd.randint(0, size)
+            y1 = y + rnd.randint(0, size)
+            x2 = x + rnd.randint(0, size)
+            y2 = y + rnd.randint(0, size)
+            pygame.draw.line(self.screen, (5, 3, 2), (x1, y1), (x2, y2), 2)
+
+        # F4 (show_path): resaltar el barranco en rojo para que sea visible en el debug
+        if self.show_path:
+            overlay = pygame.Surface((size, size))
+            overlay.set_alpha(120)
+            overlay.fill((255, 0, 0))
+            self.screen.blit(overlay, (x, y))
+
     def draw_cell(self, board_row, board_col, view_row, view_col, pixel_offset_x=0, pixel_offset_y=0):
         """Dibuja una celda del tablero en las coordenadas de la vista."""
         cell = self.board[board_row][board_col]
         x = view_col * self.cell_size - pixel_offset_x
         y = view_row * self.cell_size - pixel_offset_y
-        
+
+        # El barranco es un accidente geográfico fijo: siempre visible, infranqueable
+        if self.is_barranco_cell(board_row, board_col):
+            self.draw_barranco_cell(x, y, board_row, board_col)
+            return
+
         # Inicializar variables de color y brillo
         floor_color = (0, 0, 0)
         brightness_factor = 0.0
@@ -2038,6 +2246,8 @@ class DungeonBoard:
             self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
             # Dibujar paredes
             self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
+            for cliff_dir in self.barranco_facing_directions(board_row, board_col):
+                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
             inset = int(self.cell_size * 0.15)
             self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
         elif cell.cell_type == CellType.PASILLO:
@@ -2059,6 +2269,8 @@ class DungeonBoard:
             self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
             # Dibujar paredes
             self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
+            for cliff_dir in self.barranco_facing_directions(board_row, board_col):
+                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
             inset = int(self.cell_size * 0.15)
             self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
         elif cell.cell_type == CellType.HABITACION:
@@ -2080,6 +2292,8 @@ class DungeonBoard:
             
             # Dibujar paredes
             self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
+            for cliff_dir in self.barranco_facing_directions(board_row, board_col):
+                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
             # Dibujar cuadrado que tapa parcialmente el muro para dar amplitud
             inset = int(self.cell_size * 0.15)
             self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
@@ -2118,6 +2332,8 @@ class DungeonBoard:
             
             # Dibujar paredes
             self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches)
+            for cliff_dir in self.barranco_facing_directions(board_row, board_col):
+                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
             # Dibujar cuadrado que tapa parcialmente el muro para dar amplitud
             inset = int(self.cell_size * 0.15)
             self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, room_color, board_row, board_col)
@@ -2252,7 +2468,8 @@ class DungeonBoard:
         if (board_row, board_col) in self.visited_cells:
             if cell.cell_type in [CellType.INICIO, CellType.PASILLO, CellType.HABITACION, CellType.SALIDA]:
                 num_torches = self.count_torches(board_row, board_col, cell, include_sword=False)
-                self.decorations.draw_torches(board_row, board_col, x, y, cell, num_torches)
+                barranco_dirs = self.barranco_facing_directions(board_row, board_col)
+                self.decorations.draw_torches(board_row, board_col, x, y, cell, num_torches, barranco_dirs)
     
     def draw_exits(self, row,  col, x, y, exits, cell_type):
 
@@ -2762,6 +2979,10 @@ class DungeonBoard:
             neighbor_col = current_col + dc
             
             if 0 <= neighbor_row < self.size and 0 <= neighbor_col < self.size:
+                # Nunca generar una salida hacia el barranco (infranqueable)
+                if self.is_barranco_cell(neighbor_row, neighbor_col):
+                    forbidden_directions.add(direction)
+                    continue
                 neighbor = self.board[neighbor_row][neighbor_col]
                 # Si la celda vecina existe y NO tiene la salida complementaria, no generar salida hacia ella
                 if neighbor.cell_type != CellType.EMPTY:
@@ -2841,11 +3062,7 @@ class DungeonBoard:
         
         current_row, current_col = self.current_position
         current_cell = self.board[current_row][current_col]
-        
-        # Verificar que existe salida en la dirección solicitada
-        if direction not in current_cell.exits:
-            return
-        
+
         delta = {
             Direction.N: (-1, 0),
             Direction.S: (1, 0),
@@ -2854,8 +3071,19 @@ class DungeonBoard:
         }
 
         dr, dc = delta.get(direction, (0, 0))
-        target_row = current_row + dr
-        target_col = current_col + dc
+        candidate_row = current_row + dr
+        candidate_col = current_col + dc
+
+        # Verificar que existe salida en la dirección solicitada
+        if direction not in current_cell.exits:
+            # Si no hay salida porque da al barranco, el jugador se precipita y muere
+            if (0 <= candidate_row < self.size and 0 <= candidate_col < self.size
+                    and self.is_barranco_cell(candidate_row, candidate_col)):
+                self.fall_into_barranco(direction)
+            return
+
+        target_row = candidate_row
+        target_col = candidate_col
 
         # Comprobar límites
         if not (0 <= target_row < self.size and 0 <= target_col < self.size):
@@ -3228,15 +3456,17 @@ class DungeonBoard:
         exit_row, exit_col = self.exit_position
         distance_to_exit = abs(exit_row - board_row) + abs(exit_col - board_col)
         
-        # Contar cuántas paredes sin salida hay disponibles
+        # Contar cuántas paredes sin salida hay disponibles (excluyendo el lado del barranco:
+        # las antorchas nunca van en el acantilado, solo en las paredes normales)
+        barranco_dirs = set(self.barranco_facing_directions(board_row, board_col))
         available_walls = 0
-        if Direction.N not in cell.exits:
+        if Direction.N not in cell.exits and Direction.N not in barranco_dirs:
             available_walls += 1
-        if Direction.S not in cell.exits:
+        if Direction.S not in cell.exits and Direction.S not in barranco_dirs:
             available_walls += 1
-        if Direction.E not in cell.exits:
+        if Direction.E not in cell.exits and Direction.E not in barranco_dirs:
             available_walls += 1
-        if Direction.O not in cell.exits:
+        if Direction.O not in cell.exits and Direction.O not in barranco_dirs:
             available_walls += 1
         
         # En la salida, garantizar al menos una antorcha
@@ -3480,6 +3710,32 @@ class DungeonBoard:
             step_color = (150, 150, 150)
             pygame.draw.line(self.screen, step_color, (x1, y1), (x2, y2), 3)
     
+    def update_barranco_wind(self) -> None:
+        """Ajusta el sonido de viento según la distancia al barranco: suave a dos celdas, fuerte al lado."""
+        # Si el jugador ya se está cayendo (o cayó), no tocar el volumen: se quedó al máximo
+        if self.player_falling_active or self.player_fell_into_barranco:
+            return
+
+        # Si el viento ya suena como música de fondo (secuencia final), no duplicarlo
+        if self.audio.current_music == 'viento':
+            self.audio.set_barranco_wind_volume(0.0)
+            return
+
+        row, col = self.current_position
+        if self.barranco_axis == 'row':
+            distance = abs(row - self.barranco_index)
+        else:
+            distance = abs(col - self.barranco_index)
+
+        if distance <= 1:
+            volume = 0.7  # Al lado del barranco: viento fuerte
+        elif distance == 2:
+            volume = 0.25  # A dos celdas: viento suave
+        else:
+            volume = 0.0
+
+        self.audio.set_barranco_wind_volume(volume)
+
     def update_music_volume_by_distance(self):
         """Actualizar volumen de música según distancia al inicio y al final"""
         # Si tiene el poder de la espada, mantener música de ataque
@@ -3781,7 +4037,11 @@ class DungeonBoard:
             # Actualizar volumen de música según distancia (solo durante el juego, no durante fade)
             if not self.showing_title and not self.intro_anim_active and not self.audio.fading_out and not self.audio.fading_in and not self.wind_fading_in:
                 self.update_music_volume_by_distance()
-            
+
+            # Actualizar viento del barranco según la distancia del jugador a él
+            if not self.showing_title and not self.intro_anim_active:
+                self.update_barranco_wind()
+
             # Reproducir sonidos ambientales aleatorios (solo durante el juego, no en pantalla de título)
             if not self.showing_title and self.ambient_sounds:
                 current_time = pygame.time.get_ticks()

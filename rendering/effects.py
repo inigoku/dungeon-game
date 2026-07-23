@@ -257,3 +257,73 @@ class EffectsRenderer:
             y2 = ry + rnd.randint(0, max(0, rh - 1))
             mortar_color = (25, 25, 25)
             pygame.draw.line(self.screen, mortar_color, (x1, y1), (x2, y2), 2)
+
+    def draw_cliff_side(self, x: int, y: int, direction: Direction, board_row: int, board_col: int) -> None:
+        """Dibuja un borde de acantilado infranqueable en el lado de la celda que da al barranco.
+
+        Sustituye la pared normal por una roca quebrada con un borde irregular,
+        para distinguir visualmente el límite del barranco de un muro común.
+        """
+        size = self.cell_size
+        thickness = max(10, int(size * 0.34))
+
+        if direction == Direction.N:
+            rect = (0, 0, size, thickness)
+        elif direction == Direction.S:
+            rect = (0, size - thickness, size, thickness)
+        elif direction == Direction.O:
+            rect = (0, 0, thickness, size)
+        else:  # Direction.E
+            rect = (size - thickness, 0, thickness, size)
+
+        dir_offset = {Direction.N: 1, Direction.S: 2, Direction.E: 3, Direction.O: 4}[direction]
+        seed = board_row * 100000 + board_col + dir_offset
+        rnd = random.Random(seed)
+
+        base_color = (55, 42, 32)
+        rx, ry, rw, rh = rect
+        pygame.draw.rect(self.screen, base_color, (x + rx, y + ry, rw, rh))
+
+        # Rocas para dar aspecto de roca quebrada
+        for _ in range(rnd.randint(8, 14)):
+            w = rnd.randint(max(2, int(rw * 0.1)), max(4, int(rw * 0.4)))
+            h = rnd.randint(max(2, int(rh * 0.1)), max(4, int(rh * 0.4)))
+            sx = x + rx + rnd.randint(0, max(0, rw - w))
+            sy = y + ry + rnd.randint(0, max(0, rh - h))
+            shade = rnd.randint(-20, 25)
+            color = tuple(max(0, min(255, c + shade)) for c in base_color)
+            pygame.draw.ellipse(self.screen, color, (sx, sy, w, h))
+
+        # Borde irregular hacia el interior de la celda (silueta de roca rota)
+        edge_color = (25, 18, 14)
+        steps = 6
+        if direction == Direction.N:
+            points = [(x + rx, y + ry + rh)]
+            for i in range(steps + 1):
+                px = x + rx + int(rw * i / steps)
+                py = y + ry + rh - rnd.randint(0, int(rh * 0.5))
+                points.append((px, py))
+            points.append((x + rx + rw, y + ry + rh))
+        elif direction == Direction.S:
+            points = [(x + rx, y + ry)]
+            for i in range(steps + 1):
+                px = x + rx + int(rw * i / steps)
+                py = y + ry + rnd.randint(0, int(rh * 0.5))
+                points.append((px, py))
+            points.append((x + rx + rw, y + ry))
+        elif direction == Direction.O:
+            points = [(x + rx + rw, y + ry)]
+            for i in range(steps + 1):
+                py = y + ry + int(rh * i / steps)
+                px = x + rx + rw - rnd.randint(0, int(rw * 0.5))
+                points.append((px, py))
+            points.append((x + rx + rw, y + ry + rh))
+        else:  # Direction.E
+            points = [(x + rx, y + ry)]
+            for i in range(steps + 1):
+                py = y + ry + int(rh * i / steps)
+                px = x + rx + rnd.randint(0, int(rw * 0.5))
+                points.append((px, py))
+            points.append((x + rx, y + ry + rh))
+
+        pygame.draw.polygon(self.screen, edge_color, points)

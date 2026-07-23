@@ -95,10 +95,10 @@ class DecorationRenderer:
                                  (stain_x + offset_x, stain_y + offset_y),
                                  circle_size)
     
-    def draw_torches(self, board_row: int, board_col: int, x: int, y: int, 
-                    cell: Cell, num_torches: int) -> None:
+    def draw_torches(self, board_row: int, board_col: int, x: int, y: int,
+                    cell: Cell, num_torches: int, barranco_dirs=None) -> None:
         """Dibuja antorchas animadas en las paredes sin salida.
-        
+
         Args:
             board_row: Fila en el tablero
             board_col: Columna en el tablero
@@ -106,33 +106,36 @@ class DecorationRenderer:
             y: Coordenada y en pantalla
             cell: Objeto Cell
             num_torches: Número de antorchas a dibujar
+            barranco_dirs: Direcciones que dan al barranco (nunca llevan antorcha, es un acantilado)
         """
         seed = board_row * 100000 + board_col
         rnd = random.Random(seed)
-        
+
         # Animación de la llama
         t = pygame.time.get_ticks()
         flicker = abs(math.sin(t * 0.003 + seed)) * 0.3 + 0.7
-        
+
         torch_size = max(8, int(self.cell_size * 0.15))
         wall_thickness = int(self.cell_size * 0.28)
-        
-        # Posibles ubicaciones (paredes sin salidas)
+
+        barranco_dirs = set(barranco_dirs) if barranco_dirs else set()
+
+        # Posibles ubicaciones (paredes sin salidas y que no den al barranco)
         possible_positions = []
-        
-        if Direction.N not in cell.exits:
+
+        if Direction.N not in cell.exits and Direction.N not in barranco_dirs:
             possible_positions.append(('N', x + self.cell_size // 2 + rnd.randint(-20, 20),
                                       y + wall_thickness // 2))
-        if Direction.S not in cell.exits:
+        if Direction.S not in cell.exits and Direction.S not in barranco_dirs:
             possible_positions.append(('S', x + self.cell_size // 2 + rnd.randint(-20, 20),
                                       y + self.cell_size - wall_thickness // 2))
-        if Direction.E not in cell.exits:
+        if Direction.E not in cell.exits and Direction.E not in barranco_dirs:
             possible_positions.append(('E', x + self.cell_size - wall_thickness // 2,
                                       y + self.cell_size // 2 + rnd.randint(-20, 20)))
-        if Direction.O not in cell.exits:
+        if Direction.O not in cell.exits and Direction.O not in barranco_dirs:
             possible_positions.append(('O', x + wall_thickness // 2,
                                       y + self.cell_size // 2 + rnd.randint(-20, 20)))
-        
+
         # Dibujar antorchas
         for i in range(min(num_torches, len(possible_positions))):
             _, torch_x, torch_y = possible_positions[i]

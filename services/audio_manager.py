@@ -74,6 +74,9 @@ class AudioManager:
         self._load_footstep("sound/paso1.ogg", 0.4)
         self._load_footstep("sound/paso2.ogg", 0.4)
         self.last_footstep_index = 0
+
+        # Viento del barranco: canal dedicado, independiente de la música principal
+        self.barranco_wind_channel = None
         
         # Ambient sounds
         self.last_ambient_sound_time = pygame.time.get_ticks()
@@ -639,3 +642,25 @@ class AudioManager:
         if self.sword_hum_channel:
             self.sword_hum_channel.stop()
             self.sword_hum_channel = None
+
+    def set_barranco_wind_volume(self, volume: float) -> None:
+        """Ajusta el volumen del viento del barranco, iniciándolo o deteniéndolo según haga falta.
+
+        Args:
+            volume: 0.0 para silenciarlo y detener el canal; >0 para sonar a ese volumen.
+        """
+        if volume <= 0.0:
+            if self.barranco_wind_channel:
+                self.barranco_wind_channel.stop()
+                self.barranco_wind_channel = None
+            return
+
+        wind_sound = self.music_sounds.get('viento')
+        if not wind_sound:
+            return
+
+        if not self.barranco_wind_channel or not self.barranco_wind_channel.get_busy():
+            self.barranco_wind_channel = wind_sound.play(loops=-1)
+
+        if self.barranco_wind_channel:
+            self.barranco_wind_channel.set_volume(volume)
