@@ -223,7 +223,16 @@ class DungeonBoard:
             'dos-gotas': 0.40,
             'murcielago': 0.20
         }
-        
+
+        # Animación del murciélago volando por la celda actual
+        self.bat_flying_active = False
+        self.bat_flying_start_time = 0
+        self.bat_flying_duration = 1100  # ms
+        self.bat_flying_row = 0
+        self.bat_flying_col = 0
+        self.bat_flying_from_frac = (0.0, 0.0)  # (row_frac, col_frac) relativo al centro de la celda
+        self.bat_flying_to_frac = (0.0, 0.0)
+
         # Sonido de antorchas (usado para pensamientos)
         self.torch_sound = None
         try:
@@ -996,7 +1005,10 @@ class DungeonBoard:
             # Si el jugador está vivo, dibujarlo después de los monstruos (para que los tape)
             self.draw_monsters(offset_row_float, offset_col_float)
             self.draw_player(offset_row_float, offset_col_float)
-        
+
+        # Dibujar murciélago volando si la animación está activa
+        self.draw_flying_bat(offset_row_float, offset_col_float)
+
         # Cuarto: dibujar la losa de salida por encima del jugador
         self.draw_exit_slab_overlay(offset_row_float, offset_col_float)
         
@@ -1385,7 +1397,87 @@ class DungeonBoard:
             self.screen.blit(rotated_surf, rect)
         else:
             self.draw_warrior_sprite(center_x, center_y, sprite_size)
-    
+
+    def start_bat_flying_animation(self) -> None:
+        """Inicia la animación de un murciélago volando a través de la celda actual."""
+        self.bat_flying_active = True
+        self.bat_flying_start_time = pygame.time.get_ticks()
+        self.bat_flying_row, self.bat_flying_col = self.current_position
+
+        # Elegir una trayectoria aleatoria que cruce la celda de lado a lado
+        paths = [
+            ((0.0, -0.5), (0.0, 0.5)),   # Oeste -> Este
+            ((0.0, 0.5), (0.0, -0.5)),   # Este -> Oeste
+            ((-0.5, 0.0), (0.5, 0.0)),   # Norte -> Sur
+            ((0.5, 0.0), (-0.5, 0.0)),   # Sur -> Norte
+            ((-0.5, -0.5), (0.5, 0.5)),  # Diagonal NO -> SE
+            ((0.5, 0.5), (-0.5, -0.5)),  # Diagonal SE -> NO
+            ((-0.5, 0.5), (0.5, -0.5)),  # Diagonal NE -> SO
+            ((0.5, -0.5), (-0.5, 0.5)),  # Diagonal SO -> NE
+        ]
+        self.bat_flying_from_frac, self.bat_flying_to_frac = random.choice(paths)
+
+    def draw_flying_bat(self, offset_row_float: float, offset_col_float: float) -> None:
+        """Dibuja un murciélago sobrevolando la celda actual mientras suena el efecto de murciélago."""
+        if not self.bat_flying_active:
+            return
+
+        elapsed = pygame.time.get_ticks() - self.bat_flying_start_time
+        t = elapsed / self.bat_flying_duration
+        if t >= 1.0:
+            self.bat_flying_active = False
+            return
+
+        from_row_frac, from_col_frac = self.bat_flying_from_frac
+        to_row_frac, to_col_frac = self.bat_flying_to_frac
+
+        row_frac = from_row_frac + (to_row_frac - from_row_frac) * t
+        col_frac = from_col_frac + (to_col_frac - from_col_frac) * t
+
+        # Pequeño aleteo perpendicular a la trayectoria para un vuelo más orgánico
+        flutter = math.sin(t * math.pi * 6) * 0.06
+
+        bat_row = self.bat_flying_row + row_frac
+        bat_col = self.bat_flying_col + col_frac + flutter
+
+        view_row = bat_row - offset_row_float
+        view_col = bat_col - offset_col_float
+
+        center_x = int(view_col * self.cell_size + self.cell_size // 2)
+        center_y = int(view_row * self.cell_size + self.cell_size // 2)
+
+        bat_size = int(self.cell_size * 0.35)
+        flap_phase = t * math.pi * 10  # Aleteo rápido de alas
+        self.draw_bat_sprite(center_x, center_y, bat_size, flap_phase)
+
+    def draw_bat_sprite(self, cx: int, cy: int, size: int, flap_phase: float) -> None:
+        """Dibuja un murciélago procedimental sencillo con alas aleteando."""
+        color = (15, 15, 20)
+        half = max(2, size // 2)
+        flap = math.sin(flap_phase)  # -1..1
+        wing_tip_y = int(-half * 0.7 * flap)
+
+        # Ala izquierda
+        left_wing = [
+            (cx, cy),
+            (cx - half, cy + wing_tip_y),
+            (cx - int(half * 0.55), cy + int(half * 0.35)),
+        ]
+        # Ala derecha
+        right_wing = [
+            (cx, cy),
+            (cx + half, cy + wing_tip_y),
+            (cx + int(half * 0.55), cy + int(half * 0.35)),
+        ]
+
+        pygame.draw.polygon(self.screen, color, left_wing)
+        pygame.draw.polygon(self.screen, color, right_wing)
+
+        # Cuerpo
+        body_w = max(2, int(half * 0.5))
+        body_h = max(2, int(half * 0.35))
+        pygame.draw.ellipse(self.screen, color, (cx - body_w // 2, cy - body_h // 2, body_w, body_h))
+
     def draw_debug_info(self):
         """Muestra información de debug para ayudar a encontrar la salida."""
         current_row, current_col = self.current_position
@@ -3001,7 +3093,66 @@ class DungeonBoard:
         self.adjacent_torch_counts_by_dir[(target_row, target_col)] = adj_torch_count_by_dir
         # Revelar celdas adyacentes con salidas
         self.reveal_adjacent_cells(target_row, target_col)
-    
+
+        # POST-CHECK: Activar pensamientos DESPUÉS de entrar en la celda (recién creada)
+        # Verificar si hay manchas de sangre en la celda actual
+        if not self.blood_thought_triggered and self.blood_sound and self.has_blood_stains(target_row, target_col):
+            self.blood_thought_triggered = True
+
+            self.thought_pending = True
+
+            async def delayed_blood_thought():
+                await asyncio.sleep(1.0)  # Esperar 1 segundo
+                self.audio.trigger_thought(
+                    sounds=[(self.blood_sound, 0)],
+                    images=[(self.blood_image, 0)] if self.blood_image else None,
+                    subtitles=[("¿Es eso... sangre?!?", 6000)],
+                    blocks_movement=True
+                )
+                self.thought_pending = False
+            asyncio.create_task(delayed_blood_thought())
+            return  # BLOQUEAR ahora que ya entró
+
+        # Verificar si hay antorchas en la celda actual
+        if not self.torch_thought_triggered and self.torch_sound and self.has_torches(target_row, target_col) and self.count_torches(target_row, target_col, cell) > 0:
+            self.torch_thought_triggered = True
+
+            self.thought_pending = True
+
+            async def delayed_torch_thought():
+                await asyncio.sleep(1.0)  # Esperar 1 segundo
+                self.audio.trigger_thought(
+                    sounds=[(self.torch_sound, 0)],
+                    images=[(self.torch_image, 0)] if self.torch_image else None,
+                    subtitles=[("Una antorcha encendida... ¡Interesante!", 6000)],
+                    blocks_movement=True
+                )
+                self.thought_pending = False
+            asyncio.create_task(delayed_torch_thought())
+            return  # BLOQUEAR ahora que ya entró
+
+        # Verificar si entró en la celda final
+        if (target_row, target_col) == self.exit_position and not self.exit_image_shown:
+            self.exit_image_shown = True
+            self.exit_image_start_time = pygame.time.get_ticks()
+            self.exit_visited = True  # Marcar salida como visitada
+            self.exit_thought_active = True  # Marcar que estamos en pensamiento de salida
+
+            async def delayed_exit_thought():
+                await asyncio.sleep(1.0)  # Esperar 1 segundo
+                if self.abominacion_sound:
+                    # Calcular duración total: audio + 2 segundos
+                    audio_duration = int(self.abominacion_sound.get_length() * 1000)
+                    image_duration = audio_duration + 2000
+                    self.audio.trigger_thought(
+                        sounds=[(self.abominacion_sound, 0)],
+                        images=[(self.exit_image, image_duration)] if self.exit_image else None,
+                        subtitles=[("¿Qué es esta abominación?", image_duration)],
+                        blocks_movement=True
+                    )
+            asyncio.create_task(delayed_exit_thought())
+            return  # BLOQUEAR ahora que ya entró
+
     def reveal_adjacent_cells(self, row, col):
         """Revela las celdas adyacentes que tienen salidas conectadas desde la celda actual.
         Solo funciona si auto_reveal_mode está activo."""
@@ -3369,9 +3520,9 @@ class DungeonBoard:
                 self.audio.current_music = 'cthulhu'
                 self.audio.music_channel.play(self.audio.music_sounds['cthulhu'], loops=-1)
                 self.audio.music_channel.set_volume(min_volume)  # Empezar con volumen bajo
-                self.cthulhu_played = True
-        
-        elif self.cthulhu_played:  # Volumen de cthulhu aumenta al acercarse a la salida
+                self.audio.cthulhu_played = True
+
+        elif self.audio.cthulhu_played:  # Volumen de cthulhu aumenta al acercarse a la salida
             # Si estamos en la celda de salida, volumen máximo (1.0) y mostrar subtítulo
             if (curr_row, curr_col) == self.exit_position:
                 # Solo configurar volumen de Cthulhu si el viento aún no está sonando
@@ -3390,7 +3541,7 @@ class DungeonBoard:
                 volume = max_volume - (distance_from_start / max_distance) * (max_volume - min_volume)
                 volume = max(min_volume, min(max_volume, volume))
                 self.audio.music_channel.set_volume(volume)
-                self.cthulhu_played = False
+                self.audio.cthulhu_played = False
             else:
                 # Volumen de cthulhu aumenta al acercarse a la salida
                 # Volumen mínimo (0.05) a distancia 5, máximo (1.0) en la salida
@@ -3639,16 +3790,20 @@ class DungeonBoard:
                     rand = random.random()
                     cumulative = 0
                     selected_sound = None
-                    
+                    selected_name = None
+
                     for sound_name, weight in self.ambient_sound_weights.items():
                         cumulative += weight
                         if rand <= cumulative and sound_name in self.ambient_sounds:
                             selected_sound = self.ambient_sounds[sound_name]
+                            selected_name = sound_name
                             break
-                    
+
                     if selected_sound:
                         selected_sound.play()
-                    
+                        if selected_name == 'murcielago':
+                            self.start_bat_flying_animation()
+
                     self.last_ambient_sound_time = current_time
                     # Próximo sonido en 5-15 segundos
                     self.next_ambient_sound_delay = random.randint(5000, 15000)
