@@ -172,6 +172,15 @@ class DungeonBoard:
         self.effects = EffectsRenderer(self.screen, self.cell_size)
         self.audio = AudioManager()
 
+        # Cache de texturas de suelo+paredes por celda: el patrón (piedras/ruido)
+        # es siempre el mismo (semilla = posición), así que solo hace falta
+        # volver a dibujarlo si cambian las salidas o el brillo real (antorchas/
+        # distancia), no en cada frame. Mismo dibujado vectorial de siempre,
+        # simplemente cacheado en vez de redibujado ~60 veces por segundo.
+        # Clave: (row, col, cell_size, floor_brightness, wall_brightness) ->
+        # (exits congelados, cell_type, Surface horneada)
+        self._cell_texture_cache = {}
+
         self.was_active = False
                     
         # Paleta y parámetros para el sprite del jugador (guerrero)
@@ -2280,6 +2289,85 @@ class DungeonBoard:
             pygame.draw.line(self.screen, rope_color, (x, deck_y), (x + size, deck_y), 4)
             pygame.draw.line(self.screen, rope_color, (x, deck_y + deck_h), (x + size, deck_y + deck_h), 4)
 
+    def get_cell_texture(self, board_row: int, board_col: int, cell, floor_color, wall_brightness: float,
+                         draw_full_floor: bool = True, background_color=None):
+        """Devuelve la imagen de suelo+paredes de una celda, generándola y
+        cacheándola la primera vez que se necesita con este brillo/zoom.
+
+        El patrón de piedras/ruido es siempre el mismo para una celda (su
+        semilla es la posición), así que hornearlo una vez y reutilizarlo
+        evita repetir cientos de dibujados vectoriales cada frame sin
+        cambiar en nada el resultado (misma función, mismos parámetros).
+        Solo se regenera si cambian las salidas, el tipo de celda o el
+        brillo real (antorchas encendiéndose/apagándose, espada, distancia).
+
+        Args:
+            draw_full_floor: si es False, el fondo es un color plano
+                (background_color) en vez de la textura de suelo con ruido
+                (usado por la celda SALIDA, que tiene su propio fondo gris).
+            background_color: color plano de fondo cuando draw_full_floor=False.
+        """
+        wb = int(wall_brightness)
+        bg = background_color if background_color is not None else floor_color
+        key = (board_row, board_col, self.cell_size, floor_color[0], wb, draw_full_floor, bg)
+        cached = self._cell_texture_cache.get(key)
+        exits_snapshot = frozenset(cell.exits)
+        if cached is not None and cached[0] == exits_snapshot and cached[1] == cell.cell_type:
+            return cached[2]
+
+        size = self.cell_size
+        inset = int(size * 0.15)
+        inset_size = size - 2 * inset
+
+        surf = pygame.Surface((size, size))
+        if draw_full_floor:
+            self.effects.draw_rough_floor(0, 0, size, size, floor_color, board_row, board_col, target_surface=surf)
+        else:
+            surf.fill(bg)
+        self.effects.draw_stone_in_walls(
+            board_row, board_col, 0, 0, cell, 1.0, self.count_torches,
+            barranco_dirs=None, target_surface=surf, wall_brightness_override=wb,
+        )
+        if inset_size > 0:
+            self.effects.draw_rough_floor(inset, inset, inset_size, inset_size, floor_color, board_row, board_col, target_surface=surf)
+
+        self._cell_texture_cache[key] = (exits_snapshot, cell.cell_type, surf)
+        return surf
+
+    def draw_floor_and_walls(self, board_row, board_col, x, y, cell, floor_color, brightness_factor,
+                             draw_full_floor: bool = True, background_color=None) -> None:
+        """Dibuja el suelo y las paredes de una celda.
+
+        Las celdas junto al barranco siguen el camino vectorial de siempre en
+        vivo (son pocas y necesitan integrarse con el acantilado). El resto
+        usa la textura cacheada (ver get_cell_texture): un solo blit en vez de
+        redibujar piedras y ruido a mano en cada frame.
+        """
+        size = self.cell_size
+        barranco_dirs = self.barranco_facing_directions(board_row, board_col)
+
+        if barranco_dirs:
+            inset = int(size * 0.15)
+            if draw_full_floor:
+                self.effects.draw_rough_floor(x, y, size, size, floor_color, board_row, board_col)
+            elif background_color is not None:
+                pygame.draw.rect(self.screen, background_color, (x, y, size, size))
+            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches, barranco_dirs)
+            self.effects.draw_rough_floor(x + inset, y + inset, size - 2 * inset, size - 2 * inset, floor_color, board_row, board_col)
+            # El acantilado se pinta el último para que quede sólido y no lo tape
+            # el suelo interior (que se solapa un poco con el grosor del muro)
+            for cliff_dir in barranco_dirs:
+                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
+            self.effects.draw_barranco_door_corners(board_row, board_col, x, y, cell, barranco_dirs)
+            return
+
+        torch_count = self.count_torches(board_row, board_col, cell)
+        wall_brightness = (20 + min(120, torch_count * 30)) * brightness_factor
+
+        tile = self.get_cell_texture(board_row, board_col, cell, floor_color, wall_brightness,
+                                     draw_full_floor=draw_full_floor, background_color=background_color)
+        self.screen.blit(tile, (x, y))
+
     def draw_cell(self, board_row, board_col, view_row, view_col, pixel_offset_x=0, pixel_offset_y=0):
         """Dibuja una celda del tablero en las coordenadas de la vista."""
         cell = self.board[board_row][board_col]
@@ -2392,17 +2480,7 @@ class DungeonBoard:
             brightness = 4 * 31
             floor_color = (brightness, brightness, brightness)
             brightness_factor = brightness / 255.0
-            self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
-            # Dibujar paredes
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches, self.barranco_facing_directions(board_row, board_col))
-            inset = int(self.cell_size * 0.15)
-            self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
-            # El acantilado se pinta el último para que quede sólido y no lo tape
-            # el suelo interior (que se solapa un poco con el grosor del muro)
-            barranco_dirs = self.barranco_facing_directions(board_row, board_col)
-            for cliff_dir in barranco_dirs:
-                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
-            self.effects.draw_barranco_door_corners(board_row, board_col, x, y, cell, barranco_dirs)
+            self.draw_floor_and_walls(board_row, board_col, x, y, cell, floor_color, brightness_factor)
         elif cell.cell_type == CellType.PASILLO:
             torch_count = self.count_torches(board_row, board_col, cell)
             # Calcular oscurecimiento basado en distancia desde la entrada
@@ -2419,17 +2497,7 @@ class DungeonBoard:
             brightness = max(0, base_brightness + torch_brightness)
             floor_color = (brightness, brightness, brightness)
             brightness_factor = brightness / 255.0
-            self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
-            # Dibujar paredes
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches, self.barranco_facing_directions(board_row, board_col))
-            inset = int(self.cell_size * 0.15)
-            self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
-            # El acantilado se pinta el último para que quede sólido y no lo tape
-            # el suelo interior (que se solapa un poco con el grosor del muro)
-            barranco_dirs = self.barranco_facing_directions(board_row, board_col)
-            for cliff_dir in barranco_dirs:
-                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
-            self.effects.draw_barranco_door_corners(board_row, board_col, x, y, cell, barranco_dirs)
+            self.draw_floor_and_walls(board_row, board_col, x, y, cell, floor_color, brightness_factor)
         elif cell.cell_type == CellType.HABITACION:
             torch_count = self.count_torches(board_row, board_col, cell)
             start_row, start_col = self.start_position
@@ -2445,19 +2513,7 @@ class DungeonBoard:
             brightness = max(0, base_brightness + torch_brightness)
             floor_color = (brightness, brightness, brightness)
             brightness_factor = brightness / 255.0
-            self.effects.draw_rough_floor(x, y, self.cell_size, self.cell_size, floor_color, board_row, board_col)
-            
-            # Dibujar paredes
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches, self.barranco_facing_directions(board_row, board_col))
-            # Dibujar cuadrado que tapa parcialmente el muro para dar amplitud
-            inset = int(self.cell_size * 0.15)
-            self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, floor_color, board_row, board_col)
-            # El acantilado se pinta el último para que quede sólido y no lo tape
-            # el suelo interior (que se solapa un poco con el grosor del muro)
-            barranco_dirs = self.barranco_facing_directions(board_row, board_col)
-            for cliff_dir in barranco_dirs:
-                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
-            self.effects.draw_barranco_door_corners(board_row, board_col, x, y, cell, barranco_dirs)
+            self.draw_floor_and_walls(board_row, board_col, x, y, cell, floor_color, brightness_factor)
 
             for dir, count in torch_by_dir.items():
                 if count > 0:
@@ -2489,19 +2545,10 @@ class DungeonBoard:
             # Fondo de pared (gris oscuro)
             wall_color_val = int(50 * brightness_factor)
             wall_color = (wall_color_val, wall_color_val, wall_color_val)
-            pygame.draw.rect(self.screen, wall_color, (x, y, self.cell_size, self.cell_size))
-            
-            # Dibujar paredes
-            self.effects.draw_stone_in_walls(board_row, board_col, x, y, cell, brightness_factor, self.count_torches, self.barranco_facing_directions(board_row, board_col))
-            # Dibujar cuadrado que tapa parcialmente el muro para dar amplitud
-            inset = int(self.cell_size * 0.15)
-            self.effects.draw_rough_floor(x + inset, y + inset, self.cell_size - 2*inset, self.cell_size - 2*inset, room_color, board_row, board_col)
-            # El acantilado se pinta el último para que quede sólido y no lo tape
-            # el suelo interior (que se solapa un poco con el grosor del muro)
-            barranco_dirs = self.barranco_facing_directions(board_row, board_col)
-            for cliff_dir in barranco_dirs:
-                self.effects.draw_cliff_side(x, y, cliff_dir, board_row, board_col)
-            self.effects.draw_barranco_door_corners(board_row, board_col, x, y, cell, barranco_dirs)
+
+            # Dibujar paredes y suelo interior (fondo plano en vez de textura de suelo)
+            self.draw_floor_and_walls(board_row, board_col, x, y, cell, room_color, brightness_factor,
+                                     draw_full_floor=False, background_color=wall_color)
 
             for dir, count in torch_by_dir.items():
                 if count > 0:

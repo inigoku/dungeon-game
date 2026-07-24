@@ -86,31 +86,40 @@ class EffectsRenderer:
         for i in range(len(points) - 1):
             pygame.draw.line(self.screen, int_color, points[i], points[i + 1], width)
     
-    def draw_rough_floor(self, x: int, y: int, width: int, height: int, color: Tuple[int, int, int], board_row: int, board_col: int) -> None:
-        """Dibuja un suelo con textura rugosa (ruido)."""
+    def draw_rough_floor(self, x: int, y: int, width: int, height: int, color: Tuple[int, int, int],
+                        board_row: int, board_col: int, target_surface: 'pygame.Surface | None' = None) -> None:
+        """Dibuja un suelo con textura rugosa (ruido).
+
+        Args:
+            target_surface: superficie de destino (por defecto self.screen). Permite
+                hornear la textura una sola vez en un cache (ver DungeonBoard.get_cell_texture)
+                en vez de redibujarla cada frame.
+        """
+        surface = target_surface if target_surface is not None else self.screen
+
         # Dibujar base
-        pygame.draw.rect(self.screen, color, (x, y, width, height))
-        
+        pygame.draw.rect(surface, color, (x, y, width, height))
+
         # Si el color es muy oscuro, no dibujar detalles para ahorrar rendimiento
         if color[0] < 20:
             return
 
         seed = board_row * 100000 + board_col
         rnd = random.Random(seed)
-        
+
         # Densidad de puntos (8% de cobertura)
         num_spots = int(width * height * 0.08)
-        
+
         for _ in range(num_spots):
             sx = x + rnd.randint(0, width - 2)
             sy = y + rnd.randint(0, height - 2)
-            
+
             # Variación de color
             variation = rnd.randint(-15, 15)
-            
+
             # Aplicar variación y dibujar punto
             r, g, b = [max(0, min(255, c + variation)) for c in color]
-            self.screen.fill((r, g, b), (sx, sy, 2, 2))
+            surface.fill((r, g, b), (sx, sy, 2, 2))
 
     def draw_stone_texture(self, board_row: int, board_col: int, x: int, y: int) -> None:
         """Dibuja una textura de piedra en la celda dada usando un patrón determinista por celda.
@@ -159,7 +168,8 @@ class EffectsRenderer:
     def draw_stone_in_walls(self, board_row: int, board_col: int, x: int, y: int,
                            cell: Cell, brightness_factor: float,
                            count_torches_callback: Callable[[int, int, Cell], int],
-                           barranco_dirs=None) -> None:
+                           barranco_dirs=None, target_surface: 'pygame.Surface | None' = None,
+                           wall_brightness_override: float = None) -> None:
         """Dibuja textura de piedra únicamente en las zonas de pared dentro
         de una celda de tipo PASILLO (entre el suelo/centro y los bordes).
 
@@ -180,14 +190,23 @@ class EffectsRenderer:
             brightness_factor: Factor de brillo (0.0 a 1.0) para oscurecer todos los colores
             count_torches_callback: Función para contar antorchas en la celda
             barranco_dirs: Direcciones en las que la celda linda con el barranco
+            target_surface: superficie de destino (por defecto self.screen). Permite
+                hornear la textura una sola vez en un cache en vez de redibujarla cada frame.
+            wall_brightness_override: si se indica, usa este brillo directamente en vez de
+                calcularlo desde count_torches_callback/brightness_factor (usado al hornear
+                el cache con el brillo real ya conocido de antemano).
         """
+        surface = target_surface if target_surface is not None else self.screen
         seed = board_row * 100000 + board_col
         rnd = random.Random(seed + 7)
 
-        # Calcular brillo base según número de antorchas, pero aplicando el factor de oscuridad
-        torch_count = count_torches_callback(board_row, board_col, cell)
-        wall_brightness = 20 + min(120, torch_count * 30)  # Base 20, aumenta 30 por antorcha
-        wall_brightness = int(wall_brightness * brightness_factor)  # Aplicar factor de oscuridad
+        if wall_brightness_override is not None:
+            wall_brightness = int(wall_brightness_override)
+        else:
+            # Calcular brillo base según número de antorchas, pero aplicando el factor de oscuridad
+            torch_count = count_torches_callback(board_row, board_col, cell)
+            wall_brightness = 20 + min(120, torch_count * 30)  # Base 20, aumenta 30 por antorcha
+            wall_brightness = int(wall_brightness * brightness_factor)  # Aplicar factor de oscuridad
 
         size = self.cell_size
         wall_thickness = max(6, int(size * 0.28))
@@ -259,11 +278,11 @@ class EffectsRenderer:
                 sy = ry + rnd.randint(0, max(0, rh - h))
                 shade = rnd.randint(-40, 60)
                 stone_color = tuple(max(0, min(255, base_stone[i] + shade)) for i in range(3))
-                pygame.draw.ellipse(self.screen, stone_color, (sx, sy, w, h))
+                pygame.draw.ellipse(surface, stone_color, (sx, sy, w, h))
                 if rnd.random() < 0.9:
                     border = tuple(max(0, c - 55) for c in stone_color)
                     try:
-                        pygame.draw.ellipse(self.screen, border, (sx, sy, w, h), 1)
+                        pygame.draw.ellipse(surface, border, (sx, sy, w, h), 1)
                     except Exception:
                         pass
 
@@ -275,7 +294,7 @@ class EffectsRenderer:
             x2 = rx + rnd.randint(0, max(0, rw - 1))
             y2 = ry + rnd.randint(0, max(0, rh - 1))
             mortar_color = (25, 25, 25)
-            pygame.draw.line(self.screen, mortar_color, (x1, y1), (x2, y2), 2)
+            pygame.draw.line(surface, mortar_color, (x1, y1), (x2, y2), 2)
 
     def draw_barranco_door_corners(self, board_row: int, board_col: int, x: int, y: int, cell: Cell, barranco_dirs) -> None:
         """Rellena, con la textura del acantilado, las esquinas de puerta que dan
