@@ -4220,12 +4220,14 @@ class DungeonBoard:
             if pygame.time.get_ticks() % 60 < 2:
                 self.cleanup_footprints()
 
-            # Actualizar volumen de música según distancia (solo durante el juego, no durante fade)
-            if not self.showing_title and not self.intro_anim_active and not self.audio.fading_out and not self.audio.fading_in and not self.wind_fading_in:
+            # Actualizar volumen de música según distancia (solo durante el juego, no durante fade
+            # ni tras el game over: si no, esto pisa el volumen del canal donde suena el grito)
+            if not self.showing_title and not self.intro_anim_active and not self.audio.fading_out and not self.audio.fading_in and not self.wind_fading_in and not self.showing_game_over:
                 self.update_music_volume_by_distance()
 
             # Actualizar viento del barranco según la distancia del jugador a él
-            if not self.showing_title and not self.intro_anim_active:
+            # (no tras el game over: se deja el volumen fijo, p.ej. al máximo si cayó)
+            if not self.showing_title and not self.intro_anim_active and not self.showing_game_over:
                 self.update_barranco_wind()
 
             # Reproducir sonidos ambientales aleatorios (solo durante el juego, no en pantalla de título)
