@@ -80,42 +80,50 @@ class DungeonBoard:
         side = random.choice([1, -1])
         self.barranco_index = max(margin, min(size - margin - 1, center + side * offset))
 
+        # Dos puntos cruzables del barranco (puente volante), elegidos antes de
+        # generar el mapa para que toda la lógica de exits/conectividad los conozca.
+        # El camino principal cruza SIEMPRE por uno de ellos (main_bridge_point):
+        # la salida se coloca al otro lado del barranco, así que llegar hasta
+        # ella exige cruzar el puente. El segundo punto queda como cruce
+        # opcional adicional, descubrible explorando.
+        self.bridge_points = self.choose_bridge_points()
+        self.main_bridge_point = random.choice(list(self.bridge_points))
+
         # Generar posición de salida aleatoria y calcular camino principal
         # Reintentar hasta conseguir conectividad
         print("Generando mapa...")
         max_generation_attempts = 10
         generation_attempt = 0
         connectivity_verified = False
-        
+
         while not connectivity_verified and generation_attempt < max_generation_attempts:
             generation_attempt += 1
             if generation_attempt > 1:
                 print(f"Intento {generation_attempt}: Regenerando mapa...")
-            
+
             # Limpiar el tablero excepto la celda de inicio
             for row in range(self.size):
                 for col in range(self.size):
                     if (row, col) != (center, center):
                         self.board[row][col] = Cell(CellType.EMPTY, set())
-            
-            # Generar nueva posición de salida
-            self.exit_position = self.generate_exit_position(center)
 
-            # Punto pegado al barranco por el que se forzará a pasar el camino principal
-            barranco_waypoint = self.get_barranco_waypoint()
+            # Generar la salida en el lado OPUESTO del barranco: solo se llega cruzando el puente
+            self.exit_position = self.generate_exit_position(center, far_side=True)
 
-            # Calcular camino principal en dos tramos, pasando por el punto junto al barranco,
-            # para garantizar que el camino hacia la salida roce el barranco en algún punto.
-            # Se concatenan en orden (sin duplicar el punto de unión) para conservar un
-            # camino ordenado sin ramificaciones que generate_main_path_cells pueda recorrer.
-            path_to_waypoint = self.calculate_main_path((center, center), barranco_waypoint)
-            path_to_exit = self.calculate_main_path(barranco_waypoint, self.exit_position)
-            self.main_path_ordered = path_to_waypoint + path_to_exit[1:]
+            # Anclas a cada lado del puente principal
+            near_cell, far_cell = self.get_bridge_anchor_points(self.main_bridge_point)
+
+            # Camino principal en tres tramos: inicio -> ancla accesible -> [puente] ->
+            # ancla lejana -> salida. Se concatenan en orden (sin duplicar el punto de
+            # unión) para conservar un camino ordenado sin ramificaciones.
+            path_to_bridge = self.calculate_main_path((center, center), near_cell)
+            path_from_bridge = self.calculate_main_path(far_cell, self.exit_position)
+            self.main_path_ordered = path_to_bridge + [self.main_bridge_point] + path_from_bridge
             self.main_path = set(self.main_path_ordered)
 
             # Generar todas las celdas del camino principal
             self.generate_main_path_cells()
-            
+
             # Verificar conectividad
             connectivity_verified = self.check_connectivity((center, center), self.exit_position)
         
@@ -694,14 +702,61 @@ class DungeonBoard:
         return self.camera_offset_row, self.camera_offset_col
 
     def is_barranco_cell(self, row: int, col: int) -> bool:
-        """Verifica si una celda pertenece a la fila/columna del barranco (infranqueable)."""
+        """Verifica si una celda pertenece a la fila/columna del barranco (infranqueable).
+
+        Los puntos de puente son la excepción: siguen estando sobre la línea
+        del barranco, pero se tratan como cruzables (ver is_bridge_cell).
+        """
+        if (row, col) in self.bridge_points:
+            return False
         if self.barranco_axis == 'row':
             return row == self.barranco_index
         else:
             return col == self.barranco_index
 
-    def is_valid_exit_side(self, row: int, col: int) -> bool:
-        """Verifica que una posición esté en el mismo lado del barranco que el inicio."""
+    def is_bridge_cell(self, row: int, col: int) -> bool:
+        """Verifica si una celda es uno de los puntos de puente cruzables del barranco."""
+        return (row, col) in self.bridge_points
+
+    def is_barranco_line(self, row: int, col: int) -> bool:
+        """Verifica si una celda está en la línea del barranco, sea o no un punto de
+        puente. Se usa para el trazado del camino principal y la salida: aunque un
+        puente sea cruzable a pie, el camino principal nunca debe depender de él,
+        así que se evita igual que el resto del barranco."""
+        if self.barranco_axis == 'row':
+            return row == self.barranco_index
+        else:
+            return col == self.barranco_index
+
+    def get_bridge_crossing_directions(self):
+        """Devuelve las dos direcciones (una a cada lado) que un puente cruza."""
+        if self.barranco_axis == 'row':
+            return (Direction.N, Direction.S)
+        else:
+            return (Direction.O, Direction.E)
+
+    def choose_bridge_points(self):
+        """Elige dos puntos a lo largo de la línea del barranco que serán cruzables
+        mediante un puente volante, bien separados entre sí."""
+        margin = 10
+        coords = list(range(margin, self.size - margin))
+        p1 = random.choice(coords)
+        min_sep = max(10, (self.size - 2 * margin) // 4)
+        far_candidates = [c for c in coords if abs(c - p1) >= min_sep]
+        p2 = random.choice(far_candidates) if far_candidates else random.choice(coords)
+
+        if self.barranco_axis == 'row':
+            return {(self.barranco_index, p1), (self.barranco_index, p2)}
+        else:
+            return {(p1, self.barranco_index), (p2, self.barranco_index)}
+
+    def is_valid_exit_side(self, row: int, col: int, far_side: bool = False) -> bool:
+        """Verifica en qué lado del barranco está una posición.
+
+        Por defecto comprueba el lado accesible (el mismo que el inicio). Con
+        far_side=True comprueba el lado opuesto (el que solo se alcanza cruzando
+        un puente).
+        """
         center = self.size // 2
         if self.barranco_axis == 'row':
             value = row
@@ -710,10 +765,9 @@ class DungeonBoard:
 
         if value == self.barranco_index:
             return False
-        if center < self.barranco_index:
-            return value < self.barranco_index
-        else:
-            return value > self.barranco_index
+
+        same_side_as_center = (value < self.barranco_index) == (center < self.barranco_index)
+        return (not same_side_as_center) if far_side else same_side_as_center
 
     def barranco_facing_directions(self, board_row: int, board_col: int) -> list:
         """Devuelve las direcciones en las que una celda linda directamente con el barranco."""
@@ -734,20 +788,27 @@ class DungeonBoard:
         else:
             return Direction.O if center < self.barranco_index else Direction.E
 
-    def get_barranco_waypoint(self):
-        """Devuelve una celda segura, pegada al barranco, para forzar que el camino
-        principal pase junto a él en al menos un punto."""
-        center = self.size // 2
-        adjacent_index = self.barranco_index - 1 if center < self.barranco_index else self.barranco_index + 1
-        adjacent_index = max(0, min(self.size - 1, adjacent_index))
-
-        margin = 10
-        cross_coord = random.randint(margin, self.size - margin - 1)
-
-        if self.barranco_axis == 'row':
-            return (adjacent_index, cross_coord)
-        else:
-            return (cross_coord, adjacent_index)
+    def get_bridge_anchor_points(self, bridge_point):
+        """Devuelve (near_cell, far_cell): las dos celdas adyacentes a un punto de
+        puente, a cada lado del barranco. near_cell está en el lado accesible
+        (donde está el inicio) y far_cell en el lado opuesto."""
+        br, bc = bridge_point
+        deltas = {
+            Direction.N: (-1, 0),
+            Direction.S: (1, 0),
+            Direction.E: (0, 1),
+            Direction.O: (0, -1),
+        }
+        near_cell = None
+        far_cell = None
+        for direction in self.get_bridge_crossing_directions():
+            dr, dc = deltas[direction]
+            neighbor = (br + dr, bc + dc)
+            if self.is_valid_exit_side(*neighbor):
+                near_cell = neighbor
+            else:
+                far_cell = neighbor
+        return near_cell, far_cell
 
     def check_connectivity(self, start, end):
         """Verifica si hay un camino posible entre start y end usando BFS.
@@ -816,27 +877,32 @@ class DungeonBoard:
         
         return False
     
-    def generate_exit_position(self, center):
-        """Genera una posición aleatoria para la celda de salida, alejada del centro."""
+    def generate_exit_position(self, center, far_side: bool = False):
+        """Genera una posición aleatoria para la celda de salida, alejada del centro.
+
+        Con far_side=True, la salida se coloca en el lado opuesto del barranco
+        (el que solo se alcanza cruzando uno de los puentes), en vez del lado
+        accesible donde está el inicio.
+        """
         # Calcular distancia máxima desde el centro hasta el borde del tablero
         max_distance_to_edge = center - 5  # Restamos margen de seguridad
-        
+
         # Distancia entre 75% y 100% de la distancia al borde
         min_distance = int(max_distance_to_edge * 0.75)
         max_distance = max_distance_to_edge
-        
+
         # Generar posiciones candidatas
         attempts = 0
         while attempts < 100:
             # Ángulo aleatorio
             angle = random.uniform(0, 2 * math.pi)
             distance = random.uniform(min_distance, max_distance)
-            
+
             row = center + int(distance * math.cos(angle))
             col = center + int(distance * math.sin(angle))
 
-            # Verificar que está dentro del tablero con margen y que no cruce el barranco
-            if 5 <= row < self.size - 5 and 5 <= col < self.size - 5 and self.is_valid_exit_side(row, col):
+            # Verificar que está dentro del tablero con margen y del lado correcto del barranco
+            if 5 <= row < self.size - 5 and 5 <= col < self.size - 5 and self.is_valid_exit_side(row, col, far_side):
                 return (row, col)
             attempts += 1
 
@@ -850,14 +916,14 @@ class DungeonBoard:
                 row = max(5, min(self.size - 6, row))
                 col = max(5, min(self.size - 6, col))
 
-                if 5 <= row < self.size - 5 and 5 <= col < self.size - 5 and self.is_valid_exit_side(row, col):
+                if 5 <= row < self.size - 5 and 5 <= col < self.size - 5 and self.is_valid_exit_side(row, col, far_side):
                     return (row, col)
 
         # Último fallback: posición segura garantizada dentro del tablero
         safe_distance = min(min_distance, (self.size - center - 10) // 2)
         row = center + safe_distance
         col = center + safe_distance
-        if not self.is_valid_exit_side(row, col):
+        if not self.is_valid_exit_side(row, col, far_side):
             if self.barranco_axis == 'row':
                 row = center - safe_distance
             else:
@@ -890,8 +956,9 @@ class DungeonBoard:
                 next_pos = (next_row, next_col)
                 
                 # Verificar límites, que no hayamos visitado y que no sea el barranco
+                # (incluidos los puentes: el camino principal nunca depende de ellos)
                 if (0 <= next_row < self.size and 0 <= next_col < self.size
-                    and next_pos not in visited and not self.is_barranco_cell(next_row, next_col)):
+                    and next_pos not in visited and not self.is_barranco_line(next_row, next_col)):
                     # Calcular distancia al objetivo
                     dist = abs(end_row - next_row) + abs(end_col - next_col)
                     directions.append((next_pos, dist, dr, dc))
@@ -935,7 +1002,7 @@ class DungeonBoard:
                     next_pos = (next_row, next_col)
                     
                     if (0 <= next_row < self.size and 0 <= next_col < self.size
-                        and next_pos not in visited_bfs and not self.is_barranco_cell(next_row, next_col)):
+                        and next_pos not in visited_bfs and not self.is_barranco_line(next_row, next_col)):
                         visited_bfs.add(next_pos)
                         queue.append((next_pos, bfs_path + [next_pos]))
 
@@ -982,8 +1049,11 @@ class DungeonBoard:
             # Si es la salida, solo tiene las conexiones con el camino
             if pos == self.exit_position:
                 self.board[row][col] = Cell(CellType.SALIDA, exits)
+            elif self.is_bridge_cell(row, col):
+                # Puente volante: un simple cruce, sin salidas ni decoración extra
+                self.board[row][col] = Cell(CellType.PASILLO, exits)
             else:
-                
+
                 # Determinar tipo de celda: 75% PASILLO, 25% HABITACION
                 cell_type = CellType.PASILLO if random.random() < 0.75 else CellType.HABITACION
                 
@@ -1010,7 +1080,26 @@ class DungeonBoard:
                             exits.add(random.choice(remaining))
                 
                 self.board[row][col] = Cell(cell_type, exits)
-        
+
+        # Si alguna celda del camino linda con OTRO punto de puente (el que no forma
+        # parte del camino principal), forzar la salida hacia él, para que también
+        # sea siempre alcanzable como cruce opcional adicional
+        for pos in self.main_path:
+            row, col = pos
+            cell = self.board[row][col]
+            if cell.cell_type == CellType.EMPTY:
+                continue
+            new_exits = None
+            for dr, dc, direction in [(-1, 0, Direction.N), (1, 0, Direction.S),
+                                       (0, 1, Direction.E), (0, -1, Direction.O)]:
+                neighbor = (row + dr, col + dc)
+                if self.is_bridge_cell(*neighbor) and direction not in cell.exits:
+                    if new_exits is None:
+                        new_exits = cell.exits.copy()
+                    new_exits.add(direction)
+            if new_exits is not None:
+                self.board[row][col] = Cell(cell.cell_type, new_exits)
+
         # Post-procesamiento: asegurar que todas las conexiones entre celdas del camino sean bidireccionales
         for pos in self.main_path:
             row, col = pos
@@ -2147,6 +2236,38 @@ class DungeonBoard:
             overlay.fill((255, 0, 0))
             self.screen.blit(overlay, (x, y))
 
+    def draw_bridge_cell(self, x: int, y: int, board_row: int, board_col: int) -> None:
+        """Dibuja un puente volante que cruza el barranco en este punto: tablones de
+        madera y cuerdas, anclados de borde a borde de la celda (hacia las celdas
+        accesibles a cada lado), con el vacío del barranco visible a los lados."""
+        size = self.cell_size
+        base_color = (4, 4, 5)
+        pygame.draw.rect(self.screen, base_color, (x, y, size, size))
+
+        wood_color = (94, 64, 36)
+        wood_dark = (60, 40, 22)
+        rope_color = (150, 120, 70)
+        plank_gap = max(10, int(size * 0.12))
+
+        if self.barranco_axis == 'row':
+            # El barranco es una fila: el puente cruza en vertical (N-S)
+            deck_w = int(size * 0.42)
+            deck_x = x + (size - deck_w) // 2
+            pygame.draw.rect(self.screen, wood_color, (deck_x, y, deck_w, size))
+            for py in range(0, size, plank_gap):
+                pygame.draw.line(self.screen, wood_dark, (deck_x, y + py), (deck_x + deck_w, y + py), 3)
+            pygame.draw.line(self.screen, rope_color, (deck_x, y), (deck_x, y + size), 4)
+            pygame.draw.line(self.screen, rope_color, (deck_x + deck_w, y), (deck_x + deck_w, y + size), 4)
+        else:
+            # El barranco es una columna: el puente cruza en horizontal (E-O)
+            deck_h = int(size * 0.42)
+            deck_y = y + (size - deck_h) // 2
+            pygame.draw.rect(self.screen, wood_color, (x, deck_y, size, deck_h))
+            for px in range(0, size, plank_gap):
+                pygame.draw.line(self.screen, wood_dark, (x + px, deck_y), (x + px, deck_y + deck_h), 3)
+            pygame.draw.line(self.screen, rope_color, (x, deck_y), (x + size, deck_y), 4)
+            pygame.draw.line(self.screen, rope_color, (x, deck_y + deck_h), (x + size, deck_y + deck_h), 4)
+
     def draw_cell(self, board_row, board_col, view_row, view_col, pixel_offset_x=0, pixel_offset_y=0):
         """Dibuja una celda del tablero en las coordenadas de la vista."""
         cell = self.board[board_row][board_col]
@@ -2156,6 +2277,12 @@ class DungeonBoard:
         # El barranco es un accidente geográfico fijo: siempre visible, infranqueable
         if self.is_barranco_cell(board_row, board_col):
             self.draw_barranco_cell(x, y, board_row, board_col)
+            return
+
+        # Los puentes son cruzables, pero siguen siendo parte del accidente
+        # geográfico: también se ven siempre, como el resto del barranco
+        if self.is_bridge_cell(board_row, board_col):
+            self.draw_bridge_cell(x, y, board_row, board_col)
             return
 
         # Inicializar variables de color y brillo
@@ -2961,11 +3088,18 @@ class DungeonBoard:
         PASILLO: 1 salida 10%, 2 salidas 30%, 3 salidas 40%, 4 salidas 20%
         HABITACION: 1 salida 50%, 2 salidas 30%, 3 salidas 15%, 4 salidas 5%
         """
+        # Si esta celda es un punto de puente sobre el barranco, sus únicas
+        # salidas son las que cruzan el vacío (nunca las laterales, que darían
+        # al propio barranco infranqueable)
+        if self.is_bridge_cell(*current_pos):
+            near_dir, far_dir = self.get_bridge_crossing_directions()
+            return {near_dir, far_dir}
+
         exits = set()
         # La dirección opuesta a la de entrada siempre está (es por donde se llegó)
         opposite = self.get_opposite_direction(exclude_direction)
         exits.add(opposite)
-        
+
         # Verificar si esta celda está en el camino principal
         required_direction = None
         if current_pos in self.main_path:
@@ -3058,7 +3192,16 @@ class DungeonBoard:
             # Seleccionar aleatoriamente cuáles de las 3 direcciones restantes incluir
             selected = random.sample(other_directions, min(num_additional, len(other_directions)))
             exits.update(selected)
-        
+
+        # Si alguna celda vecina es un punto de puente sobre el barranco, forzar
+        # la salida hacia ella (garantiza que el puente sea siempre alcanzable,
+        # sin depender de que la generación aleatoria lo incluyera)
+        for direction, (dr, dc) in [(Direction.N, (-1, 0)), (Direction.S, (1, 0)),
+                                     (Direction.E, (0, 1)), (Direction.O, (0, -1))]:
+            neighbor = (current_row + dr, current_col + dc)
+            if self.is_bridge_cell(*neighbor):
+                exits.add(direction)
+
         return exits
 
     def place_cell_in_direction(self, direction: Direction):
@@ -3264,11 +3407,16 @@ class DungeonBoard:
             # Crear celda SALIDA con solo la salida de entrada
             exits = {opposite}
             self.board[target_row][target_col] = Cell(CellType.SALIDA, exits)
+        elif self.is_bridge_cell(target_row, target_col):
+            # Puente volante sobre el barranco: siempre un simple cruce (PASILLO)
+            cell_type = CellType.PASILLO
+            exits = self.generate_random_exits(direction, cell_type, (target_row, target_col))
+            self.board[target_row][target_col] = Cell(cell_type, exits)
         else:
             # 75% PASILLO, 25% HABITACION
             cell_type = CellType.PASILLO if random.random() < 0.75 else CellType.HABITACION
             exits = self.generate_random_exits(direction, cell_type, (target_row, target_col))
-        
+
             # Comprobar celdas adyacentes: si existe una vecina con salida hacia aquí, mantener esa salida
             delta = {
                 Direction.N: (-1, 0),
