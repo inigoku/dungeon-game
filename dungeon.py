@@ -579,10 +579,12 @@ class DungeonBoard:
         if self.player_health <= 0:
             self.trigger_game_over()
         else:
-            # Sonido de dolor
+            # Sonido de dolor, siempre a máximo volumen (evita heredar el volumen
+            # bajo de un canal reciclado de pasos/salpicaduras)
             if self.bite_sound:
                 channel = pygame.mixer.find_channel(True)
                 if channel:
+                    channel.set_volume(1.0)
                     channel.play(self.bite_sound)
                 else:
                     self.bite_sound.play()
@@ -717,6 +719,16 @@ class DungeonBoard:
     def is_bridge_cell(self, row: int, col: int) -> bool:
         """Verifica si una celda es uno de los puntos de puente cruzables del barranco."""
         return (row, col) in self.bridge_points
+
+    def is_barranco_revealed(self, row: int, col: int) -> bool:
+        """Verifica si una celda del barranco (o un puente) debe mostrarse: solo
+        una vez visitada esa celda o una adyacente, igual que el resto del mapa."""
+        if (row, col) in self.visited_cells:
+            return True
+        for dr, dc in [(-1, 0), (1, 0), (0, 1), (0, -1)]:
+            if (row + dr, col + dc) in self.visited_cells:
+                return True
+        return False
 
     def is_barranco_line(self, row: int, col: int) -> bool:
         """Verifica si una celda está en la línea del barranco, sea o no un punto de
@@ -2274,15 +2286,20 @@ class DungeonBoard:
         x = view_col * self.cell_size - pixel_offset_x
         y = view_row * self.cell_size - pixel_offset_y
 
-        # El barranco es un accidente geográfico fijo: siempre visible, infranqueable
+        # El barranco (y los puentes que lo cruzan) no se ven hasta estar en una
+        # celda adyacente, igual que el resto del mapa sin explorar
         if self.is_barranco_cell(board_row, board_col):
-            self.draw_barranco_cell(x, y, board_row, board_col)
+            if self.is_barranco_revealed(board_row, board_col):
+                self.draw_barranco_cell(x, y, board_row, board_col)
+            else:
+                pygame.draw.rect(self.screen, (0, 0, 0), (x, y, self.cell_size, self.cell_size))
             return
 
-        # Los puentes son cruzables, pero siguen siendo parte del accidente
-        # geográfico: también se ven siempre, como el resto del barranco
         if self.is_bridge_cell(board_row, board_col):
-            self.draw_bridge_cell(x, y, board_row, board_col)
+            if self.is_barranco_revealed(board_row, board_col):
+                self.draw_bridge_cell(x, y, board_row, board_col)
+            else:
+                pygame.draw.rect(self.screen, (0, 0, 0), (x, y, self.cell_size, self.cell_size))
             return
 
         # Inicializar variables de color y brillo
