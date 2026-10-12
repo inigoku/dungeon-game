@@ -94,6 +94,8 @@ export class Game implements GameInput {
   cameraOffsetRow: number;
   cameraOffsetCol: number;
   readonly cameraSpeed = 0.03;
+  /** true mientras el jugador ha desplazado la vista arrastrando */
+  cameraManual = false;
   shakeIntensity = 0;
   shakeDuration = 0;
   shakeStartTime = 0;
@@ -308,34 +310,26 @@ export class Game implements GameInput {
       if (e.repeat) return;
       this.keyQueue.push({ key });
     };
-    // Puntero (ratón o dedo): un toque corto va a una celda; arrastrar mueve en la dirección del arrastre
+    // Puntero (ratón o dedo): un toque corto va a una celda; arrastrar desplaza la vista
     const toLogical = (e: PointerEvent): [number, number] => {
       const rect = this.canvas.getBoundingClientRect();
       return [((e.clientX - rect.left) * this.width) / rect.width, ((e.clientY - rect.top) * this.height) / rect.height];
     };
-    let drag: { id: number; anchorX: number; anchorY: number; dragged: boolean; lastStep: number } | null = null;
+    let drag: { id: number; startX: number; startY: number; lastX: number; lastY: number; dragged: boolean } | null = null;
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       const [x, y] = toLogical(e);
-      drag = { id: e.pointerId, anchorX: x, anchorY: y, dragged: false, lastStep: 0 };
+      drag = { id: e.pointerId, startX: x, startY: y, lastX: x, lastY: y, dragged: false };
       this.canvas.setPointerCapture(e.pointerId);
     };
     const onPointerMove = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
       const [x, y] = toLogical(e);
-      const dx = x - drag.anchorX;
-      const dy = y - drag.anchorY;
-      const threshold = Math.max(20, this.cellSize * 0.4);
-      if (Math.max(Math.abs(dx), Math.abs(dy)) < threshold) return;
+      if (!drag.dragged && Math.hypot(x - drag.startX, y - drag.startY) < 10) return;
       drag.dragged = true;
-      // Un paso por cada tramo arrastrado, sin superar el ritmo de la animación de caminar
-      const now = performance.now();
-      if (now - drag.lastStep < this.playerWalkDuration * 0.5) return;
-      drag.lastStep = now;
-      drag.anchorX = x;
-      drag.anchorY = y;
-      const key = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'd' : 'a') : dy > 0 ? 's' : 'w';
-      this.keyQueue.push({ key });
+      this.panCamera(x - drag.lastX, y - drag.lastY);
+      drag.lastX = x;
+      drag.lastY = y;
     };
     const onPointerUp = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
@@ -509,6 +503,8 @@ export class Game implements GameInput {
 
   /** Interpola la cámara hacia el jugador y devuelve el desplazamiento flotante. */
   getViewOffset(frames: number): [number, number] {
+    // Con la vista desplazada a mano la cámara se queda donde está
+    if (this.cameraManual) return [this.cameraOffsetRow, this.cameraOffsetCol];
     const [playerRow, playerCol] = this.currentPosition;
     const targetRow = this.cameraTarget(playerRow, this.height);
     const targetCol = this.cameraTarget(playerCol, this.width);
@@ -520,7 +516,24 @@ export class Game implements GameInput {
     return [this.cameraOffsetRow, this.cameraOffsetCol];
   }
 
+  /**
+   * Desplaza la vista siguiendo el arrastre (en píxeles lógicos): el personaje
+   * queda descentrado y la cámara no lo sigue hasta que vuelva a moverse.
+   */
+  panCamera(dxPx: number, dyPx: number): void {
+    if (this.showingTitle) return;
+    this.cameraManual = true;
+    const limit = (offset: number, span: number): number => {
+      const cells = span / this.cellSize;
+      if (this.size <= cells) return (this.size - cells) / 2;
+      return Math.max(-2, Math.min(offset, this.size - cells + 2));
+    };
+    this.cameraOffsetCol = limit(this.cameraOffsetCol - dxPx / this.cellSize, this.width);
+    this.cameraOffsetRow = limit(this.cameraOffsetRow - dyPx / this.cellSize, this.height);
+  }
+
   centerCameraInstantly(targetRow: number, targetCol: number): void {
+    this.cameraManual = false;
     this.cameraOffsetRow = this.cameraTarget(targetRow, this.height);
     this.cameraOffsetCol = this.cameraTarget(targetCol, this.width);
   }
@@ -708,6 +721,7 @@ export class Game implements GameInput {
 
   /** Efectos de entrar en una celda: pasos, animación, monstruos y pensamientos. */
   private enterCell(row: number, col: number): void {
+    this.cameraManual = false; // al moverse, la cámara vuelve a seguir al personaje
     this.playFootstep();
 
     if (this.hasBloodStains(row, col) && this.ambientSounds['dos-gotas']) {
@@ -1336,6 +1350,7 @@ export class Game implements GameInput {
     let running = true;
     for (const ev of this.keyQueue.splice(0)) {
       this.cancelAutoMove(); // cualquier tecla cancela el movimiento automático
+      this.cameraManual = false; // y la cámara vuelve al personaje
       if (!this.input.handleKey(ev.key)) running = false;
     }
     for (const click of this.clickQueue.splice(0)) this.handleClick(click.x, click.y);
