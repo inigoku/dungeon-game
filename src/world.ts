@@ -222,6 +222,40 @@ export class World {
     return false;
   }
 
+  /**
+   * Camino más corto (BFS) entre dos celdas por conexiones mutuas de salidas,
+   * pasando solo por celdas que `allowed` acepte. Devuelve los pasos SIN la
+   * celda de origen, o null si no hay camino.
+   */
+  findPath(start: Pos, target: Pos, allowed: (row: number, col: number) => boolean): Pos[] | null {
+    if (!allowed(target[0], target[1])) return null;
+    const parents = new Map<number, Pos | null>([[posKey(start[0], start[1]), null]]);
+    const queue: Pos[] = [start];
+    for (let head = 0; head < queue.length; head++) {
+      const pos = queue[head];
+      if (pos[0] === target[0] && pos[1] === target[1]) {
+        const steps: Pos[] = [];
+        for (let node: Pos | null = pos; node && !(node[0] === start[0] && node[1] === start[1]); node = parents.get(posKey(node[0], node[1])) ?? null) {
+          steps.push(node);
+        }
+        return steps.reverse();
+      }
+      const cell = this.board[pos[0]][pos[1]];
+      for (const direction of DIRECTIONS) {
+        if (!cell.exits.has(direction)) continue;
+        const [dr, dc] = DELTA[direction];
+        const nr = pos[0] + dr;
+        const nc = pos[1] + dc;
+        if (!this.inBounds(nr, nc) || parents.has(posKey(nr, nc)) || !allowed(nr, nc)) continue;
+        const next = this.board[nr][nc];
+        if (next.cellType === CellType.EMPTY || !next.exits.has(oppositeDirection(direction))) continue;
+        parents.set(posKey(nr, nc), pos);
+        queue.push([nr, nc]);
+      }
+    }
+    return null;
+  }
+
   // --- Salida y camino principal ----------------------------------------------
 
   /** Posición de la salida, a entre el 75 % y el 100 % de la distancia al borde. */

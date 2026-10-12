@@ -112,6 +112,7 @@ export class Renderer {
       }
     }
 
+    this.drawAutoMoveMarker(offsetRow, offsetCol);
     this.drawBarriers(offsetRow, offsetCol);
 
     if (g.showingGameOver) {
@@ -611,6 +612,17 @@ export class Renderer {
   // ---------------------------------------------------------------------------
   // Efectos y superposiciones
   // ---------------------------------------------------------------------------
+
+  /** Anillo dorado sobre la celda de destino del movimiento automático. */
+  private drawAutoMoveMarker(offsetRow: number, offsetCol: number): void {
+    const target = this.game.autoTarget;
+    if (!target) return;
+    const size = this.cellSize;
+    const cx = (target[1] - offsetCol) * size + size / 2;
+    const cy = (target[0] - offsetRow) * size + size / 2;
+    const pulse = (Math.sin(ticks() * 0.008) + 1) / 2;
+    circle(this.ctx, [255, 215, 0], cx, cy, Math.max(4, size * (0.16 + 0.04 * pulse)), Math.max(2, Math.floor(size / 30)), 0.55 + 0.3 * pulse);
+  }
 
   /** Barreras mágicas que impiden a los monstruos pisar inicio/salida o salir del camino. */
   private drawBarriers(offsetRow: number, offsetCol: number): void {

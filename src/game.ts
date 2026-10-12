@@ -214,6 +214,11 @@ export class Game implements GameInput {
   showPath = false;
   autoRevealMode = false;
 
+  // Movimiento automático por clic/toque
+  autoTarget: Pos | null = null;
+  private autoPath: Pos[] = [];
+  private autoNextStepTime = 0;
+
   private torchStaticCache = new Map<number, { sig: number; count: number }>();
   private lastFootprintCleanup = 0;
   private disposed = false;
@@ -1113,6 +1118,79 @@ export class Game implements GameInput {
     this.visitedCells.add(posKey(pos[0], pos[1]));
   }
 
+  // --- Movimiento automático ----------------------------------------------------
+
+  /** Clic o toque en el lienzo (coordenadas lógicas). */
+  private handleClick(x: number, y: number): void {
+    if (this.showingGameOver) {
+      this.input.handleClick(x, y);
+      return;
+    }
+    // Tocar el título equivale a pulsar una tecla
+    if (this.showingTitle) {
+      this.input.handleKey('Enter');
+      return;
+    }
+    const row = Math.floor(this.cameraOffsetRow + y / this.cellSize);
+    const col = Math.floor(this.cameraOffsetCol + x / this.cellSize);
+    this.startAutoMove(row, col);
+  }
+
+  /** Va andando hasta una celda visible si hay camino; un clic nuevo siempre detiene el trayecto anterior. */
+  startAutoMove(row: number, col: number): void {
+    this.cancelAutoMove();
+    if (this.autoMoveBlocked() || !this.world.inBounds(row, col)) return;
+    const visited = (r: number, c: number) => this.visitedCells.has(posKey(r, c)) && this.world.board[r][c].cellType !== CellType.EMPTY;
+    const path = this.world.findPath(this.currentPosition, [row, col], visited);
+    if (!path || path.length === 0) return;
+    this.autoPath = path;
+    this.autoTarget = [row, col];
+    this.autoNextStepTime = 0;
+  }
+
+  cancelAutoMove(): void {
+    this.autoPath = [];
+    this.autoTarget = null;
+  }
+
+  private autoMoveBlocked(): boolean {
+    return (
+      this.showingTitle ||
+      this.showingGameOver ||
+      this.introAnimActive ||
+      this.thoughtPending ||
+      this.askingExitConfirmation ||
+      this.askingMainMenuConfirmation ||
+      (this.audio.thoughtActive && this.audio.thoughtBlocksMovement) ||
+      (this.exitImageShown && ticks() - this.exitImageStartTime < EXIT_IMAGE_BLOCK_MS)
+    );
+  }
+
+  private updateAutoMove(now: number): void {
+    if (!this.autoTarget) return;
+    // Un pensamiento, diálogo o el fin de la partida interrumpen el trayecto
+    if (this.autoMoveBlocked()) {
+      this.cancelAutoMove();
+      return;
+    }
+    if (now < this.autoNextStepTime) return;
+
+    const next = this.autoPath[0];
+    const [row, col] = this.currentPosition;
+    const direction: Direction = next[0] < row ? 'N' : next[0] > row ? 'S' : next[1] > col ? 'E' : 'O';
+    const health = this.playerHealth;
+    this.placeCellInDirection(direction);
+
+    // Si no se llegó a la celda prevista (bloqueo, monstruo...) o hubo daño, se detiene
+    if (this.currentPosition[0] !== next[0] || this.currentPosition[1] !== next[1] || this.playerHealth < health) {
+      this.cancelAutoMove();
+      return;
+    }
+    this.autoPath.shift();
+    this.autoNextStepTime = now + this.playerWalkDuration;
+    if (this.autoPath.length === 0) this.cancelAutoMove();
+  }
+
   // --- Bucle principal ---------------------------------------------------------
 
   /** Ejecuta la partida. Resuelve true si hay que reiniciar y false si se sale. */
@@ -1218,9 +1296,11 @@ export class Game implements GameInput {
     // Eventos de entrada acumulados desde el último frame
     let running = true;
     for (const ev of this.keyQueue.splice(0)) {
+      this.cancelAutoMove(); // cualquier tecla cancela el movimiento automático
       if (!this.input.handleKey(ev.key)) running = false;
     }
-    for (const click of this.clickQueue.splice(0)) this.input.handleClick(click.x, click.y);
+    for (const click of this.clickQueue.splice(0)) this.handleClick(click.x, click.y);
+    this.updateAutoMove(now);
 
     this.renderer.draw(frames);
 
