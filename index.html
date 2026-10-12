@@ -2,7 +2,7 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <link rel="icon" href="data:," />
     <title>Dungeon Explorer 2D</title>
     <style>
@@ -83,6 +83,61 @@
       #action:focus-visible {
         background: #6a1414;
       }
+      /* Controles táctiles: solo en pantallas táctiles */
+      #touch {
+        display: none;
+      }
+      @media (pointer: coarse) {
+        html,
+        body {
+          touch-action: manipulation;
+          -webkit-user-select: none;
+          user-select: none;
+        }
+        #stage {
+          width: min(100vw, calc(100dvh - 190px));
+          height: min(100vw, calc(100dvh - 190px));
+          top: 0;
+        }
+        #touch {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          height: 180px;
+          padding: 0 16px env(safe-area-inset-bottom);
+          box-sizing: border-box;
+        }
+      }
+      #dpad {
+        display: grid;
+        grid-template: repeat(3, 56px) / repeat(3, 56px);
+        gap: 4px;
+      }
+      #dpad .up { grid-area: 1 / 2; }
+      #dpad .left { grid-area: 2 / 1; }
+      #dpad .right { grid-area: 2 / 3; }
+      #dpad .down { grid-area: 3 / 2; }
+      #side {
+        display: grid;
+        grid-template-columns: repeat(2, 56px);
+        gap: 8px;
+      }
+      #touch button {
+        font: inherit;
+        font-size: 22px;
+        color: #fff;
+        background: #2a1010;
+        border: 2px solid #6a1818;
+        border-radius: 10px;
+        touch-action: manipulation;
+      }
+      #touch button:active {
+        background: #6a1414;
+      }
     </style>
   </head>
   <body>
@@ -93,6 +148,20 @@
         <p id="overlay-text">Cargando recursos…</p>
         <div id="bar"><div id="bar-fill"></div></div>
         <button id="action" type="button" hidden>Empezar</button>
+      </div>
+    </div>
+    <div id="touch" aria-label="Controles táctiles">
+      <div id="dpad">
+        <button class="up" data-key="w" aria-label="Arriba">▲</button>
+        <button class="left" data-key="a" aria-label="Izquierda">◀</button>
+        <button class="right" data-key="d" aria-label="Derecha">▶</button>
+        <button class="down" data-key="s" aria-label="Abajo">▼</button>
+      </div>
+      <div id="side">
+        <button data-key="z" aria-label="Acercar">＋</button>
+        <button data-key="x" aria-label="Alejar">－</button>
+        <button data-key="Escape" aria-label="Menú">☰</button>
+        <button data-key="r" aria-label="Reiniciar">↻</button>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

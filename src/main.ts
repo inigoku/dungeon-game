@@ -66,6 +66,18 @@ async function boot(): Promise<void> {
   await playLoop(assets);
 }
 
+// Controles táctiles: cada botón lanza la tecla equivalente
+for (const button of document.querySelectorAll<HTMLButtonElement>('#touch button')) {
+  button.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: button.dataset.key }));
+  });
+}
+// Tocar el lienzo equivale a pulsar una tecla (para empezar desde el título)
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+});
+
 boot().catch((error) => {
   console.error(error);
   overlayTitle.textContent = 'Error';
