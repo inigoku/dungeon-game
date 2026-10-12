@@ -308,22 +308,61 @@ export class Game implements GameInput {
       if (e.repeat) return;
       this.keyQueue.push({ key });
     };
-    const onMouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
+    // Puntero (ratón o dedo): un toque corto va a una celda; arrastrar mueve en la dirección del arrastre
+    const toLogical = (e: PointerEvent): [number, number] => {
       const rect = this.canvas.getBoundingClientRect();
-      this.clickQueue.push({
-        x: ((e.clientX - rect.left) * this.width) / rect.width,
-        y: ((e.clientY - rect.top) * this.height) / rect.height,
-      });
+      return [((e.clientX - rect.left) * this.width) / rect.width, ((e.clientY - rect.top) * this.height) / rect.height];
+    };
+    let drag: { id: number; anchorX: number; anchorY: number; dragged: boolean; lastStep: number } | null = null;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const [x, y] = toLogical(e);
+      drag = { id: e.pointerId, anchorX: x, anchorY: y, dragged: false, lastStep: 0 };
+      this.canvas.setPointerCapture(e.pointerId);
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const [x, y] = toLogical(e);
+      const dx = x - drag.anchorX;
+      const dy = y - drag.anchorY;
+      const threshold = Math.max(20, this.cellSize * 0.4);
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < threshold) return;
+      drag.dragged = true;
+      // Un paso por cada tramo arrastrado, sin superar el ritmo de la animación de caminar
+      const now = performance.now();
+      if (now - drag.lastStep < this.playerWalkDuration * 0.5) return;
+      drag.lastStep = now;
+      drag.anchorX = x;
+      drag.anchorY = y;
+      const key = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'd' : 'a') : dy > 0 ? 's' : 'w';
+      this.keyQueue.push({ key });
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const wasDrag = drag.dragged;
+      drag = null;
+      if (!wasDrag) {
+        const [x, y] = toLogical(e);
+        this.clickQueue.push({ x, y });
+      }
+    };
+    const onPointerCancel = () => {
+      drag = null;
     };
     const observer = new ResizeObserver(() => this.resizeTo(this.canvas.clientWidth, this.canvas.clientHeight));
     observer.observe(this.canvas);
     this.cleanups.push(() => observer.disconnect());
     window.addEventListener('keydown', onKeyDown);
-    this.canvas.addEventListener('mousedown', onMouseDown);
+    this.canvas.addEventListener('pointerdown', onPointerDown);
+    this.canvas.addEventListener('pointermove', onPointerMove);
+    this.canvas.addEventListener('pointerup', onPointerUp);
+    this.canvas.addEventListener('pointercancel', onPointerCancel);
     this.cleanups.push(
       () => window.removeEventListener('keydown', onKeyDown),
-      () => this.canvas.removeEventListener('mousedown', onMouseDown),
+      () => this.canvas.removeEventListener('pointerdown', onPointerDown),
+      () => this.canvas.removeEventListener('pointermove', onPointerMove),
+      () => this.canvas.removeEventListener('pointerup', onPointerUp),
+      () => this.canvas.removeEventListener('pointercancel', onPointerCancel),
     );
   }
 
