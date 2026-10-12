@@ -73,11 +73,6 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('#touch button
     window.dispatchEvent(new KeyboardEvent('keydown', { key: button.dataset.key }));
   });
 }
-// Tocar el lienzo equivale a pulsar una tecla (para empezar desde el título)
-canvas.addEventListener('pointerdown', (e) => {
-  if (e.pointerType === 'touch') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-});
-
 boot().catch((error) => {
   console.error(error);
   overlayTitle.textContent = 'Error';
