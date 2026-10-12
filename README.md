@@ -37,6 +37,7 @@ Un juego de exploración de mazmorras en 2D escrito en **TypeScript** y dibujado
 | --- | --- |
 | **W A S D** / **↑ ← ↓ →** | Moverse |
 | **Clic / toque** en una celda visible | Ir andando hasta ella si hay camino; otro clic cambia el destino (o detiene el trayecto si no hay camino) y cualquier tecla lo cancela |
+| **Arrastrar** con el dedo o el ratón | Desplazar la vista para ver zonas lejanas (la cámara vuelve al personaje cuando te mueves o pulsas una tecla) |
 | **Z** / **X** | Acercar / alejar el zoom |
 | **ESC** | Cancelar el pensamiento activo, o volver al menú (S = sí, N = no) |
 | **R** | Reiniciar tras el Game Over (o clic en el botón) |
