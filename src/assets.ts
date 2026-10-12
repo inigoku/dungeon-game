@@ -42,15 +42,22 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
   });
 }
 
-async function loadSound(mixer: Mixer, url: string): Promise<AudioBuffer | null> {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await mixer.decode(await response.arrayBuffer());
-  } catch (error) {
-    console.warn(`No se pudo cargar ${url}:`, error);
-    return null;
+async function fetchDecode(mixer: Mixer, url: string): Promise<AudioBuffer> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return await mixer.decode(await response.arrayBuffer());
+}
+
+/** Prueba OGG (bucles sin cortes) y, si el navegador no lo decodifica (Safari), M4A. */
+async function loadSound(mixer: Mixer, name: string): Promise<AudioBuffer | null> {
+  for (const ext of ['ogg', 'm4a']) {
+    try {
+      return await fetchDecode(mixer, `sound/${name}.${ext}`);
+    } catch (error) {
+      console.warn(`No se pudo cargar sound/${name}.${ext}:`, error);
+    }
   }
+  return null;
 }
 
 /** Carga todos los recursos informando del progreso (0..1). */
@@ -68,7 +75,7 @@ export async function loadAssets(onProgress: (fraction: number) => void): Promis
       tick();
     }),
     ...SOUND_NAMES.map(async (name) => {
-      buffers[name] = await loadSound(mixer, `sound/${name}.ogg`);
+      buffers[name] = await loadSound(mixer, name);
       tick();
     }),
   ]);
