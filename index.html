@@ -20,10 +20,8 @@
       }
       #stage {
         position: relative;
-        width: min(100vw, 100vh);
-        height: min(100vw, 100vh);
-        margin: 0 auto;
-        top: calc((100vh - min(100vw, 100vh)) / 2);
+        width: 100vw;
+        height: 100vh;
       }
       canvas {
         display: block;
@@ -95,9 +93,8 @@
           user-select: none;
         }
         #stage {
-          width: min(100vw, calc(100dvh - 190px));
-          height: min(100vw, calc(100dvh - 190px));
-          top: 0;
+          width: 100vw;
+          height: calc(100dvh - 190px);
         }
         #touch {
           display: flex;

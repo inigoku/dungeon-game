@@ -75,8 +75,9 @@ export class Game implements GameInput {
   readonly zoomLevels = [5, 7, 11, 21, 51, DEFAULT_BOARD_SIZE];
   currentZoomIndex = 0;
   readonly fixedWindowSize = DEFAULT_VIEW_SIZE * DEFAULT_CELL_SIZE;
-  readonly width = this.fixedWindowSize;
-  readonly height = this.fixedWindowSize;
+  /** Tamaño lógico del lienzo: el lado corto mide siempre `fixedWindowSize`; el otro se amplía según la ventana. */
+  width = this.fixedWindowSize;
+  height = this.fixedWindowSize;
 
   readonly world: World;
   readonly ctx: Ctx;
@@ -226,8 +227,6 @@ export class Game implements GameInput {
     readonly canvas: HTMLCanvasElement,
     private readonly assets: Assets,
   ) {
-    canvas.width = this.width;
-    canvas.height = this.height;
     this.ctx = context2d(canvas);
 
     this.world = new World(this.size);
@@ -238,8 +237,9 @@ export class Game implements GameInput {
     this.playerAnimFromPos = this.currentPosition;
     this.playerAnimToPos = this.currentPosition;
 
-    this.cameraOffsetRow = center - Math.floor(this.viewSize / 2);
-    this.cameraOffsetCol = center - Math.floor(this.viewSize / 2);
+    this.resizeTo(canvas.clientWidth, canvas.clientHeight);
+    this.cameraOffsetRow = this.cameraTarget(center, this.height);
+    this.cameraOffsetCol = this.cameraTarget(center, this.width);
 
     this.audio = new AudioManager(assets.mixer, assets.buffers);
     this.loadSounds();
@@ -278,17 +278,17 @@ export class Game implements GameInput {
 
   private loadImages(): void {
     const { images } = this.assets;
-    if (images['titulo']) this.titleImage = scaleImage(images['titulo'], this.width, this.height);
+    if (images['titulo']) this.titleImage = scaleImage(images['titulo'], this.fixedWindowSize, this.fixedWindowSize);
     else this.showingTitle = false;
 
     const scaleToBox = (img: HTMLImageElement | null, box: number): Canvas | null =>
       img ? fitImage(img, box, box) : null;
 
-    if (images['losa']) this.exitImage = fitImage(images['losa'], this.width * 0.9, (this.height - 120) * 0.9);
-    if (images['profundo']) this.profundoImage = fitImage(images['profundo'], this.width * 0.9, this.height - 200);
-    this.swordImage = scaleToBox(images['espada'], Math.min(this.width, this.height) * 0.8);
-    this.torchImage = scaleToBox(images['antorcha'], Math.min(this.width, this.height) * 0.6);
-    this.bloodImage = scaleToBox(images['sangre'], Math.min(this.width, this.height) * 0.6);
+    if (images['losa']) this.exitImage = fitImage(images['losa'], this.fixedWindowSize * 0.9, (this.fixedWindowSize - 120) * 0.9);
+    if (images['profundo']) this.profundoImage = fitImage(images['profundo'], this.fixedWindowSize * 0.9, this.fixedWindowSize - 200);
+    this.swordImage = scaleToBox(images['espada'], this.fixedWindowSize * 0.8);
+    this.torchImage = scaleToBox(images['antorcha'], this.fixedWindowSize * 0.6);
+    this.bloodImage = scaleToBox(images['sangre'], this.fixedWindowSize * 0.6);
   }
 
   // --- Entrada ----------------------------------------------------------------
@@ -311,6 +311,9 @@ export class Game implements GameInput {
         y: ((e.clientY - rect.top) * this.height) / rect.height,
       });
     };
+    const observer = new ResizeObserver(() => this.resizeTo(this.canvas.clientWidth, this.canvas.clientHeight));
+    observer.observe(this.canvas);
+    this.cleanups.push(() => observer.disconnect());
     window.addEventListener('keydown', onKeyDown);
     this.canvas.addEventListener('mousedown', onMouseDown);
     this.cleanups.push(
@@ -428,28 +431,54 @@ export class Game implements GameInput {
 
   // --- Cámara y zoom -------------------------------------------------------------
 
+  /** Celdas visibles en horizontal y en vertical (incluida la celda parcial del borde). */
+  get viewCols(): number {
+    return Math.ceil(this.width / this.cellSize);
+  }
+
+  get viewRows(): number {
+    return Math.ceil(this.height / this.cellSize);
+  }
+
+  /**
+   * Ajusta el lienzo a la ventana: el lado corto mide 630 y el largo se amplía
+   * para dibujar todas las celdas que quepan (sin bandas negras).
+   */
+  resizeTo(cssWidth: number, cssHeight: number): void {
+    if (cssWidth <= 0 || cssHeight <= 0) return;
+    const aspect = cssWidth / cssHeight;
+    const long = Math.round(this.fixedWindowSize * Math.min(Math.max(aspect, 1 / aspect), 4));
+    this.width = aspect >= 1 ? long : this.fixedWindowSize;
+    this.height = aspect >= 1 ? this.fixedWindowSize : long;
+    this.canvas.width = this.width;
+    this.canvas.height = this.height;
+    this.updateCameraTarget();
+  }
+
+  /** Desplazamiento de cámara (en celdas) que centra la posición `pos` en un eje de `span` píxeles. */
+  private cameraTarget(pos: number, span: number): number {
+    const cells = span / this.cellSize;
+    // Si el tablero es más pequeño que la vista, se centra
+    if (this.size <= cells) return (this.size - cells) / 2;
+    return Math.max(0, Math.min(pos + 0.5 - cells / 2, this.size - cells));
+  }
+
   /** Interpola la cámara hacia el jugador y devuelve el desplazamiento flotante. */
   getViewOffset(frames: number): [number, number] {
     const [playerRow, playerCol] = this.currentPosition;
-    const maxOffset = this.size - this.viewSize;
-    const half = Math.floor(this.viewSize / 2);
-    const targetRow = Math.max(0, Math.min(playerRow - half, maxOffset));
-    const targetCol = Math.max(0, Math.min(playerCol - half, maxOffset));
+    const targetRow = this.cameraTarget(playerRow, this.height);
+    const targetCol = this.cameraTarget(playerCol, this.width);
 
     // Factor equivalente a aplicar `cameraSpeed` una vez por cada frame a 60 fps
     const k = 1 - Math.pow(1 - this.cameraSpeed, frames);
     this.cameraOffsetRow += (targetRow - this.cameraOffsetRow) * k;
     this.cameraOffsetCol += (targetCol - this.cameraOffsetCol) * k;
-    this.cameraOffsetRow = Math.max(0, Math.min(this.cameraOffsetRow, maxOffset));
-    this.cameraOffsetCol = Math.max(0, Math.min(this.cameraOffsetCol, maxOffset));
     return [this.cameraOffsetRow, this.cameraOffsetCol];
   }
 
   centerCameraInstantly(targetRow: number, targetCol: number): void {
-    const half = Math.floor(this.viewSize / 2);
-    const maxOffset = this.size - this.viewSize;
-    this.cameraOffsetRow = Math.max(0, Math.min(targetRow - half, maxOffset));
-    this.cameraOffsetCol = Math.max(0, Math.min(targetCol - half, maxOffset));
+    this.cameraOffsetRow = this.cameraTarget(targetRow, this.height);
+    this.cameraOffsetCol = this.cameraTarget(targetCol, this.width);
   }
 
   private setZoomIndex(index: number): void {
@@ -467,18 +496,9 @@ export class Game implements GameInput {
     if (this.currentZoomIndex < this.zoomLevels.length - 1) this.setZoomIndex(this.currentZoomIndex + 1);
   }
 
-  /** Recentra la cámara (sin interpolar) en el jugador tras cambiar el zoom. */
+  /** Recentra la cámara (sin interpolar) en el jugador tras cambiar el zoom o el tamaño. */
   updateCameraTarget(): void {
-    const [playerRow, playerCol] = this.currentPosition;
-    if (this.viewSize >= this.size) {
-      this.cameraOffsetRow = 0;
-      this.cameraOffsetCol = 0;
-      return;
-    }
-    const half = Math.floor(this.viewSize / 2);
-    const maxOffset = this.size - this.viewSize;
-    this.cameraOffsetRow = Math.max(0, Math.min(playerRow - half, maxOffset));
-    this.cameraOffsetCol = Math.max(0, Math.min(playerCol - half, maxOffset));
+    this.centerCameraInstantly(this.currentPosition[0], this.currentPosition[1]);
   }
 
   // --- Antorchas, sangre y brillo -----------------------------------------------
