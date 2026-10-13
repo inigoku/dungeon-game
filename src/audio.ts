@@ -116,8 +116,12 @@ export class Mixer {
     this.channels.clear();
   }
 
-  async decode(data: ArrayBuffer): Promise<AudioBuffer> {
-    return await this.ctx.decodeAudioData(data);
+  /** Compatible con Safari antiguo, cuyo decodeAudioData solo admite callbacks. */
+  decode(data: ArrayBuffer): Promise<AudioBuffer> {
+    return new Promise((resolve, reject) => {
+      const result = this.ctx.decodeAudioData(data, resolve, reject);
+      if (result && typeof result.then === 'function') result.then(resolve, reject);
+    });
   }
 }
 

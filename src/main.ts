@@ -56,10 +56,50 @@ async function playLoop(assets: Assets): Promise<void> {
   }
 }
 
+/** Panel para diagnosticar el audio en el móvil: se abre con `?audio` en la dirección. */
+function showAudioPanel(assets: Assets): void {
+  const panel = document.createElement('div');
+  panel.style.cssText =
+    'position:fixed;left:6px;top:6px;right:6px;z-index:10;padding:8px;border-radius:6px;background:rgba(0,0,0,.82);color:#9f9;font:11px/1.35 monospace;white-space:pre-wrap;max-height:55vh;overflow:auto';
+  const text = document.createElement('div');
+  const beep = document.createElement('button');
+  beep.textContent = 'Probar sonido';
+  beep.style.cssText = 'margin-top:6px;padding:6px 10px;font:inherit';
+  panel.append(text, beep);
+  document.body.append(panel);
+
+  const { mixer, audioDiag } = assets;
+  beep.addEventListener('click', () => {
+    void mixer.unlock().then(() => {
+      const osc = mixer.ctx.createOscillator();
+      const gain = mixer.ctx.createGain();
+      gain.gain.value = 0.25;
+      osc.frequency.value = 440;
+      osc.connect(gain).connect(mixer.ctx.destination);
+      osc.start();
+      osc.stop(mixer.ctx.currentTime + 0.4);
+    });
+  });
+  const refresh = () => {
+    const formats = Object.values(audioDiag.formats);
+    const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+    text.textContent = [
+      `contexto: ${mixer.ctx.state} @ ${mixer.ctx.sampleRate} Hz`,
+      `audioSession: ${session ? session.type : 'no disponible'}`,
+      `ogg soportado: ${audioDiag.oggSupported}`,
+      `sonidos: ${formats.filter(Boolean).length}/${formats.length} (ogg ${formats.filter((f) => f === 'ogg').length}, m4a ${formats.filter((f) => f === 'm4a').length})`,
+      ...audioDiag.errors.slice(0, 6).map((e) => `! ${e}`),
+    ].join('\n');
+  };
+  refresh();
+  setInterval(refresh, 500);
+}
+
 async function boot(): Promise<void> {
   const assets = await loadAssets((fraction) => {
     barFill.style.width = `${Math.round(fraction * 100)}%`;
   });
+  if (new URLSearchParams(location.search).has('audio')) showAudioPanel(assets);
   // Los navegadores solo dejan sonar el audio tras un gesto del usuario
   await showOverlay('Dungeon Explorer 2D', 'Explora la mazmorra, encuentra la salida y sobrevive. Mejor con auriculares.', 'Empezar');
   await assets.mixer.unlock();
