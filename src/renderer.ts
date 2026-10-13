@@ -16,9 +16,7 @@ import {
   drawWetFootprints,
 } from './decorations';
 import type { DeepOne, Game } from './game';
-import { PLAYER_PALETTE } from './game';
 import {
-  arc,
   circle,
   context2d,
   createCanvas,
@@ -36,6 +34,7 @@ import {
 } from './gfx';
 import { CellType, DELTA, oppositeDirection, posKey, type Cell, type Direction } from './models';
 import { seeded } from './rng';
+import { drawDeepOne, drawWarrior } from './sprites';
 import { ticks } from './time';
 
 interface CachedTexture {
@@ -880,7 +879,7 @@ export class Renderer {
 
       const centerX = Math.trunc(viewCol * size) + Math.floor(size / 2);
       const centerY = Math.trunc(viewRow * size) + Math.floor(size / 2);
-      const spriteSize = Math.trunc(size * 0.45);
+      const spriteSize = Math.trunc(size * 0.55);
 
       if (monster.dead) {
         this.drawBloodPool(centerX, centerY, monster.deathTime, monster.row * 1000 + monster.col);
@@ -898,105 +897,15 @@ export class Renderer {
 
   /** Sprite de un Profundo (humanoide pez, verde azulado). */
   private drawDeepOneSprite(ctx: Ctx, cx: number, cy: number, size: number, monster: DeepOne | null): void {
-    const s = Math.max(8, Math.trunc(size));
-    const skin: RGB = [40, 140, 100];
-    const skinDark: RGB = [30, 110, 80];
-    const belly: RGB = [60, 160, 120];
-    const eyeCol: RGB = [255, 230, 50];
-    const pupilCol: RGB = [0, 0, 0];
-    const mouthCol: RGB = [20, 60, 40];
     const now = ticks();
-    const half = (n: number) => Math.floor(n / 2);
-
-    const breath = Math.sin(now * 0.003) * (s * 0.03);
-    const bodyW = Math.trunc(s * 0.55);
-    const bodyH = Math.trunc(s * 0.65);
-    const bodyY = cy - Math.floor(bodyH / 4) + Math.trunc(breath);
-
-    const roaring = monster?.state === 'ROARING';
-    const roarT = roaring && monster ? now - monster.stateStartTime : 0;
-
-    // Espinas dorsales
-    const spineW = Math.trunc(s * 0.08);
-    const spineH = Math.trunc(s * 0.15);
-    for (let i = 0; i < 3; i++) {
-      const sy = bodyY - half(bodyH) + i * (spineH + 2);
-      polygon(ctx, skinDark, [[cx - half(bodyW) + 5, sy + spineH], [cx - half(bodyW) - spineW, sy + half(spineH)], [cx - half(bodyW) + 5, sy]]);
-      polygon(ctx, skinDark, [[cx + half(bodyW) - 5, sy + spineH], [cx + half(bodyW) + spineW, sy + half(spineH)], [cx + half(bodyW) - 5, sy]]);
-    }
-
-    // Piernas
-    const legW = Math.trunc(s * 0.16);
-    const legH = Math.trunc(s * 0.45);
-    const legY = bodyY + Math.floor(bodyH / 3);
-    const walkOffset = monster?.animating ? Math.trunc(Math.sin((now - monster.animStartTime) * 0.02) * (s * 0.1)) : 0;
-    ellipse(ctx, skin, cx - Math.floor(bodyW / 4) - half(legW), legY + walkOffset, legW, legH);
-    ellipse(ctx, skin, cx + Math.floor(bodyW / 4) - half(legW), legY - walkOffset, legW, legH);
-
-    // Brazos largos
-    const armW = Math.trunc(s * 0.14);
-    const armH = Math.trunc(s * 0.55);
-    if (roaring) {
-      const armOffsetY = -Math.trunc(Math.sin(roarT * 0.02) * (s * 0.15)) - s * 0.25;
-      ellipse(ctx, skin, cx - half(bodyW) - armW, bodyY + armOffsetY, armW, armH);
-      ellipse(ctx, skin, cx + half(bodyW), bodyY + armOffsetY, armW, armH);
-    } else {
-      ellipse(ctx, skin, cx - half(bodyW) - half(armW), bodyY, armW, armH);
-      ellipse(ctx, skin, cx + half(bodyW) - half(armW), bodyY, armW, armH);
-    }
-
-    // Cuerpo y vientre
-    ellipse(ctx, skin, cx - half(bodyW), bodyY - half(bodyH), bodyW, bodyH);
-    ellipse(ctx, belly, cx - Math.floor(bodyW / 3), bodyY - Math.floor(bodyH / 3), Math.floor(bodyW / 1.5), Math.floor(bodyH / 1.5));
-
-    // Escamas
-    for (let i = 0; i < 3; i++) {
-      const sy = bodyY - Math.floor(bodyH / 4) + i * (s * 0.1);
-      arc(ctx, skinDark, cx - s * 0.1, sy, s * 0.2, s * 0.1, 0, 3.14, 1);
-    }
-
-    // Cabeza de pez
-    const headW = Math.trunc(s * 0.5);
-    const headH = Math.trunc(s * 0.55);
-    const headY = bodyY - half(bodyH) - Math.floor(headH / 3);
-    const crest = Math.trunc(s * 0.1);
-    polygon(ctx, skinDark, [[cx, headY - half(headH) - crest], [cx - crest, headY - half(headH) + crest], [cx + crest, headY - half(headH) + crest]]);
-    ellipse(ctx, skin, cx - half(headW), headY - half(headH), headW, headH);
-
-    // Boca ancha
-    const mouthY = headY + Math.trunc(headH * 0.25);
-    const mouthW = Math.trunc(headW * 0.6);
-    if (roaring) ellipse(ctx, mouthCol, cx - half(mouthW), mouthY, mouthW, Math.trunc(headH * 0.25));
-    else arc(ctx, mouthCol, cx - half(mouthW), mouthY - 5, mouthW, 10, 3.14, 2 * 3.14, 2);
-
-    // Ojos saltones
-    const eyeR = Math.trunc(s * 0.13);
-    const eyeY = headY - Math.trunc(headH * 0.1);
-    const pupilOffset = roaring ? Math.trunc(Math.sin(roarT * 0.015) * (eyeR * 0.5)) : 0;
-    const eyeDx = Math.trunc(headW * 0.35);
-    const pupilR = Math.max(1, Math.trunc(eyeR * 0.3));
-    circle(ctx, eyeCol, cx - eyeDx, eyeY, eyeR);
-    circle(ctx, pupilCol, cx - eyeDx + pupilOffset, eyeY, pupilR);
-    circle(ctx, eyeCol, cx + eyeDx, eyeY, eyeR);
-    circle(ctx, pupilCol, cx + eyeDx + pupilOffset, eyeY, pupilR);
-
-    // Aletas laterales
-    const finW = Math.trunc(s * 0.18);
-    const finH = Math.trunc(s * 0.25);
-    polygon(ctx, skin, [[cx - half(headW) + 5, headY], [cx - half(headW) - finW, headY - half(finH)], [cx - half(headW) - finW, headY + half(finH)]]);
-    polygon(ctx, skin, [[cx + half(headW) - 5, headY], [cx + half(headW) + finW, headY - half(finH)], [cx + half(headW) + finW, headY + half(finH)]]);
-
-    // Indicador de alerta (!)
-    if (monster?.alerted && !monster.dead) {
-      const bob = Math.trunc(Math.sin(now * 0.01) * 2);
-      const alertY = headY - half(headH) - Math.trunc(s * 0.3) + bob;
-      const red: RGB = [255, 0, 0];
-      const dot = Math.max(2, Math.trunc(s * 0.08));
-      circle(ctx, red, cx, alertY, dot);
-      const lineW = Math.max(2, Math.trunc(s * 0.06));
-      const lineH = Math.trunc(s * 0.25);
-      fillRect(ctx, red, cx - half(lineW), alertY - dot - 2 - lineH, lineW, lineH);
-    }
+    drawDeepOne(ctx, cx, cy, size, {
+      walkPhase: monster?.animating ? Math.sin((now - monster.animStartTime) * 0.02) : 0,
+      roaring: monster?.state === 'ROARING',
+      roarT: monster?.state === 'ROARING' ? now - monster.stateStartTime : 0,
+      alerted: !!monster?.alerted,
+      dead: !!monster?.dead,
+      now,
+    });
   }
 
   private drawPlayer(offsetRow: number, offsetCol: number): void {
@@ -1085,9 +994,6 @@ export class Renderer {
     const g = this.game;
     const s = Math.max(8, Math.trunc(size));
     const headR = Math.max(4, Math.floor(s / 6));
-    const bodyH = Math.max(8, Math.floor(s / 2));
-    const bodyW = Math.max(6, Math.floor(s / 3));
-    const P = PLAYER_PALETTE;
 
     // Animación de introducción: caída desde arriba y miradas a los lados
     let introOffsetY = 0;
@@ -1105,77 +1011,18 @@ export class Renderer {
     }
     cy += introOffsetY;
 
-    // Sombra
-    const shadowW = Math.trunc(bodyW * 1.2);
-    ellipse(ctx, [10, 10, 10], cx - Math.floor(shadowW / 2), cy + Math.floor(bodyH / 2), shadowW, Math.max(4, Math.floor(s / 6)));
-
     // Oscilación al caminar
     const t = ticks();
     const walking = t < g.playerWalkUntil;
     const phase = walking ? Math.sin(t * g.playerAnimSpeed * 2 * Math.PI) * g.playerAnimAmp : 0;
 
-    // Piernas
-    const legH = Math.max(6, Math.floor(s / 6));
-    const leftLeg = Math.trunc(phase * legH * 0.5);
-    const rightLeg = Math.trunc(-phase * legH * 0.5);
-    const lx = cx - Math.floor(bodyW / 4);
-    const rx = cx + Math.floor(bodyW / 4);
-    const legY0 = cy + Math.floor(bodyH / 2);
-    line(ctx, [60, 60, 60], lx, legY0, lx, legY0 + legH + leftLeg, 3);
-    line(ctx, [60, 60, 60], rx, legY0, rx, legY0 + legH + rightLeg, 3);
-
-    // Cuerpo (armadura)
-    const bodyX = cx - Math.floor(bodyW / 2);
-    const bodyTop = cy - Math.floor(bodyH / 4);
-    fillRect(ctx, P.armor, bodyX, bodyTop, bodyW, bodyH);
-    strokeRect(ctx, P.trim, bodyX, bodyTop, bodyW, bodyH, 2);
-
-    // Brazos / guanteletes
-    const armW = Math.max(4, Math.floor(s / 10));
-    const armY = cy - Math.floor(bodyH / 8) + Math.trunc(-phase * Math.floor(bodyH / 8));
-    const armH = Math.floor(bodyH / 3);
-    const armLX = cx - Math.floor(bodyW / 2) - armW;
-    const armRX = cx + Math.floor(bodyW / 2);
-    fillRect(ctx, P.armor, armLX, armY, armW, armH);
-    fillRect(ctx, P.armor, armRX, armY, armW, armH);
-    strokeRect(ctx, P.trim, armLX, armY, armW, armH, 1);
-    strokeRect(ctx, P.trim, armRX, armY, armW, armH, 1);
-
-    // Escudo y espada, solo tras la introducción
-    if (g.introShowWeapons) {
-      const swordX = cx + Math.floor(bodyW / 2) + armW + 2 + Math.trunc(phase * 2);
-
-      if (g.hasSwordPower) {
-        const glowR = Math.max(15, Math.floor(s / 2));
-        circle(ctx, [200, 240, 255], swordX, cy - Math.floor(bodyH / 2) + Math.trunc(-phase * 2), glowR, 0, 100 / 255);
-      }
-
-      const shieldR = Math.max(8, Math.floor(s / 6));
-      const shieldX = cx - Math.floor(bodyW / 2) - armW - Math.floor(shieldR / 2) + Math.trunc(-phase * 3);
-      const shieldY = cy + Math.trunc(phase * 2);
-      circle(ctx, P.shield, shieldX, shieldY, shieldR);
-      circle(ctx, P.shieldTrim, shieldX, shieldY, shieldR, 2);
-
-      const swordH = Math.max(12, Math.floor(s / 3));
-      const swordW = Math.max(3, Math.floor(s / 30));
-      const y1 = cy - Math.floor(bodyH / 8) + Math.trunc(-phase * 2);
-      const y2 = y1 - swordH + Math.trunc(phase * 4);
-      const blade: RGB = g.hasSwordPower ? [220, 250, 255] : P.swordBlade;
-      line(ctx, P.swordHandle, swordX, y1, swordX, y1 + 6, swordW + 2);
-      line(ctx, blade, swordX, y1, swordX, y2, swordW);
-    }
-
-    // Cabeza y casco
-    const headX = cx + headTurn;
-    const headY = cy - Math.floor(bodyH / 2) + headR;
-    circle(ctx, P.skin, headX, headY, headR);
-    const helmetH = Math.max(6, headR + 2);
-    fillRect(ctx, P.trim, headX - headR - 2, headY - helmetH, headR * 2 + 4, helmetH);
-    strokeRect(ctx, [160, 160, 160], headX - headR - 2, headY - helmetH, headR * 2 + 4, helmetH, 1);
-    line(ctx, [30, 30, 30], headX - headR, headY - 1, headX + headR, headY - 1, 2);
-    const eyeR = Math.max(1, Math.floor(headR / 4));
-    circle(ctx, [10, 10, 10], headX - Math.floor(headR / 2), headY - 1, eyeR);
-    circle(ctx, [10, 10, 10], headX + Math.floor(headR / 2), headY - 1, eyeR);
+    drawWarrior(ctx, cx, cy, s, {
+      phase,
+      headTurn: headTurn === 0 ? 0 : headTurn < 0 ? -1 : 1,
+      showWeapons: g.introShowWeapons,
+      swordPower: g.hasSwordPower,
+      now: t,
+    });
   }
 
   private drawFlyingBat(offsetRow: number, offsetCol: number): void {
