@@ -604,8 +604,8 @@ function drawFrontBack(ctx: Ctx, r: RigBase & { back: boolean; headTurn: number 
   if (showWeapons) {
     for (const arm of arms) {
       if (arm.holdingShield) {
-        shield(ctx, arm.hand[0] + arm.k * 11, arm.hand[1] + 4, 1);
-        drawHand(arm);
+        drawHand(arm); // la mano queda detrás del escudo
+        shield(ctx, arm.hand[0] + arm.k * 6, arm.hand[1] + 4, 1);
       } else if (arm.holdingSword) {
         sword(ctx, arm.hand[0], arm.hand[1] + 1, arm.k * -0.12 + (moving ? Math.sin(walkAngle) * 0.03 : 0), swordPower, now);
         drawHand(arm);
@@ -688,8 +688,8 @@ function drawSide(ctx: Ctx, r: RigBase & { swordNear: boolean }): void {
   drawLeg(farLeg);
   drawArm(farArm);
   if (farArm.holdingSword) sword(ctx, farArm.hand[0], farArm.hand[1] + 1, 0.16, swordPower, now);
-  if (farArm.holdingShield) shield(ctx, farArm.hand[0] + 5, farArm.hand[1] + 4, 0.34);
   drawHand(farArm);
+  if (farArm.holdingShield) shield(ctx, farArm.hand[0] + 5, farArm.hand[1] + 4, 0.34);
 
   // Faldón y torso de perfil
   const skirtSwing = moving ? Math.sin(walkAngle) * 3 : 0;
@@ -731,8 +731,8 @@ function drawSide(ctx: Ctx, r: RigBase & { swordNear: boolean }): void {
 
   // Armas del lado cercano, por delante del hombro
   if (nearArm.holdingSword) sword(ctx, nearArm.hand[0], nearArm.hand[1] + 1, 0.16 + (moving ? Math.sin(walkAngle) * 0.03 : 0), swordPower, now);
-  if (nearArm.holdingShield) shield(ctx, nearArm.hand[0] + 6, nearArm.hand[1] + 3, 0.5);
   drawHand(nearArm);
+  if (nearArm.holdingShield) shield(ctx, nearArm.hand[0] + 5, nearArm.hand[1] + 3, 0.5);
 
   headSide(ctx, 1.4 + lean, -24 + bob, sway);
 }
