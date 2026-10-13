@@ -15,7 +15,7 @@ import {
   drawTorches,
   drawWetFootprints,
 } from './decorations';
-import type { DeepOne, Game } from './game';
+import { FIGHT_MS, type DeepOne, type Game } from './game';
 import {
   circle,
   context2d,
@@ -34,7 +34,9 @@ import {
 } from './gfx';
 import { CellType, DELTA, oppositeDirection, posKey, type Cell, type Direction } from './models';
 import { seeded } from './rng';
-import { drawDeepOne, drawWarrior } from './sprites';
+import { drawFightCloud } from './fight';
+import { drawDeepOne } from './sprites';
+import { drawWarrior } from './warrior';
 import { ticks } from './time';
 
 interface CachedTexture {
@@ -123,6 +125,7 @@ export class Renderer {
       this.drawPlayer(offsetRow, offsetCol);
     }
 
+    this.drawFight(offsetRow, offsetCol);
     this.drawFlyingBat(offsetRow, offsetCol);
     this.drawExitSlabOverlay(offsetRow, offsetCol);
 
@@ -862,6 +865,7 @@ export class Renderer {
     const sorted = [...g.deepOnes].sort((a, b) => (a.dead ? 0 : 1) - (b.dead ? 0 : 1));
 
     for (const monster of sorted) {
+      if (g.fight?.monster === monster) continue;
       let row = monster.row;
       let col = monster.col;
       if (monster.dead) monster.animating = false;
@@ -915,6 +919,8 @@ export class Renderer {
 
     // Parpadeo mientras es invulnerable
     if (g.invulnerable && Math.floor(ticks() / 100) % 2 === 0) return;
+    // En plena pelea solo se ve la nube
+    if (g.fight) return;
 
     if (g.playerFallingActive) {
       this.drawPlayerFalling(offsetRow, offsetCol);
@@ -1011,18 +1017,30 @@ export class Renderer {
     }
     cy += introOffsetY;
 
-    // Oscilación al caminar
+    // Ciclo de marcha: un paso por celda (la pierna cambia cada 450 ms)
     const t = ticks();
-    const walking = t < g.playerWalkUntil;
-    const phase = walking ? Math.sin(t * g.playerAnimSpeed * 2 * Math.PI) * g.playerAnimAmp : 0;
+    const moving = t < g.playerWalkUntil;
 
     drawWarrior(ctx, cx, cy, s, {
-      phase,
+      walkAngle: ((t % 900) / 900) * Math.PI * 2,
+      moving,
+      facing: g.introAnimActive ? 'S' : g.playerFacing,
       headTurn: headTurn === 0 ? 0 : headTurn < 0 ? -1 : 1,
       showWeapons: g.introShowWeapons,
       swordPower: g.hasSwordPower,
       now: t,
     });
+  }
+
+  /** Nube de lucha sobre la celda donde pelean el guerrero y el Profundo. */
+  private drawFight(offsetRow: number, offsetCol: number): void {
+    const g = this.game;
+    const fight = g.fight;
+    if (!fight) return;
+    const size = this.cellSize;
+    const cx = (fight.col - offsetCol) * size + Math.floor(size / 2);
+    const cy = (fight.row - offsetRow) * size + Math.floor(size / 2);
+    drawFightCloud(this.ctx, cx, cy, size, ticks() - fight.start, FIGHT_MS);
   }
 
   private drawFlyingBat(offsetRow: number, offsetCol: number): void {

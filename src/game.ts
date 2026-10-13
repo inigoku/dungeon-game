@@ -58,6 +58,8 @@ interface RestartButton {
 const EXIT_IMAGE_BLOCK_MS = 10000;
 /** Tiempo manteniendo el dedo quieto para que aparezca la cruceta táctil. */
 const PAD_HOLD_MS = 220;
+/** Duración de la pelea con un monstruo (la nube de lucha). */
+export const FIGHT_MS = 2600;
 /** Factor de separación de los dedos que equivale a un nivel de zoom. */
 const PINCH_STEP = 1.3;
 const PAD_KEYS: Record<Direction, string> = { N: 'w', E: 'd', S: 's', O: 'a' };
@@ -108,6 +110,10 @@ export class Game implements GameInput {
   playerAnimAmp = 1.0;
   playerWalkDuration = 450;
   playerWalkUntil = 0;
+  /** Hacia dónde mira el guerrero (la última dirección en que intentó moverse). */
+  playerFacing: Direction = 'S';
+  /** Pelea en curso entre el guerrero y un Profundo: el dibujo muestra una nube de lucha. */
+  fight: { monster: DeepOne; row: number; col: number; start: number; shakes: number } | null = null;
   playerAnimating = false;
   playerAnimStartTime = 0;
   playerAnimFromPos: Pos;
@@ -797,6 +803,8 @@ export class Game implements GameInput {
     if (this.audio.thoughtActive && this.audio.thoughtBlocksMovement) return;
     if (this.exitImageShown && ticks() - this.exitImageStartTime < EXIT_IMAGE_BLOCK_MS) return;
 
+    if (this.fight) return;
+    this.playerFacing = direction;
     const world = this.world;
     const [currentRow, currentCol] = this.currentPosition;
     const currentCell = world.board[currentRow][currentCol];
@@ -868,17 +876,13 @@ export class Game implements GameInput {
 
     for (const monster of this.deepOnes) monster.ignoringPlayer = false;
 
-    // ¿Caminó hacia un monstruo?
+    // ¿Caminó hacia un monstruo? Empieza la pelea; el resultado llega cuando termina la nube
     for (const monster of this.deepOnes) {
-      if (monster.row === row && monster.col === col) {
-        if (this.hasSwordPower) {
-          if (!monster.dead) {
-            monster.dead = true;
-            monster.deathTime = ticks();
-            monster.state = 'DEAD';
-          }
-        } else {
-          this.takeDamage();
+      if (monster.row === row && monster.col === col && !monster.dead) {
+        this.startFight(monster);
+        if (!this.hasSwordPower && this.fight) {
+          this.visitedCells.add(posKey(row, col));
+          this.revealAdjacentCells(row, col);
           return;
         }
       }
@@ -1088,6 +1092,52 @@ export class Game implements GameInput {
     return this.deepOnes.some((m) => m.row === row && m.col === col);
   }
 
+  /** Empieza la pelea con un monstruo: la nube tapa a ambos y el resultado llega al terminar. */
+  private startFight(monster: DeepOne): void {
+    if (this.fight || monster.dead) return;
+    // Sin la espada, mientras dura la invulnerabilidad el monstruo no puede herirle
+    if (!this.hasSwordPower && this.invulnerable) return;
+    const now = ticks();
+    this.cancelAutoMove();
+    monster.alerted = false;
+    monster.animating = false;
+    monster.state = 'IDLE';
+    this.fight = { monster, row: this.currentPosition[0], col: this.currentPosition[1], start: now, shakes: 0 };
+    this.hasEncounteredMonsters = true;
+    this.triggerCameraShake(1.5, 700);
+    this.grunidoSound?.setVolume(0.9);
+    this.grunidoSound?.play();
+  }
+
+  private updateFight(now: number): void {
+    const fight = this.fight;
+    if (!fight) return;
+    if (this.showingGameOver || this.disposed) {
+      this.fight = null;
+      return;
+    }
+    const elapsed = now - fight.start;
+    // Sacudidas y gruñidos mientras dura la pelea
+    if (fight.shakes < 2 && elapsed > 900 * (fight.shakes + 1)) {
+      fight.shakes++;
+      this.triggerCameraShake(1.2, 500);
+      this.grunidoSound?.play();
+    }
+    if (elapsed < FIGHT_MS) return;
+
+    this.fight = null;
+    const monster = fight.monster;
+    if (this.hasSwordPower) {
+      if (!monster.dead) {
+        monster.dead = true;
+        monster.deathTime = now;
+        monster.state = 'DEAD';
+      }
+    } else {
+      this.takeDamage();
+    }
+  }
+
   private updateMonsters(): void {
     const now = ticks();
     const world = this.world;
@@ -1102,7 +1152,7 @@ export class Game implements GameInput {
     ];
 
     for (const monster of this.deepOnes) {
-      if (monster.dead) continue;
+      if (monster.dead || monster === this.fight?.monster) continue;
 
       // Indicador de alerta
       if (!this.hasSwordPower) {
@@ -1198,15 +1248,7 @@ export class Game implements GameInput {
           monster.animating = true;
           monster.animStartTime = now;
 
-          if (monster.row === this.currentPosition[0] && monster.col === this.currentPosition[1]) {
-            if (this.hasSwordPower) {
-              monster.dead = true;
-              monster.deathTime = now;
-              monster.state = 'DEAD';
-            } else {
-              this.takeDamage();
-            }
-          }
+          if (monster.row === this.currentPosition[0] && monster.col === this.currentPosition[1]) this.startFight(monster);
         }
       } else if (roll < moveProb + 0.25) {
         // Rugido
@@ -1363,6 +1405,7 @@ export class Game implements GameInput {
       this.thoughtPending ||
       this.askingExitConfirmation ||
       this.askingMainMenuConfirmation ||
+      this.fight !== null ||
       (this.audio.thoughtActive && this.audio.thoughtBlocksMovement) ||
       (this.exitImageShown && ticks() - this.exitImageStartTime < EXIT_IMAGE_BLOCK_MS)
     );
@@ -1482,6 +1525,7 @@ export class Game implements GameInput {
 
     this.wasActive = audio.thoughtActive;
 
+    this.updateFight(now);
     this.updateMonsters();
 
     if (now - this.lastFootprintCleanup > 1000) {
