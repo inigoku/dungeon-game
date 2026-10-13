@@ -15,7 +15,7 @@ import {
   drawTorches,
   drawWetFootprints,
 } from './decorations';
-import { FIGHT_MS, type DeepOne, type Game } from './game';
+import { FACE_FRONT_AFTER_MS, FIGHT_MS, type DeepOne, type Game } from './game';
 import {
   circle,
   context2d,
@@ -1024,7 +1024,7 @@ export class Renderer {
     drawWarrior(ctx, cx, cy, s, {
       walkAngle: ((t % 900) / 900) * Math.PI * 2,
       moving,
-      facing: g.introAnimActive ? 'S' : g.playerFacing,
+      facing: g.introAnimActive || t - g.lastMoveAttemptTime > FACE_FRONT_AFTER_MS ? 'S' : g.playerFacing,
       headTurn: headTurn === 0 ? 0 : headTurn < 0 ? -1 : 1,
       showWeapons: g.introShowWeapons,
       swordPower: g.hasSwordPower,

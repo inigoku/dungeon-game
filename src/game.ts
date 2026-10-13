@@ -60,6 +60,8 @@ const EXIT_IMAGE_BLOCK_MS = 10000;
 const PAD_HOLD_MS = 220;
 /** Duración de la pelea con un monstruo (la nube de lucha). */
 export const FIGHT_MS = 2600;
+/** Tiempo quieto tras el cual el guerrero vuelve a mirar de frente. */
+export const FACE_FRONT_AFTER_MS = 3000;
 /** Factor de separación de los dedos que equivale a un nivel de zoom. */
 const PINCH_STEP = 1.3;
 const PAD_KEYS: Record<Direction, string> = { N: 'w', E: 'd', S: 's', O: 'a' };
@@ -112,6 +114,8 @@ export class Game implements GameInput {
   playerWalkUntil = 0;
   /** Hacia dónde mira el guerrero (la última dirección en que intentó moverse). */
   playerFacing: Direction = 'S';
+  /** Instante del último intento de movimiento; pasado un rato quieto, el guerrero vuelve a mirar de frente. */
+  lastMoveAttemptTime = 0;
   /** Pelea en curso entre el guerrero y un Profundo: el dibujo muestra una nube de lucha. */
   fight: { monster: DeepOne; row: number; col: number; start: number; shakes: number } | null = null;
   playerAnimating = false;
@@ -805,6 +809,7 @@ export class Game implements GameInput {
 
     if (this.fight) return;
     this.playerFacing = direction;
+    this.lastMoveAttemptTime = ticks();
     const world = this.world;
     const [currentRow, currentCol] = this.currentPosition;
     const currentCell = world.board[currentRow][currentCol];
