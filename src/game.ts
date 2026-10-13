@@ -8,7 +8,7 @@ import { DEFAULT_BOARD_SIZE, DEFAULT_CELL_SIZE, DEFAULT_VIEW_SIZE } from './conf
 import type { Footprint } from './decorations';
 import { context2d, type Canvas, type Ctx } from './gfx';
 import { InputHandler, type GameInput } from './input';
-import { Cell, CellType, DELTA, oppositeDirection, posKey, type Direction, type Pos } from './models';
+import { Cell, CellType, DELTA, DIRECTIONS, oppositeDirection, posKey, type Direction, type Pos } from './models';
 import { Renderer } from './renderer';
 import { random, seeded } from './rng';
 import { sleep, ticks } from './time';
@@ -220,6 +220,8 @@ export class Game implements GameInput {
   private lastFrameTime = 0;
   private readonly keyQueue: GameKeyEvent[] = [];
   private readonly clickQueue: Array<{ x: number; y: number }> = [];
+  /** Pasos pendientes de un recorrido automático iniciado con un clic. */
+  private autoWalk: Direction[] = [];
   private readonly cleanups: Array<() => void> = [];
 
   constructor(
@@ -618,6 +620,86 @@ export class Game implements GameInput {
     }
 
     this.enterCell(targetRow, targetCol);
+  }
+
+  // --- Recorrido automático por clic -------------------------------------------
+
+  /** Celda del tablero bajo un punto del lienzo, o null si queda fuera. */
+  private boardCellAt(x: number, y: number): Pos | null {
+    const row = Math.floor(this.cameraOffsetRow + y / this.cellSize);
+    const col = Math.floor(this.cameraOffsetCol + x / this.cellSize);
+    return this.world.inBounds(row, col) ? [row, col] : null;
+  }
+
+  /**
+   * Un clic en una celda sin revelar, contigua a una revelada, lleva al jugador
+   * hasta una celda revelada vecina (la más cercana con camino y salida hacia
+   * ella) y después a la celda pulsada.
+   */
+  private startAutoWalk(x: number, y: number): void {
+    this.autoWalk = [];
+    if (
+      this.showingTitle || this.showingGameOver || this.introAnimActive || this.thoughtPending ||
+      this.audio.thoughtActive || this.askingExitConfirmation || this.askingMainMenuConfirmation
+    ) return;
+    const target = this.boardCellAt(x, y);
+    if (!target) return;
+    const [tr, tc] = target;
+    const world = this.world;
+    if (this.visitedCells.has(posKey(tr, tc)) || world.isBarrancoCell(tr, tc) || world.isBridgeCell(tr, tc)) return;
+
+    // BFS desde el jugador por celdas reveladas conectadas en ambos sentidos
+    const start = this.currentPosition;
+    const startKey = posKey(start[0], start[1]);
+    const parents = new Map<number, { from: number; dir: Direction }>();
+    const seen = new Set<number>([startKey]);
+    const queue: Pos[] = [start];
+    for (let i = 0; i < queue.length; i++) {
+      const [row, col] = queue[i];
+      const cell = world.board[row][col];
+      for (const dir of cell.exits) {
+        const [dr, dc] = DELTA[dir];
+        const nr = row + dr;
+        const nc = col + dc;
+        const key = posKey(nr, nc);
+        if (!world.inBounds(nr, nc) || seen.has(key) || !this.visitedCells.has(key)) continue;
+        const next = world.board[nr][nc];
+        if (next.cellType === CellType.EMPTY || !next.exits.has(oppositeDirection(dir))) continue;
+        seen.add(key);
+        parents.set(key, { from: posKey(row, col), dir });
+        queue.push([nr, nc]);
+      }
+    }
+
+    // BFS recorre por distancia creciente: la primera vecina válida es la más cercana
+    for (const [row, col] of queue) {
+      const dir = DIRECTIONS.find((d) => {
+        const [dr, dc] = DELTA[d];
+        return row + dr === tr && col + dc === tc;
+      });
+      if (!dir || !world.board[row][col].exits.has(dir)) continue;
+      const path: Direction[] = [dir];
+      for (let key = posKey(row, col); key !== startKey; ) {
+        const step = parents.get(key)!;
+        path.unshift(step.dir);
+        key = step.from;
+      }
+      this.autoWalk = path;
+      return;
+    }
+  }
+
+  /** Da el siguiente paso del recorrido automático cuando termina el anterior. */
+  private stepAutoWalk(now: number): void {
+    if (this.autoWalk.length === 0) return;
+    if (this.showingGameOver || this.showingTitle || this.thoughtPending || this.audio.thoughtActive) {
+      this.autoWalk = [];
+      return;
+    }
+    if (now < this.playerWalkUntil) return;
+    const before = this.currentPosition;
+    this.placeCellInDirection(this.autoWalk.shift()!);
+    if (this.currentPosition === before) this.autoWalk = [];
   }
 
   private createCell(direction: Direction, row: number, col: number, opposite: Direction): void {
@@ -1198,9 +1280,14 @@ export class Game implements GameInput {
     // Eventos de entrada acumulados desde el último frame
     let running = true;
     for (const ev of this.keyQueue.splice(0)) {
+      this.autoWalk = [];
       if (!this.input.handleKey(ev.key)) running = false;
     }
-    for (const click of this.clickQueue.splice(0)) this.input.handleClick(click.x, click.y);
+    for (const click of this.clickQueue.splice(0)) {
+      this.input.handleClick(click.x, click.y);
+      this.startAutoWalk(click.x, click.y);
+    }
+    this.stepAutoWalk(now);
 
     this.renderer.draw(frames);
 
