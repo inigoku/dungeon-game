@@ -170,27 +170,6 @@ export function drawWarrior(ctx: Ctx, cx: number, cy: number, size: number, look
     }
 
     if (showWeapons) {
-      // Escudo redondo
-      const shx = -29;
-      const shy = 4 - stride * 0.6;
-      oval(ctx, shx, shy, 16, 17);
-      fillStroke(ctx, rGradient(ctx, shx, shy, 18, [[0, [120, 130, 96]], [0.7, [72, 82, 62]], [1, [40, 46, 38]]]), OUTLINE, 2);
-      oval(ctx, shx, shy, 13, 14);
-      ctx.strokeStyle = rgb(GOLD, 0.9);
-      ctx.lineWidth = 1.8;
-      ctx.stroke();
-      // Cruz y ombligo
-      ctx.strokeStyle = rgb(STEEL_LIGHT, 0.55);
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.moveTo(shx, shy - 12);
-      ctx.lineTo(shx, shy + 12);
-      ctx.moveTo(shx - 11, shy);
-      ctx.lineTo(shx + 11, shy);
-      ctx.stroke();
-      oval(ctx, shx, shy, 4.8, 4.8);
-      fillStroke(ctx, rGradient(ctx, shx, shy, 6, [[0, STEEL_LIGHT], [1, STEEL_DARK]]), OUTLINE, 1.2);
-
       // Espada
       const sx = 29;
       const handY = 11 + stride * 0.5;
@@ -222,6 +201,30 @@ export function drawWarrior(ctx: Ctx, cx: number, cy: number, size: number, look
       ctx.lineWidth = 1;
       oval(ctx, side * 19, -12, 6.2, 4.8);
       ctx.stroke();
+    }
+
+    // Escudo delante del hombro
+    if (showWeapons) {
+      // Escudo redondo
+      const shx = -29;
+      const shy = 4 - stride * 0.6;
+      oval(ctx, shx, shy, 16, 17);
+      fillStroke(ctx, rGradient(ctx, shx, shy, 18, [[0, [120, 130, 96]], [0.7, [72, 82, 62]], [1, [40, 46, 38]]]), OUTLINE, 2);
+      oval(ctx, shx, shy, 13, 14);
+      ctx.strokeStyle = rgb(GOLD, 0.9);
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      // Cruz y ombligo
+      ctx.strokeStyle = rgb(STEEL_LIGHT, 0.55);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(shx, shy - 12);
+      ctx.lineTo(shx, shy + 12);
+      ctx.moveTo(shx - 11, shy);
+      ctx.lineTo(shx + 11, shy);
+      ctx.stroke();
+      oval(ctx, shx, shy, 4.8, 4.8);
+      fillStroke(ctx, rGradient(ctx, shx, shy, 6, [[0, STEEL_LIGHT], [1, STEEL_DARK]]), OUTLINE, 1.2);
     }
 
     // Manoplas
