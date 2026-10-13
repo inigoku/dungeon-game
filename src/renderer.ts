@@ -98,20 +98,21 @@ export class Renderer {
     }
 
     // Desplazamiento en píxeles para el scroll suave
-    const offsetRowInt = Math.trunc(offsetRow);
-    const offsetColInt = Math.trunc(offsetCol);
-    const pixelOffsetY = Math.trunc((offsetRow - offsetRowInt) * this.cellSize);
-    const pixelOffsetX = Math.trunc((offsetCol - offsetColInt) * this.cellSize);
+    const offsetRowInt = Math.floor(offsetRow);
+    const offsetColInt = Math.floor(offsetCol);
+    const pixelOffsetY = Math.floor((offsetRow - offsetRowInt) * this.cellSize);
+    const pixelOffsetX = Math.floor((offsetCol - offsetColInt) * this.cellSize);
 
     // Una celda extra en cada dirección para el scroll
-    for (let row = -1; row <= g.viewSize; row++) {
-      for (let col = -1; col <= g.viewSize; col++) {
+    for (let row = -1; row <= g.viewRows; row++) {
+      for (let col = -1; col <= g.viewCols; col++) {
         const boardRow = offsetRowInt + row;
         const boardCol = offsetColInt + col;
         if (g.world.inBounds(boardRow, boardCol)) this.drawCell(boardRow, boardCol, row, col, pixelOffsetX, pixelOffsetY);
       }
     }
 
+    this.drawAutoMoveMarker(offsetRow, offsetCol);
     this.drawBarriers(offsetRow, offsetCol);
 
     if (g.showingGameOver) {
@@ -147,7 +148,9 @@ export class Renderer {
     const g = this.game;
     const ctx = this.ctx;
     if (g.titleImage) {
-      ctx.drawImage(g.titleImage, 0, 0);
+      // La imagen es cuadrada: centrada, con bandas negras si la ventana no lo es
+      fillRect(ctx, [0, 0, 0], 0, 0, g.width, g.height);
+      ctx.drawImage(g.titleImage, Math.floor((g.width - g.titleImage.width) / 2), Math.floor((g.height - g.titleImage.height) / 2));
       return;
     }
     fillRect(ctx, [0, 0, 0], 0, 0, g.width, g.height);
@@ -610,6 +613,17 @@ export class Renderer {
   // Efectos y superposiciones
   // ---------------------------------------------------------------------------
 
+  /** Anillo dorado sobre la celda de destino del movimiento automático. */
+  private drawAutoMoveMarker(offsetRow: number, offsetCol: number): void {
+    const target = this.game.autoTarget;
+    if (!target) return;
+    const size = this.cellSize;
+    const cx = (target[1] - offsetCol) * size + size / 2;
+    const cy = (target[0] - offsetRow) * size + size / 2;
+    const pulse = (Math.sin(ticks() * 0.008) + 1) / 2;
+    circle(this.ctx, [255, 215, 0], cx, cy, Math.max(4, size * (0.16 + 0.04 * pulse)), Math.max(2, Math.floor(size / 30)), 0.55 + 0.3 * pulse);
+  }
+
   /** Barreras mágicas que impiden a los monstruos pisar inicio/salida o salir del camino. */
   private drawBarriers(offsetRow: number, offsetCol: number): void {
     const g = this.game;
@@ -621,7 +635,7 @@ export class Renderer {
     for (const barrier of g.activeBarriers) {
       const viewRow = barrier.row - offsetRow;
       const viewCol = barrier.col - offsetCol;
-      if (viewRow < -1 || viewRow > g.viewSize || viewCol < -1 || viewCol > g.viewSize) continue;
+      if (viewRow < -1 || viewRow > g.viewRows || viewCol < -1 || viewCol > g.viewCols) continue;
 
       const x = Math.trunc(viewCol * size);
       const y = Math.trunc(viewRow * size);
@@ -645,7 +659,7 @@ export class Renderer {
 
     const viewRow = exitRow - offsetRow;
     const viewCol = exitCol - offsetCol;
-    if (viewRow < -1 || viewRow > g.viewSize || viewCol < -1 || viewCol > g.viewSize) return;
+    if (viewRow < -1 || viewRow > g.viewRows || viewCol < -1 || viewCol > g.viewCols) return;
 
     const x = Math.trunc(viewCol * size);
     const y = Math.trunc(viewRow * size);
@@ -862,7 +876,7 @@ export class Renderer {
 
       const viewRow = row - offsetRow;
       const viewCol = col - offsetCol;
-      if (viewRow < -1.5 || viewRow > g.viewSize + 0.5 || viewCol < -1.5 || viewCol > g.viewSize + 0.5) continue;
+      if (viewRow < -1.5 || viewRow > g.viewRows + 0.5 || viewCol < -1.5 || viewCol > g.viewCols + 0.5) continue;
 
       const centerX = Math.trunc(viewCol * size) + Math.floor(size / 2);
       const centerY = Math.trunc(viewRow * size) + Math.floor(size / 2);

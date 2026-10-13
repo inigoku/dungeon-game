@@ -75,8 +75,9 @@ export class Game implements GameInput {
   readonly zoomLevels = [5, 7, 11, 21, 51, DEFAULT_BOARD_SIZE];
   currentZoomIndex = 0;
   readonly fixedWindowSize = DEFAULT_VIEW_SIZE * DEFAULT_CELL_SIZE;
-  readonly width = this.fixedWindowSize;
-  readonly height = this.fixedWindowSize;
+  /** Tamaño lógico del lienzo: el lado corto mide siempre `fixedWindowSize`; el otro se amplía según la ventana. */
+  width = this.fixedWindowSize;
+  height = this.fixedWindowSize;
 
   readonly world: World;
   readonly ctx: Ctx;
@@ -93,6 +94,8 @@ export class Game implements GameInput {
   cameraOffsetRow: number;
   cameraOffsetCol: number;
   readonly cameraSpeed = 0.03;
+  /** true mientras el jugador ha desplazado la vista arrastrando */
+  cameraManual = false;
   shakeIntensity = 0;
   shakeDuration = 0;
   shakeStartTime = 0;
@@ -213,6 +216,11 @@ export class Game implements GameInput {
   showPath = false;
   autoRevealMode = false;
 
+  // Movimiento automático por clic/toque
+  autoTarget: Pos | null = null;
+  private autoPath: Pos[] = [];
+  private autoNextStepTime = 0;
+
   private torchStaticCache = new Map<number, { sig: number; count: number }>();
   private lastFootprintCleanup = 0;
   private disposed = false;
@@ -220,16 +228,12 @@ export class Game implements GameInput {
   private lastFrameTime = 0;
   private readonly keyQueue: GameKeyEvent[] = [];
   private readonly clickQueue: Array<{ x: number; y: number }> = [];
-  /** Pasos pendientes de un recorrido automático iniciado con un clic. */
-  private autoWalk: Direction[] = [];
   private readonly cleanups: Array<() => void> = [];
 
   constructor(
     readonly canvas: HTMLCanvasElement,
     private readonly assets: Assets,
   ) {
-    canvas.width = this.width;
-    canvas.height = this.height;
     this.ctx = context2d(canvas);
 
     this.world = new World(this.size);
@@ -240,8 +244,9 @@ export class Game implements GameInput {
     this.playerAnimFromPos = this.currentPosition;
     this.playerAnimToPos = this.currentPosition;
 
-    this.cameraOffsetRow = center - Math.floor(this.viewSize / 2);
-    this.cameraOffsetCol = center - Math.floor(this.viewSize / 2);
+    this.resizeTo(canvas.clientWidth, canvas.clientHeight);
+    this.cameraOffsetRow = this.cameraTarget(center, this.height);
+    this.cameraOffsetCol = this.cameraTarget(center, this.width);
 
     this.audio = new AudioManager(assets.mixer, assets.buffers);
     this.loadSounds();
@@ -280,17 +285,17 @@ export class Game implements GameInput {
 
   private loadImages(): void {
     const { images } = this.assets;
-    if (images['titulo']) this.titleImage = scaleImage(images['titulo'], this.width, this.height);
+    if (images['titulo']) this.titleImage = scaleImage(images['titulo'], this.fixedWindowSize, this.fixedWindowSize);
     else this.showingTitle = false;
 
     const scaleToBox = (img: HTMLImageElement | null, box: number): Canvas | null =>
       img ? fitImage(img, box, box) : null;
 
-    if (images['losa']) this.exitImage = fitImage(images['losa'], this.width * 0.9, (this.height - 120) * 0.9);
-    if (images['profundo']) this.profundoImage = fitImage(images['profundo'], this.width * 0.9, this.height - 200);
-    this.swordImage = scaleToBox(images['espada'], Math.min(this.width, this.height) * 0.8);
-    this.torchImage = scaleToBox(images['antorcha'], Math.min(this.width, this.height) * 0.6);
-    this.bloodImage = scaleToBox(images['sangre'], Math.min(this.width, this.height) * 0.6);
+    if (images['losa']) this.exitImage = fitImage(images['losa'], this.fixedWindowSize * 0.9, (this.fixedWindowSize - 120) * 0.9);
+    if (images['profundo']) this.profundoImage = fitImage(images['profundo'], this.fixedWindowSize * 0.9, this.fixedWindowSize - 200);
+    this.swordImage = scaleToBox(images['espada'], this.fixedWindowSize * 0.8);
+    this.torchImage = scaleToBox(images['antorcha'], this.fixedWindowSize * 0.6);
+    this.bloodImage = scaleToBox(images['sangre'], this.fixedWindowSize * 0.6);
   }
 
   // --- Entrada ----------------------------------------------------------------
@@ -305,19 +310,53 @@ export class Game implements GameInput {
       if (e.repeat) return;
       this.keyQueue.push({ key });
     };
-    const onMouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
+    // Puntero (ratón o dedo): un toque corto va a una celda; arrastrar desplaza la vista
+    const toLogical = (e: PointerEvent): [number, number] => {
       const rect = this.canvas.getBoundingClientRect();
-      this.clickQueue.push({
-        x: ((e.clientX - rect.left) * this.width) / rect.width,
-        y: ((e.clientY - rect.top) * this.height) / rect.height,
-      });
+      return [((e.clientX - rect.left) * this.width) / rect.width, ((e.clientY - rect.top) * this.height) / rect.height];
     };
+    let drag: { id: number; startX: number; startY: number; lastX: number; lastY: number; dragged: boolean } | null = null;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const [x, y] = toLogical(e);
+      drag = { id: e.pointerId, startX: x, startY: y, lastX: x, lastY: y, dragged: false };
+      this.canvas.setPointerCapture(e.pointerId);
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const [x, y] = toLogical(e);
+      if (!drag.dragged && Math.hypot(x - drag.startX, y - drag.startY) < 10) return;
+      drag.dragged = true;
+      this.panCamera(x - drag.lastX, y - drag.lastY);
+      drag.lastX = x;
+      drag.lastY = y;
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const wasDrag = drag.dragged;
+      drag = null;
+      if (!wasDrag) {
+        const [x, y] = toLogical(e);
+        this.clickQueue.push({ x, y });
+      }
+    };
+    const onPointerCancel = () => {
+      drag = null;
+    };
+    const observer = new ResizeObserver(() => this.resizeTo(this.canvas.clientWidth, this.canvas.clientHeight));
+    observer.observe(this.canvas);
+    this.cleanups.push(() => observer.disconnect());
     window.addEventListener('keydown', onKeyDown);
-    this.canvas.addEventListener('mousedown', onMouseDown);
+    this.canvas.addEventListener('pointerdown', onPointerDown);
+    this.canvas.addEventListener('pointermove', onPointerMove);
+    this.canvas.addEventListener('pointerup', onPointerUp);
+    this.canvas.addEventListener('pointercancel', onPointerCancel);
     this.cleanups.push(
       () => window.removeEventListener('keydown', onKeyDown),
-      () => this.canvas.removeEventListener('mousedown', onMouseDown),
+      () => this.canvas.removeEventListener('pointerdown', onPointerDown),
+      () => this.canvas.removeEventListener('pointermove', onPointerMove),
+      () => this.canvas.removeEventListener('pointerup', onPointerUp),
+      () => this.canvas.removeEventListener('pointercancel', onPointerCancel),
     );
   }
 
@@ -430,28 +469,73 @@ export class Game implements GameInput {
 
   // --- Cámara y zoom -------------------------------------------------------------
 
+  /** Celdas visibles en horizontal y en vertical (incluida la celda parcial del borde). */
+  get viewCols(): number {
+    return Math.ceil(this.width / this.cellSize);
+  }
+
+  get viewRows(): number {
+    return Math.ceil(this.height / this.cellSize);
+  }
+
+  /**
+   * Ajusta el lienzo a la ventana: el lado corto mide 630 y el largo se amplía
+   * para dibujar todas las celdas que quepan (sin bandas negras).
+   */
+  resizeTo(cssWidth: number, cssHeight: number): void {
+    if (cssWidth <= 0 || cssHeight <= 0) return;
+    const aspect = cssWidth / cssHeight;
+    const long = Math.round(this.fixedWindowSize * Math.min(Math.max(aspect, 1 / aspect), 4));
+    this.width = aspect >= 1 ? long : this.fixedWindowSize;
+    this.height = aspect >= 1 ? this.fixedWindowSize : long;
+    this.canvas.width = this.width;
+    this.canvas.height = this.height;
+    this.updateCameraTarget();
+  }
+
+  /** Desplazamiento de cámara (en celdas) que centra la posición `pos` en un eje de `span` píxeles. */
+  private cameraTarget(pos: number, span: number): number {
+    const cells = span / this.cellSize;
+    // Si el tablero es más pequeño que la vista, se centra
+    if (this.size <= cells) return (this.size - cells) / 2;
+    return Math.max(0, Math.min(pos + 0.5 - cells / 2, this.size - cells));
+  }
+
   /** Interpola la cámara hacia el jugador y devuelve el desplazamiento flotante. */
   getViewOffset(frames: number): [number, number] {
+    // Con la vista desplazada a mano la cámara se queda donde está
+    if (this.cameraManual) return [this.cameraOffsetRow, this.cameraOffsetCol];
     const [playerRow, playerCol] = this.currentPosition;
-    const maxOffset = this.size - this.viewSize;
-    const half = Math.floor(this.viewSize / 2);
-    const targetRow = Math.max(0, Math.min(playerRow - half, maxOffset));
-    const targetCol = Math.max(0, Math.min(playerCol - half, maxOffset));
+    const targetRow = this.cameraTarget(playerRow, this.height);
+    const targetCol = this.cameraTarget(playerCol, this.width);
 
     // Factor equivalente a aplicar `cameraSpeed` una vez por cada frame a 60 fps
     const k = 1 - Math.pow(1 - this.cameraSpeed, frames);
     this.cameraOffsetRow += (targetRow - this.cameraOffsetRow) * k;
     this.cameraOffsetCol += (targetCol - this.cameraOffsetCol) * k;
-    this.cameraOffsetRow = Math.max(0, Math.min(this.cameraOffsetRow, maxOffset));
-    this.cameraOffsetCol = Math.max(0, Math.min(this.cameraOffsetCol, maxOffset));
     return [this.cameraOffsetRow, this.cameraOffsetCol];
   }
 
+  /**
+   * Desplaza la vista siguiendo el arrastre (en píxeles lógicos): el personaje
+   * queda descentrado y la cámara no lo sigue hasta que vuelva a moverse.
+   */
+  panCamera(dxPx: number, dyPx: number): void {
+    if (this.showingTitle) return;
+    this.cameraManual = true;
+    const limit = (offset: number, span: number): number => {
+      const cells = span / this.cellSize;
+      if (this.size <= cells) return (this.size - cells) / 2;
+      return Math.max(-2, Math.min(offset, this.size - cells + 2));
+    };
+    this.cameraOffsetCol = limit(this.cameraOffsetCol - dxPx / this.cellSize, this.width);
+    this.cameraOffsetRow = limit(this.cameraOffsetRow - dyPx / this.cellSize, this.height);
+  }
+
   centerCameraInstantly(targetRow: number, targetCol: number): void {
-    const half = Math.floor(this.viewSize / 2);
-    const maxOffset = this.size - this.viewSize;
-    this.cameraOffsetRow = Math.max(0, Math.min(targetRow - half, maxOffset));
-    this.cameraOffsetCol = Math.max(0, Math.min(targetCol - half, maxOffset));
+    this.cameraManual = false;
+    this.cameraOffsetRow = this.cameraTarget(targetRow, this.height);
+    this.cameraOffsetCol = this.cameraTarget(targetCol, this.width);
   }
 
   private setZoomIndex(index: number): void {
@@ -469,18 +553,9 @@ export class Game implements GameInput {
     if (this.currentZoomIndex < this.zoomLevels.length - 1) this.setZoomIndex(this.currentZoomIndex + 1);
   }
 
-  /** Recentra la cámara (sin interpolar) en el jugador tras cambiar el zoom. */
+  /** Recentra la cámara (sin interpolar) en el jugador tras cambiar el zoom o el tamaño. */
   updateCameraTarget(): void {
-    const [playerRow, playerCol] = this.currentPosition;
-    if (this.viewSize >= this.size) {
-      this.cameraOffsetRow = 0;
-      this.cameraOffsetCol = 0;
-      return;
-    }
-    const half = Math.floor(this.viewSize / 2);
-    const maxOffset = this.size - this.viewSize;
-    this.cameraOffsetRow = Math.max(0, Math.min(playerRow - half, maxOffset));
-    this.cameraOffsetCol = Math.max(0, Math.min(playerCol - half, maxOffset));
+    this.centerCameraInstantly(this.currentPosition[0], this.currentPosition[1]);
   }
 
   // --- Antorchas, sangre y brillo -----------------------------------------------
@@ -622,86 +697,6 @@ export class Game implements GameInput {
     this.enterCell(targetRow, targetCol);
   }
 
-  // --- Recorrido automático por clic -------------------------------------------
-
-  /** Celda del tablero bajo un punto del lienzo, o null si queda fuera. */
-  private boardCellAt(x: number, y: number): Pos | null {
-    const row = Math.floor(this.cameraOffsetRow + y / this.cellSize);
-    const col = Math.floor(this.cameraOffsetCol + x / this.cellSize);
-    return this.world.inBounds(row, col) ? [row, col] : null;
-  }
-
-  /**
-   * Un clic en una celda sin revelar, contigua a una revelada, lleva al jugador
-   * hasta una celda revelada vecina (la más cercana con camino y salida hacia
-   * ella) y después a la celda pulsada.
-   */
-  private startAutoWalk(x: number, y: number): void {
-    this.autoWalk = [];
-    if (
-      this.showingTitle || this.showingGameOver || this.introAnimActive || this.thoughtPending ||
-      this.audio.thoughtActive || this.askingExitConfirmation || this.askingMainMenuConfirmation
-    ) return;
-    const target = this.boardCellAt(x, y);
-    if (!target) return;
-    const [tr, tc] = target;
-    const world = this.world;
-    if (this.visitedCells.has(posKey(tr, tc)) || world.isBarrancoCell(tr, tc) || world.isBridgeCell(tr, tc)) return;
-
-    // BFS desde el jugador por celdas reveladas conectadas en ambos sentidos
-    const start = this.currentPosition;
-    const startKey = posKey(start[0], start[1]);
-    const parents = new Map<number, { from: number; dir: Direction }>();
-    const seen = new Set<number>([startKey]);
-    const queue: Pos[] = [start];
-    for (let i = 0; i < queue.length; i++) {
-      const [row, col] = queue[i];
-      const cell = world.board[row][col];
-      for (const dir of cell.exits) {
-        const [dr, dc] = DELTA[dir];
-        const nr = row + dr;
-        const nc = col + dc;
-        const key = posKey(nr, nc);
-        if (!world.inBounds(nr, nc) || seen.has(key) || !this.visitedCells.has(key)) continue;
-        const next = world.board[nr][nc];
-        if (next.cellType === CellType.EMPTY || !next.exits.has(oppositeDirection(dir))) continue;
-        seen.add(key);
-        parents.set(key, { from: posKey(row, col), dir });
-        queue.push([nr, nc]);
-      }
-    }
-
-    // BFS recorre por distancia creciente: la primera vecina válida es la más cercana
-    for (const [row, col] of queue) {
-      const dir = DIRECTIONS.find((d) => {
-        const [dr, dc] = DELTA[d];
-        return row + dr === tr && col + dc === tc;
-      });
-      if (!dir || !world.board[row][col].exits.has(dir)) continue;
-      const path: Direction[] = [dir];
-      for (let key = posKey(row, col); key !== startKey; ) {
-        const step = parents.get(key)!;
-        path.unshift(step.dir);
-        key = step.from;
-      }
-      this.autoWalk = path;
-      return;
-    }
-  }
-
-  /** Da el siguiente paso del recorrido automático cuando termina el anterior. */
-  private stepAutoWalk(now: number): void {
-    if (this.autoWalk.length === 0) return;
-    if (this.showingGameOver || this.showingTitle || this.thoughtPending || this.audio.thoughtActive) {
-      this.autoWalk = [];
-      return;
-    }
-    if (now < this.playerWalkUntil) return;
-    const before = this.currentPosition;
-    this.placeCellInDirection(this.autoWalk.shift()!);
-    if (this.currentPosition === before) this.autoWalk = [];
-  }
-
   private createCell(direction: Direction, row: number, col: number, opposite: Direction): void {
     const world = this.world;
     if (row === world.exitPosition[0] && col === world.exitPosition[1]) {
@@ -726,6 +721,7 @@ export class Game implements GameInput {
 
   /** Efectos de entrar en una celda: pasos, animación, monstruos y pensamientos. */
   private enterCell(row: number, col: number): void {
+    this.cameraManual = false; // al moverse, la cámara vuelve a seguir al personaje
     this.playFootstep();
 
     if (this.hasBloodStains(row, col) && this.ambientSounds['dos-gotas']) {
@@ -1175,6 +1171,101 @@ export class Game implements GameInput {
     this.visitedCells.add(posKey(pos[0], pos[1]));
   }
 
+  // --- Movimiento automático ----------------------------------------------------
+
+  /** Clic o toque en el lienzo (coordenadas lógicas). */
+  private handleClick(x: number, y: number): void {
+    if (this.showingGameOver) {
+      this.input.handleClick(x, y);
+      return;
+    }
+    // Tocar el título equivale a pulsar una tecla
+    if (this.showingTitle) {
+      this.input.handleKey('Enter');
+      return;
+    }
+    const row = Math.floor(this.cameraOffsetRow + y / this.cellSize);
+    const col = Math.floor(this.cameraOffsetCol + x / this.cellSize);
+    this.startAutoMove(row, col);
+  }
+
+  /** Va andando hasta una celda visible si hay camino; un clic nuevo siempre detiene el trayecto anterior. */
+  startAutoMove(row: number, col: number): void {
+    this.cancelAutoMove();
+    if (this.autoMoveBlocked() || !this.world.inBounds(row, col)) return;
+    const visited = (r: number, c: number) => this.visitedCells.has(posKey(r, c)) && this.world.board[r][c].cellType !== CellType.EMPTY;
+    const path = visited(row, col)
+      ? this.world.findPath(this.currentPosition, [row, col], visited)
+      : this.pathToUnrevealed(row, col, visited);
+    if (!path || path.length === 0) return;
+    this.autoPath = path;
+    this.autoTarget = [row, col];
+    this.autoNextStepTime = 0;
+  }
+
+  /**
+   * Camino hasta una celda sin revelar contigua a una revelada: va a la vecina
+   * revelada más cercana que tenga salida hacia ella y luego entra en la celda.
+   */
+  private pathToUnrevealed(row: number, col: number, visited: (r: number, c: number) => boolean): Pos[] | null {
+    const world = this.world;
+    if (world.isBarrancoCell(row, col) || world.isBridgeCell(row, col)) return null;
+    let best: Pos[] | null = null;
+    for (const direction of DIRECTIONS) {
+      const [dr, dc] = DELTA[direction];
+      // Vecina desde la que se entra a la celda pulsada
+      const nr = row - dr;
+      const nc = col - dc;
+      if (!world.inBounds(nr, nc) || !visited(nr, nc) || !world.board[nr][nc].exits.has(direction)) continue;
+      const steps = world.findPath(this.currentPosition, [nr, nc], visited);
+      if (steps && (!best || steps.length < best.length)) best = steps;
+    }
+    return best && [...best, [row, col]];
+  }
+
+  cancelAutoMove(): void {
+    this.autoPath = [];
+    this.autoTarget = null;
+  }
+
+  private autoMoveBlocked(): boolean {
+    return (
+      this.showingTitle ||
+      this.showingGameOver ||
+      this.introAnimActive ||
+      this.thoughtPending ||
+      this.askingExitConfirmation ||
+      this.askingMainMenuConfirmation ||
+      (this.audio.thoughtActive && this.audio.thoughtBlocksMovement) ||
+      (this.exitImageShown && ticks() - this.exitImageStartTime < EXIT_IMAGE_BLOCK_MS)
+    );
+  }
+
+  private updateAutoMove(now: number): void {
+    if (!this.autoTarget) return;
+    // Un pensamiento, diálogo o el fin de la partida interrumpen el trayecto
+    if (this.autoMoveBlocked()) {
+      this.cancelAutoMove();
+      return;
+    }
+    if (now < this.autoNextStepTime) return;
+
+    const next = this.autoPath[0];
+    const [row, col] = this.currentPosition;
+    const direction: Direction = next[0] < row ? 'N' : next[0] > row ? 'S' : next[1] > col ? 'E' : 'O';
+    const health = this.playerHealth;
+    this.placeCellInDirection(direction);
+
+    // Si no se llegó a la celda prevista (bloqueo, monstruo...) o hubo daño, se detiene
+    if (this.currentPosition[0] !== next[0] || this.currentPosition[1] !== next[1] || this.playerHealth < health) {
+      this.cancelAutoMove();
+      return;
+    }
+    this.autoPath.shift();
+    this.autoNextStepTime = now + this.playerWalkDuration;
+    if (this.autoPath.length === 0) this.cancelAutoMove();
+  }
+
   // --- Bucle principal ---------------------------------------------------------
 
   /** Ejecuta la partida. Resuelve true si hay que reiniciar y false si se sale. */
@@ -1280,14 +1371,12 @@ export class Game implements GameInput {
     // Eventos de entrada acumulados desde el último frame
     let running = true;
     for (const ev of this.keyQueue.splice(0)) {
-      this.autoWalk = [];
+      this.cancelAutoMove(); // cualquier tecla cancela el movimiento automático
+      this.cameraManual = false; // y la cámara vuelve al personaje
       if (!this.input.handleKey(ev.key)) running = false;
     }
-    for (const click of this.clickQueue.splice(0)) {
-      this.input.handleClick(click.x, click.y);
-      this.startAutoWalk(click.x, click.y);
-    }
-    this.stepAutoWalk(now);
+    for (const click of this.clickQueue.splice(0)) this.handleClick(click.x, click.y);
+    this.updateAutoMove(now);
 
     this.renderer.draw(frames);
 

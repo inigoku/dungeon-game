@@ -17,6 +17,7 @@ Un juego de exploración de mazmorras en 2D escrito en **TypeScript** y dibujado
 - **Camino garantizado**: el camino principal (con BFS de verificación, hasta 10 intentos) lleva del inicio a la salida.
 - **Barranco infranqueable**: una fila o columna entera divide el mapa; la salida está al otro lado y solo se llega cruzando un **puente volante** (hay dos, uno en el camino principal y otro opcional). Intentar cruzar el vacío es mortal.
 - **Niebla de guerra**: solo se ven las celdas visitadas; el barranco y los puentes aparecen al acercarse.
+- **Movimiento automático**: haz clic o toca una celda visible y el personaje irá hasta ella por el camino más corto (se detiene al ser herido o al empezar un pensamiento).
 - **Zoom** de 5 niveles (5×5 hasta el mapa completo) y **cámara suave**.
 - **Antorchas** cada vez menos frecuentes hacia la salida, **manchas de sangre** que anuncian el final y una fuente en la celda de inicio.
 
@@ -35,6 +36,8 @@ Un juego de exploración de mazmorras en 2D escrito en **TypeScript** y dibujado
 | Tecla | Acción |
 | --- | --- |
 | **W A S D** / **↑ ← ↓ →** | Moverse |
+| **Clic / toque** en una celda visible | Ir andando hasta ella si hay camino; otro clic cambia el destino (o detiene el trayecto si no hay camino) y cualquier tecla lo cancela |
+| **Arrastrar** con el dedo o el ratón | Desplazar la vista para ver zonas lejanas (la cámara vuelve al personaje cuando te mueves o pulsas una tecla) |
 | **Z** / **X** | Acercar / alejar el zoom |
 | **ESC** | Cancelar el pensamiento activo, o volver al menú (S = sí, N = no) |
 | **R** | Reiniciar tras el Game Over (o clic en el botón) |

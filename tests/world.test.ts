@@ -129,3 +129,30 @@ describe('World (consultas)', () => {
     expect(keys.size).toBe(400);
   });
 });
+
+describe('World.findPath', () => {
+  const w = new World(SIZE);
+  const everything = () => true;
+
+  it('encuentra el camino más corto por conexiones mutuas', () => {
+    const [sr, sc] = w.startPosition;
+    const path = w.findPath(w.startPosition, w.exitPosition, everything);
+    expect(path).not.toBeNull();
+    expect(path![path!.length - 1]).toEqual([...w.exitPosition]);
+    let prev: readonly [number, number] = [sr, sc];
+    for (const step of path!) {
+      expect(Math.abs(step[0] - prev[0]) + Math.abs(step[1] - prev[1])).toBe(1);
+      prev = step;
+    }
+  });
+
+  it('respeta las celdas permitidas', () => {
+    expect(w.findPath(w.startPosition, w.exitPosition, () => false)).toBeNull();
+    const only = new Set([posKey(50, 50)]);
+    expect(w.findPath(w.startPosition, w.exitPosition, (r, c) => only.has(posKey(r, c)))).toBeNull();
+  });
+
+  it('a la propia celda de origen devuelve un camino vacío', () => {
+    expect(w.findPath(w.startPosition, w.startPosition, everything)).toEqual([]);
+  });
+});
