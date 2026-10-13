@@ -24,10 +24,19 @@ export const SOUND_NAMES = [
   'zumbido_espada',
 ] as const;
 
+/** Resultado de la carga de sonidos, para diagnosticar el audio en dispositivos concretos. */
+export interface AudioDiag {
+  /** Formato con el que se cargó cada sonido (null si no se pudo). */
+  formats: Record<string, 'ogg' | 'm4a' | null>;
+  errors: string[];
+  oggSupported: boolean;
+}
+
 export interface Assets {
   mixer: Mixer;
   images: Record<string, HTMLImageElement | null>;
   buffers: Record<string, AudioBuffer | null>;
+  audioDiag: AudioDiag;
 }
 
 function loadImage(url: string): Promise<HTMLImageElement | null> {
@@ -42,21 +51,54 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
   });
 }
 
+/** Safari/iOS (incluido Chrome en iPhone) no reproduce OGG Vorbis: se usa M4A directamente. */
+function oggSupported(): boolean {
+  try {
+    return document.createElement('audio').canPlayType('audio/ogg; codecs="vorbis"') !== '';
+  } catch {
+    return true;
+  }
+}
+
+/** Falla si la promesa no se resuelve a tiempo (en iOS una decodificación puede quedarse colgada). */
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${what}: sin respuesta en ${ms} ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function fetchDecode(mixer: Mixer, url: string): Promise<AudioBuffer> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return await mixer.decode(await response.arrayBuffer());
 }
 
-/** Prueba OGG (bucles sin cortes) y, si el navegador no lo decodifica (Safari), M4A. */
-async function loadSound(mixer: Mixer, name: string): Promise<AudioBuffer | null> {
-  for (const ext of ['ogg', 'm4a']) {
+/** Carga un sonido en el mejor formato soportado, con el otro como respaldo. */
+async function loadSound(mixer: Mixer, name: string, diag: AudioDiag): Promise<AudioBuffer | null> {
+  const order: Array<'ogg' | 'm4a'> = diag.oggSupported ? ['ogg', 'm4a'] : ['m4a', 'ogg'];
+  for (const ext of order) {
+    const url = `sound/${name}.${ext}`;
     try {
-      return await fetchDecode(mixer, `sound/${name}.${ext}`);
+      const buffer = await withTimeout(fetchDecode(mixer, url), 15000, url);
+      diag.formats[name] = ext;
+      return buffer;
     } catch (error) {
-      console.warn(`No se pudo cargar sound/${name}.${ext}:`, error);
+      const message = `${url}: ${error instanceof Error ? error.message : String(error)}`;
+      diag.errors.push(message);
+      console.warn(`No se pudo cargar ${message}`);
     }
   }
+  diag.formats[name] = null;
   return null;
 }
 
@@ -65,6 +107,7 @@ export async function loadAssets(onProgress: (fraction: number) => void): Promis
   const mixer = new Mixer();
   const images: Assets['images'] = {};
   const buffers: Assets['buffers'] = {};
+  const audioDiag: AudioDiag = { formats: {}, errors: [], oggSupported: oggSupported() };
   const total = IMAGE_NAMES.length + SOUND_NAMES.length;
   let done = 0;
   const tick = () => onProgress(++done / total);
@@ -75,11 +118,11 @@ export async function loadAssets(onProgress: (fraction: number) => void): Promis
       tick();
     }),
     ...SOUND_NAMES.map(async (name) => {
-      buffers[name] = await loadSound(mixer, name);
+      buffers[name] = await loadSound(mixer, name, audioDiag);
       tick();
     }),
   ]);
-  return { mixer, images, buffers };
+  return { mixer, images, buffers, audioDiag };
 }
 
 /** Escala una imagen a (w, h) con suavizado de calidad alta. */
