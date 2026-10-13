@@ -8,7 +8,7 @@ import { DEFAULT_BOARD_SIZE, DEFAULT_CELL_SIZE, DEFAULT_VIEW_SIZE } from './conf
 import type { Footprint } from './decorations';
 import { context2d, type Canvas, type Ctx } from './gfx';
 import { InputHandler, type GameInput } from './input';
-import { Cell, CellType, DELTA, oppositeDirection, posKey, type Direction, type Pos } from './models';
+import { Cell, CellType, DELTA, DIRECTIONS, oppositeDirection, posKey, type Direction, type Pos } from './models';
 import { Renderer } from './renderer';
 import { random, seeded } from './rng';
 import { sleep, ticks } from './time';
@@ -1194,11 +1194,33 @@ export class Game implements GameInput {
     this.cancelAutoMove();
     if (this.autoMoveBlocked() || !this.world.inBounds(row, col)) return;
     const visited = (r: number, c: number) => this.visitedCells.has(posKey(r, c)) && this.world.board[r][c].cellType !== CellType.EMPTY;
-    const path = this.world.findPath(this.currentPosition, [row, col], visited);
+    const path = visited(row, col)
+      ? this.world.findPath(this.currentPosition, [row, col], visited)
+      : this.pathToUnrevealed(row, col, visited);
     if (!path || path.length === 0) return;
     this.autoPath = path;
     this.autoTarget = [row, col];
     this.autoNextStepTime = 0;
+  }
+
+  /**
+   * Camino hasta una celda sin revelar contigua a una revelada: va a la vecina
+   * revelada más cercana que tenga salida hacia ella y luego entra en la celda.
+   */
+  private pathToUnrevealed(row: number, col: number, visited: (r: number, c: number) => boolean): Pos[] | null {
+    const world = this.world;
+    if (world.isBarrancoCell(row, col) || world.isBridgeCell(row, col)) return null;
+    let best: Pos[] | null = null;
+    for (const direction of DIRECTIONS) {
+      const [dr, dc] = DELTA[direction];
+      // Vecina desde la que se entra a la celda pulsada
+      const nr = row - dr;
+      const nc = col - dc;
+      if (!world.inBounds(nr, nc) || !visited(nr, nc) || !world.board[nr][nc].exits.has(direction)) continue;
+      const steps = world.findPath(this.currentPosition, [nr, nc], visited);
+      if (steps && (!best || steps.length < best.length)) best = steps;
+    }
+    return best && [...best, [row, col]];
   }
 
   cancelAutoMove(): void {
