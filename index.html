@@ -95,33 +95,24 @@
         }
         #stage {
           width: 100vw;
-          height: calc(100dvh - 190px);
+          height: calc(100dvh - 84px);
         }
         #touch {
           display: flex;
-          justify-content: space-between;
+          justify-content: flex-end;
           align-items: center;
           position: fixed;
           left: 0;
           right: 0;
           bottom: 0;
-          height: 180px;
+          height: 76px;
           padding: 0 16px env(safe-area-inset-bottom);
           box-sizing: border-box;
         }
       }
-      #dpad {
-        display: grid;
-        grid-template: repeat(3, 56px) / repeat(3, 56px);
-        gap: 4px;
-      }
-      #dpad .up { grid-area: 1 / 2; }
-      #dpad .left { grid-area: 2 / 1; }
-      #dpad .right { grid-area: 2 / 3; }
-      #dpad .down { grid-area: 3 / 2; }
       #side {
         display: grid;
-        grid-template-columns: repeat(2, 56px);
+        grid-template-columns: repeat(4, 56px);
         gap: 8px;
       }
       #touch button {
@@ -136,6 +127,38 @@
       #touch button:active {
         background: #6a1414;
       }
+      /* Cruceta adaptativa: aparece bajo el dedo (cuadrante inferior izquierdo) mientras se mantiene pulsado */
+      .apad {
+        position: absolute;
+        width: 150px;
+        height: 150px;
+        margin: -75px 0 0 -75px;
+        border-radius: 50%;
+        background: rgba(20, 6, 6, 0.45);
+        border: 2px solid rgba(150, 32, 32, 0.7);
+        pointer-events: none;
+      }
+      .apad[hidden] {
+        display: none;
+      }
+      .apad-arrow {
+        position: absolute;
+        width: 40px;
+        height: 40px;
+        line-height: 40px;
+        text-align: center;
+        font-size: 24px;
+        color: rgba(255, 255, 255, 0.55);
+        border-radius: 10px;
+      }
+      .apad-arrow.on {
+        color: #fff;
+        background: rgba(150, 32, 32, 0.8);
+      }
+      .apad-N { left: 55px; top: 6px; }
+      .apad-S { left: 55px; bottom: 6px; }
+      .apad-O { left: 6px; top: 55px; }
+      .apad-E { right: 6px; top: 55px; }
     </style>
   </head>
   <body>
@@ -149,12 +172,6 @@
       </div>
     </div>
     <div id="touch" aria-label="Controles táctiles">
-      <div id="dpad">
-        <button class="up" data-key="w" aria-label="Arriba">▲</button>
-        <button class="left" data-key="a" aria-label="Izquierda">◀</button>
-        <button class="right" data-key="d" aria-label="Derecha">▶</button>
-        <button class="down" data-key="s" aria-label="Abajo">▼</button>
-      </div>
       <div id="side">
         <button data-key="z" aria-label="Acercar">＋</button>
         <button data-key="x" aria-label="Alejar">－</button>

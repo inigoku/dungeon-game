@@ -8,6 +8,7 @@ import { DEFAULT_BOARD_SIZE, DEFAULT_CELL_SIZE, DEFAULT_VIEW_SIZE } from './conf
 import type { Footprint } from './decorations';
 import { context2d, type Canvas, type Ctx } from './gfx';
 import { InputHandler, type GameInput } from './input';
+import { AdaptivePad, padDirection } from './touchpad';
 import { Cell, CellType, DELTA, DIRECTIONS, oppositeDirection, posKey, type Direction, type Pos } from './models';
 import { Renderer } from './renderer';
 import { random, seeded } from './rng';
@@ -65,6 +66,9 @@ export const PLAYER_PALETTE = {
 } as const;
 
 const EXIT_IMAGE_BLOCK_MS = 10000;
+/** Tiempo manteniendo el dedo quieto para que aparezca la cruceta táctil. */
+const PAD_HOLD_MS = 220;
+const PAD_KEYS: Record<Direction, string> = { N: 'w', E: 'd', S: 's', O: 'a' };
 
 export class Game implements GameInput {
   // Dimensiones
@@ -315,16 +319,96 @@ export class Game implements GameInput {
       const rect = this.canvas.getBoundingClientRect();
       return [((e.clientX - rect.left) * this.width) / rect.width, ((e.clientY - rect.top) * this.height) / rect.height];
     };
-    let drag: { id: number; startX: number; startY: number; lastX: number; lastY: number; dragged: boolean } | null = null;
+    const stage = this.canvas.parentElement ?? document.body;
+    const pad = new AdaptivePad(stage);
+    this.cleanups.push(() => pad.dispose());
+    let drag: {
+      id: number;
+      startX: number;
+      startY: number;
+      lastX: number;
+      lastY: number;
+      dragged: boolean;
+      /** Toque táctil en el cuadrante inferior izquierdo: puede abrir la cruceta adaptativa. */
+      padCandidate: boolean;
+      padActive: boolean;
+      startClientX: number;
+      startClientY: number;
+      clientX: number;
+      clientY: number;
+      holdTimer: number;
+      repeatTimer: number;
+      direction: Direction | null;
+      nextStepAt: number;
+    } | null = null;
+
+    const closePad = () => {
+      if (!drag) return;
+      window.clearTimeout(drag.holdTimer);
+      window.clearInterval(drag.repeatTimer);
+      if (drag.padActive) pad.hide();
+      drag.padActive = false;
+    };
+    const openPad = () => {
+      if (!drag || drag.padActive) return;
+      const rect = this.canvas.getBoundingClientRect();
+      drag.padActive = true;
+      drag.dragged = true; // ya no es un toque: al soltar no se manda a una celda
+      pad.show(drag.startClientX - rect.left, drag.startClientY - rect.top);
+      // Mientras se mantiene el dedo desplazado, da un paso cada vez que acaba el anterior
+      drag.repeatTimer = window.setInterval(() => {
+        if (!drag || !drag.direction || this.autoMoveBlocked()) return;
+        const now = ticks();
+        if (now < drag.nextStepAt) return;
+        drag.nextStepAt = now + this.playerWalkDuration;
+        this.keyQueue.push({ key: PAD_KEYS[drag.direction] });
+      }, 50);
+    };
+    const updatePadDirection = () => {
+      if (!drag?.padActive) return;
+      drag.direction = padDirection(drag.clientX - drag.startClientX, drag.clientY - drag.startClientY);
+      pad.setActive(drag.direction);
+    };
+
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      closePad();
       const [x, y] = toLogical(e);
-      drag = { id: e.pointerId, startX: x, startY: y, lastX: x, lastY: y, dragged: false };
+      const padCandidate = e.pointerType === 'touch' && !this.showingTitle && !this.showingGameOver && x < this.width / 2 && y > this.height / 2;
+      drag = {
+        id: e.pointerId,
+        startX: x,
+        startY: y,
+        lastX: x,
+        lastY: y,
+        dragged: false,
+        padCandidate,
+        padActive: false,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        holdTimer: 0,
+        repeatTimer: 0,
+        direction: null,
+        nextStepAt: 0,
+      };
+      if (padCandidate) drag.holdTimer = window.setTimeout(openPad, PAD_HOLD_MS);
       this.canvas.setPointerCapture(e.pointerId);
     };
     const onPointerMove = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
       const [x, y] = toLogical(e);
+      drag.clientX = e.clientX;
+      drag.clientY = e.clientY;
+      if (drag.padCandidate) {
+        // Un arrastre corto (o mantener pulsado) abre la cruceta en vez de desplazar la vista
+        if (!drag.padActive && Math.hypot(x - drag.startX, y - drag.startY) >= 10) {
+          openPad();
+        }
+        updatePadDirection();
+        return;
+      }
       if (!drag.dragged && Math.hypot(x - drag.startX, y - drag.startY) < 10) return;
       drag.dragged = true;
       this.panCamera(x - drag.lastX, y - drag.lastY);
@@ -333,6 +417,7 @@ export class Game implements GameInput {
     };
     const onPointerUp = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
+      closePad();
       const wasDrag = drag.dragged;
       drag = null;
       if (!wasDrag) {
@@ -341,6 +426,7 @@ export class Game implements GameInput {
       }
     };
     const onPointerCancel = () => {
+      closePad();
       drag = null;
     };
     const observer = new ResizeObserver(() => this.resizeTo(this.canvas.clientWidth, this.canvas.clientHeight));
