@@ -1436,6 +1436,8 @@ export class Game implements GameInput {
     this.disposed = true;
     for (const cleanup of this.cleanups) cleanup();
     this.audio.dispose();
+    // Nada de la partida anterior debe seguir sonando (pasos, gritos, gruñidos, ambiente...)
+    this.assets.mixer.stopAll();
     this.resolveRun?.(restart);
     this.resolveRun = null;
   }

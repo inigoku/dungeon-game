@@ -11,6 +11,8 @@ import { ticks } from './time';
 
 export class Mixer {
   readonly ctx: AudioContext;
+  /** Canales que pueden estar sonando; los de un solo uso se retiran al terminar. */
+  private readonly channels = new Set<Channel>();
 
   constructor() {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -20,6 +22,20 @@ export class Mixer {
   /** Los navegadores solo permiten sonar tras un gesto del usuario. */
   async resume(): Promise<void> {
     if (this.ctx.state !== 'running') await this.ctx.resume();
+  }
+
+  track(channel: Channel): void {
+    this.channels.add(channel);
+  }
+
+  untrack(channel: Channel): void {
+    this.channels.delete(channel);
+  }
+
+  /** Silencia todos los canales (música, ambiente, pasos, gritos...), p. ej. al reiniciar tras un Game Over. */
+  stopAll(): void {
+    for (const channel of this.channels) channel.stop();
+    this.channels.clear();
   }
 
   async decode(data: ArrayBuffer): Promise<AudioBuffer> {
@@ -50,7 +66,7 @@ export class Sound {
 
   /** Reproduce en un canal nuevo (loops = -1 → infinito). */
   play(loops = 0): Channel {
-    const channel = new Channel(this.mixer);
+    const channel = new Channel(this.mixer, true);
     channel.play(this, loops);
     return channel;
   }
@@ -64,9 +80,14 @@ export class Channel {
   private busy = false;
   private volume = 1;
 
-  constructor(private readonly mixer: Mixer) {
+  /** `oneShot`: canal creado por `Sound.play()`, que se olvida al terminar de sonar. */
+  constructor(
+    private readonly mixer: Mixer,
+    private readonly oneShot = false,
+  ) {
     this.channelGain = mixer.ctx.createGain();
     this.channelGain.connect(mixer.ctx.destination);
+    mixer.track(this);
   }
 
   /** Empieza a sonar; como en pygame, el volumen del canal vuelve al máximo. */
@@ -82,11 +103,13 @@ export class Channel {
     this.volume = 1;
     this.channelGain.gain.cancelScheduledValues(0);
     this.channelGain.gain.value = 1;
+    this.mixer.track(this);
     source.onended = () => {
       if (this.source !== source) return;
       this.busy = false;
       source.disconnect();
       soundGain.disconnect();
+      if (this.oneShot) this.mixer.untrack(this);
     };
     this.source = source;
     this.soundGain = soundGain;
@@ -118,6 +141,7 @@ export class Channel {
     this.source = null;
     this.soundGain = null;
     this.busy = false;
+    if (this.oneShot) this.mixer.untrack(this);
   }
 
   /** Baja el volumen a cero en `ms` milisegundos y detiene el sonido. */
