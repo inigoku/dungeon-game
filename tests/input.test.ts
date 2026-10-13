@@ -55,7 +55,7 @@ describe('InputHandler', () => {
     expect(input.handleKey('Escape')).toBe(false);
   });
 
-  it('Escape durante el juego cancela el pensamiento o pregunta por el menú', () => {
+  it('durante el juego Escape pregunta por el menú y cualquier tecla cancela el pensamiento', () => {
     const { game } = fakeGame();
     const input = new InputHandler(game);
     input.handleKey('Escape');
@@ -67,6 +67,12 @@ describe('InputHandler', () => {
     new InputHandler(thinking.game).handleKey('Escape');
     expect(thinking.game.audio.cancelThought).toHaveBeenCalled();
     expect(thinking.game.askingMainMenuConfirmation).toBe(false);
+
+    // Cualquier otra tecla también lo cancela, sin mover al personaje
+    const walking = fakeGame({ audio: { thoughtActive: true, cancelThought: vi.fn() } as never });
+    new InputHandler(walking.game).handleKey('w');
+    expect(walking.game.audio.cancelThought).toHaveBeenCalled();
+    expect(walking.moves).toEqual([]);
   });
 
   it('confirmar con S vuelve al menú principal', () => {

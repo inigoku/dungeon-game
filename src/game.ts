@@ -384,6 +384,15 @@ export class Game implements GameInput {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (e.pointerType === 'touch') {
         touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      // Un toque o clic cancela el pensamiento activo (y no hace nada más)
+      if (this.audio.thoughtActive && !this.showingTitle && !this.showingGameOver) {
+        this.audio.cancelThought();
+        closePad();
+        drag = null;
+        return;
+      }
+      if (e.pointerType === 'touch') {
         if (touches.size >= 2) {
           // El segundo dedo anula el toque, el arrastre o la cruceta en curso
           closePad();
