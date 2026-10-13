@@ -55,16 +55,6 @@ interface RestartButton {
   h: number;
 }
 
-export const PLAYER_PALETTE = {
-  armor: [90, 90, 90],
-  trim: [140, 140, 140],
-  skin: [200, 170, 140],
-  shield: [70, 70, 70],
-  shieldTrim: [140, 120, 80],
-  swordHandle: [180, 140, 80],
-  swordBlade: [200, 200, 200],
-} as const;
-
 const EXIT_IMAGE_BLOCK_MS = 10000;
 /** Tiempo manteniendo el dedo quieto para que aparezca la cruceta táctil. */
 const PAD_HOLD_MS = 220;
@@ -1436,6 +1426,8 @@ export class Game implements GameInput {
     this.disposed = true;
     for (const cleanup of this.cleanups) cleanup();
     this.audio.dispose();
+    // Nada de la partida anterior debe seguir sonando (pasos, gritos, gruñidos, ambiente...)
+    this.assets.mixer.stopAll();
     this.resolveRun?.(restart);
     this.resolveRun = null;
   }
