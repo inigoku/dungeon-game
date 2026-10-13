@@ -68,6 +68,8 @@ export const PLAYER_PALETTE = {
 const EXIT_IMAGE_BLOCK_MS = 10000;
 /** Tiempo manteniendo el dedo quieto para que aparezca la cruceta táctil. */
 const PAD_HOLD_MS = 220;
+/** Factor de separación de los dedos que equivale a un nivel de zoom. */
+const PINCH_STEP = 1.3;
 const PAD_KEYS: Record<Direction, string> = { N: 'w', E: 'd', S: 's', O: 'a' };
 
 export class Game implements GameInput {
@@ -370,8 +372,26 @@ export class Game implements GameInput {
       pad.setActive(drag.direction);
     };
 
+    // Pellizco con dos dedos: separar acerca (como +) y juntar aleja (como -)
+    const touches = new Map<number, { x: number; y: number }>();
+    let pinchDistance: number | null = null;
+    const touchDistance = (): number => {
+      const [a, b] = [...touches.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (e.pointerType === 'touch') {
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touches.size >= 2) {
+          // El segundo dedo anula el toque, el arrastre o la cruceta en curso
+          closePad();
+          drag = null;
+          pinchDistance = touchDistance();
+          return;
+        }
+      }
       closePad();
       const [x, y] = toLogical(e);
       const padCandidate = e.pointerType === 'touch' && !this.showingTitle && !this.showingGameOver && x < this.width / 2 && y > this.height / 2;
@@ -397,6 +417,19 @@ export class Game implements GameInput {
       this.canvas.setPointerCapture(e.pointerId);
     };
     const onPointerMove = (e: PointerEvent) => {
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinchDistance !== null) {
+        if (touches.size < 2 || this.showingTitle || this.showingGameOver) return;
+        const distance = touchDistance();
+        if (distance > pinchDistance * PINCH_STEP) {
+          this.zoomIn();
+          pinchDistance = distance;
+        } else if (distance < pinchDistance / PINCH_STEP) {
+          this.zoomOut();
+          pinchDistance = distance;
+        }
+        return;
+      }
       if (!drag || e.pointerId !== drag.id) return;
       const [x, y] = toLogical(e);
       drag.clientX = e.clientX;
@@ -415,7 +448,15 @@ export class Game implements GameInput {
       drag.lastX = x;
       drag.lastY = y;
     };
+    const endTouch = (e: PointerEvent): boolean => {
+      touches.delete(e.pointerId);
+      if (pinchDistance === null) return false;
+      // Al terminar el pellizco, el dedo que queda no cuenta como toque
+      if (touches.size === 0) pinchDistance = null;
+      return true;
+    };
     const onPointerUp = (e: PointerEvent) => {
+      if (endTouch(e)) return;
       if (!drag || e.pointerId !== drag.id) return;
       closePad();
       const wasDrag = drag.dragged;
@@ -425,7 +466,8 @@ export class Game implements GameInput {
         this.clickQueue.push({ x, y });
       }
     };
-    const onPointerCancel = () => {
+    const onPointerCancel = (e: PointerEvent) => {
+      endTouch(e);
       closePad();
       drag = null;
     };
