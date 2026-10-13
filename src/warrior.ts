@@ -536,7 +536,16 @@ function drawFrontBack(ctx: Ctx, r: RigBase & { back: boolean; headTurn: number 
     fillStroke(ctx, vGradient(ctx, arm.hand[1] - 4, arm.hand[1] + 4, SKIN_LIGHT, SKIN_DARK), 1.5);
   };
 
-  if (back) arms.forEach(drawArm);
+  if (back) {
+    // De espaldas las armas se sujetan por delante del cuerpo: quedan detrás de brazos y torso
+    if (showWeapons) {
+      for (const arm of arms) {
+        if (arm.holdingShield) shield(ctx, arm.hand[0] + arm.k * 6, arm.hand[1] + 4, 1);
+        else if (arm.holdingSword) sword(ctx, arm.hand[0], arm.hand[1] + 1, arm.k * -0.12 + (moving ? Math.sin(walkAngle) * 0.03 : 0), swordPower, now);
+      }
+    }
+    arms.forEach(drawArm);
+  }
 
   // Torso: coraza (peto o espaldar) con bisel y cinturón
   ctx.beginPath();
@@ -600,10 +609,12 @@ function drawFrontBack(ctx: Ctx, r: RigBase & { back: boolean; headTurn: number 
   ctx.closePath();
   fillStroke(ctx, vGradient(ctx, shoulderY - 5, shoulderY + 4, RED, RED_DARK), 1.5);
 
-  // Manos y armas, por delante de los hombros
+  // Manos; de frente las armas van por delante de los hombros (de espaldas ya se dibujaron detrás)
   if (showWeapons) {
     for (const arm of arms) {
-      if (arm.holdingShield) {
+      if (back) {
+        if (arm.holdingSword) drawHand(arm);
+      } else if (arm.holdingShield) {
         drawHand(arm); // la mano queda detrás del escudo
         shield(ctx, arm.hand[0] + arm.k * 6, arm.hand[1] + 4, 1);
       } else if (arm.holdingSword) {
