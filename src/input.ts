@@ -81,10 +81,15 @@ export class InputHandler {
       return true;
     }
 
-    // 3. Controles generales
+    // 3. Cualquier tecla cancela el pensamiento activo (y no hace nada más)
+    if (game.audio.thoughtActive) {
+      game.audio.cancelThought();
+      return true;
+    }
+
+    // 4. Controles generales
     if (key === 'Escape') {
-      if (game.audio.thoughtActive) game.audio.cancelThought();
-      else game.askingMainMenuConfirmation = true;
+      game.askingMainMenuConfirmation = true;
       return true;
     }
 
@@ -117,7 +122,7 @@ export class InputHandler {
         break;
     }
 
-    // 4. Movimiento (bloqueado durante la animación de introducción)
+    // 5. Movimiento (bloqueado durante la animación de introducción)
     if (!game.introAnimActive && Object.hasOwn(DIR_MAP, key)) game.placeCellInDirection(DIR_MAP[key]);
     return true;
   }

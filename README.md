@@ -22,7 +22,7 @@ Un juego de exploración de mazmorras en 2D escrito en **TypeScript** y dibujado
 - **Antorchas** cada vez menos frecuentes hacia la salida, **manchas de sangre** que anuncian el final y una fuente en la celda de inicio.
 
 ### Narrativa y secuencia final
-- **Pensamientos**: audio + subtítulos + imágenes sincronizados (introducción, antorchas, sangre, la salida, el poder de la espada). Cada uno se activa una sola vez y puede cancelarse con ESC.
+- **Pensamientos**: audio + subtítulos + imágenes sincronizados (introducción, antorchas, sangre, la salida, el poder de la espada). Cada uno se activa una sola vez y puede cancelarse con cualquier tecla o toque.
 - Al llegar a la salida las antorchas parpadean y se apagan, el mapa se aleja y aparecen los **Profundos**.
 - Si vuelves al inicio tras ver la salida, obtienes el **poder de la espada**: los monstruos huyen y mueren a tu paso.
 - **Salud**, daño con invulnerabilidad temporal, pantalla de **Game Over** con fundido y botón de reinicio.
@@ -39,7 +39,8 @@ Un juego de exploración de mazmorras en 2D escrito en **TypeScript** y dibujado
 | **Clic / toque** en una celda visible | Ir andando hasta ella si hay camino; otro clic cambia el destino (o detiene el trayecto si no hay camino) y cualquier tecla lo cancela |
 | **Arrastrar** con el dedo o el ratón | Desplazar la vista para ver zonas lejanas (la cámara vuelve al personaje cuando te mueves o pulsas una tecla) |
 | **Z** / **X** | Acercar / alejar el zoom |
-| **ESC** | Cancelar el pensamiento activo, o volver al menú (S = sí, N = no) |
+| **ESC** | Volver al menú (S = sí, N = no) |
+| **Cualquier tecla / toque** | Cancela el pensamiento activo |
 | **R** | Reiniciar tras el Game Over (o clic en el botón) |
 | **Táctil** | Toque corto: ir a esa celda. Mantener pulsado o arrastrar poco en el cuadrante inferior izquierdo: aparece una cruceta bajo el dedo (desaparece al soltar). Arrastrar en el resto: desplazar la vista. Pellizco: zoom (separar acerca, juntar aleja) |
 | **F2** | Revelación automática de celdas adyacentes (debug) |
