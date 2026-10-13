@@ -62,7 +62,7 @@ async function boot(): Promise<void> {
   });
   // Los navegadores solo dejan sonar el audio tras un gesto del usuario
   await showOverlay('Dungeon Explorer 2D', 'Explora la mazmorra, encuentra la salida y sobrevive. Mejor con auriculares.', 'Empezar');
-  await assets.mixer.resume();
+  await assets.mixer.unlock();
   await playLoop(assets);
 }
 

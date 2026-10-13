@@ -9,19 +9,97 @@ import { ticks } from './time';
 // Mezclador
 // ---------------------------------------------------------------------------
 
+/** URL de un WAV de 0,1 s de silencio, generado al vuelo. */
+function silentWavUrl(): string {
+  const samples = 800;
+  const buffer = new ArrayBuffer(44 + samples);
+  const view = new DataView(buffer);
+  const text = (offset: number, value: string) => [...value].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
+  text(0, 'RIFF');
+  view.setUint32(4, 36 + samples, true);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, 8000, true);
+  view.setUint32(28, 8000, true);
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true);
+  text(36, 'data');
+  view.setUint32(40, samples, true);
+  new Uint8Array(buffer, 44).fill(0x80); // 8 bits sin signo: 0x80 es el silencio
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+}
+
 export class Mixer {
   readonly ctx: AudioContext;
   /** Canales que pueden estar sonando; los de un solo uso se retiran al terminar. */
   private readonly channels = new Set<Channel>();
 
+  private primed = false;
+  private silentAudio: HTMLAudioElement | null = null;
+
   constructor() {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new Ctor();
+    this.installUnlock();
   }
 
   /** Los navegadores solo permiten sonar tras un gesto del usuario. */
   async resume(): Promise<void> {
     if (this.ctx.state !== 'running') await this.ctx.resume();
+  }
+
+  /**
+   * En móviles el audio está bloqueado hasta un gesto del usuario, y en iPhone además se
+   * silencia con el interruptor de silencio. Cualquier toque, clic o tecla lo desbloquea
+   * (también al volver a la pestaña, cuando iOS puede dejar el contexto interrumpido).
+   */
+  private installUnlock(): void {
+    if (typeof window.addEventListener !== 'function') return;
+    const unlock = () => void this.unlock();
+    for (const type of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) {
+      window.addEventListener(type, unlock, { passive: true, capture: true });
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.ctx.state !== 'running') void this.ctx.resume().catch(() => undefined);
+      });
+    }
+  }
+
+  /** Debe llamarse dentro de un gesto del usuario. */
+  async unlock(): Promise<void> {
+    // iOS: que el audio de la web cuente como "reproducción" y suene aunque el teléfono esté en silencio
+    const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+    if (session) {
+      try {
+        session.type = 'playback';
+      } catch {
+        /* no soportado */
+      }
+    } else if (typeof Audio !== 'undefined') {
+      // Safari anterior: un <audio> silencioso en bucle cambia la categoría de audio de la página
+      if (!this.silentAudio) {
+        const el = new Audio(silentWavUrl());
+        el.loop = true;
+        el.setAttribute('playsinline', '');
+        this.silentAudio = el;
+      }
+      if (this.silentAudio.paused) void this.silentAudio.play().catch(() => undefined);
+    }
+
+    if (this.ctx.state !== 'running') await this.ctx.resume().catch(() => undefined);
+
+    // Desbloqueo clásico de iOS: sonar un búfer vacío dentro del gesto
+    if (!this.primed && this.ctx.state === 'running') {
+      this.primed = true;
+      const source = this.ctx.createBufferSource();
+      source.buffer = this.ctx.createBuffer(1, 1, 22050);
+      source.connect(this.ctx.destination);
+      source.start(0);
+    }
   }
 
   track(channel: Channel): void {
