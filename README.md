@@ -41,6 +41,7 @@ Un juego de exploración de mazmorras en 2D escrito en **TypeScript** y dibujado
 | **Z** / **X** | Acercar / alejar el zoom |
 | **ESC** | Cancelar el pensamiento activo, o volver al menú (S = sí, N = no) |
 | **R** | Reiniciar tras el Game Over (o clic en el botón) |
+| **Táctil** | Toque corto: ir a esa celda. Mantener pulsado o arrastrar poco en el cuadrante inferior izquierdo: aparece una cruceta bajo el dedo (desaparece al soltar). Arrastrar en el resto: desplazar la vista |
 | **F2** | Revelación automática de celdas adyacentes (debug) |
 | **F3** | Información de depuración |
 | **F4** | Mostrar el camino principal y el barranco |
