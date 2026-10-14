@@ -8,7 +8,7 @@ import { DEFAULT_BOARD_SIZE, DEFAULT_CELL_SIZE, DEFAULT_VIEW_SIZE } from './conf
 import type { Footprint } from './decorations';
 import { context2d, type Canvas, type Ctx } from './gfx';
 import { InputHandler, type GameInput } from './input';
-import { AdaptivePad, padDirection } from './touchpad';
+import { AdaptivePad, padDirections } from './touchpad';
 import { Cell, CellType, DELTA, DIRECTIONS, oppositeDirection, posKey, type Direction, type Pos } from './models';
 import { Renderer } from './renderer';
 import { random, seeded } from './rng';
@@ -64,7 +64,6 @@ export const FIGHT_MS = 2600;
 export const FACE_FRONT_AFTER_MS = 3000;
 /** Factor de separación de los dedos que equivale a un nivel de zoom. */
 const PINCH_STEP = 1.3;
-const PAD_KEYS: Record<Direction, string> = { N: 'w', E: 'd', S: 's', O: 'a' };
 
 export class Game implements GameInput {
   // Dimensiones
@@ -348,7 +347,7 @@ export class Game implements GameInput {
       clientY: number;
       holdTimer: number;
       repeatTimer: number;
-      direction: Direction | null;
+      directions: Direction[];
       nextStepAt: number;
     } | null = null;
 
@@ -367,17 +366,17 @@ export class Game implements GameInput {
       pad.show(drag.startClientX - rect.left, drag.startClientY - rect.top);
       // Mientras se mantiene el dedo desplazado, da un paso cada vez que acaba el anterior
       drag.repeatTimer = window.setInterval(() => {
-        if (!drag || !drag.direction || this.autoMoveBlocked()) return;
+        if (!drag || drag.directions.length === 0 || this.autoMoveBlocked()) return;
         const now = ticks();
         if (now < drag.nextStepAt) return;
         drag.nextStepAt = now + this.playerWalkDuration;
-        this.keyQueue.push({ key: PAD_KEYS[drag.direction] });
+        this.padStep(drag.directions);
       }, 50);
     };
     const updatePadDirection = () => {
       if (!drag?.padActive) return;
-      drag.direction = padDirection(drag.clientX - drag.startClientX, drag.clientY - drag.startClientY);
-      pad.setActive(drag.direction);
+      drag.directions = padDirections(drag.clientX - drag.startClientX, drag.clientY - drag.startClientY);
+      pad.setActive(drag.directions);
     };
 
     // Pellizco con dos dedos: separar acerca (como +) y juntar aleja (como -)
@@ -427,7 +426,7 @@ export class Game implements GameInput {
         clientY: e.clientY,
         holdTimer: 0,
         repeatTimer: 0,
-        direction: null,
+        directions: [],
         nextStepAt: 0,
       };
       if (padCandidate) drag.holdTimer = window.setTimeout(openPad, PAD_HOLD_MS);
@@ -809,6 +808,39 @@ export class Game implements GameInput {
     if (this.footstepSounds.length === 0) return;
     this.footstepSounds[this.lastFootstepIndex % this.footstepSounds.length].play();
     this.lastFootstepIndex++;
+  }
+
+  /** Alterna las dos direcciones de una diagonal en pasos sucesivos. */
+  private padAlternate = 0;
+
+  /** ¿Entrar en esa dirección lo precipitaría al barranco? */
+  private wouldFall(direction: Direction): boolean {
+    const [row, col] = this.currentPosition;
+    const [dr, dc] = DELTA[direction];
+    return (
+      !this.world.board[row][col].exits.has(direction) && this.world.inBounds(row + dr, col + dc) && this.world.isBarrancoCell(row + dr, col + dc)
+    );
+  }
+
+  /**
+   * Un paso con la cruceta. Con dos direcciones (diagonal) se alternan, así que se avanza en
+   * escalera; si una está bloqueada por una pared se usa la otra y se "caracolea" por la pared.
+   * Con una diagonal nunca se elige una dirección que lleve al barranco si hay otra.
+   */
+  private padStep(directions: readonly Direction[]): void {
+    this.cancelAutoMove();
+    this.cameraManual = false;
+    let candidates = directions.length > 1 ? directions.filter((d) => !this.wouldFall(d)) : [...directions];
+    if (candidates.length === 0) candidates = [...directions];
+    if (candidates.length > 1 && this.padAlternate % 2 === 1) candidates.reverse();
+    for (const direction of candidates) {
+      const before = this.currentPosition;
+      this.placeCellInDirection(direction);
+      if (this.currentPosition !== before || this.showingGameOver) {
+        this.padAlternate++;
+        return;
+      }
+    }
   }
 
   /** Mueve al jugador un paso (creando la celda destino si aún no existe). */

@@ -1,16 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { PAD_DEADZONE, padDirection } from '../src/touchpad';
+import { PAD_DEADZONE, padDirections } from '../src/touchpad';
 
-describe('padDirection', () => {
+describe('padDirections', () => {
   it('no da dirección dentro de la zona muerta', () => {
-    expect(padDirection(0, 0)).toBeNull();
-    expect(padDirection(PAD_DEADZONE - 1, 0)).toBeNull();
+    expect(padDirections(0, 0)).toEqual([]);
+    expect(padDirections(PAD_DEADZONE - 1, 0)).toEqual([]);
   });
 
-  it('elige el eje dominante', () => {
-    expect(padDirection(40, 10)).toBe('E');
-    expect(padDirection(-40, 10)).toBe('O');
-    expect(padDirection(10, 40)).toBe('S');
-    expect(padDirection(10, -40)).toBe('N');
+  it('elige una sola dirección cuando un eje domina', () => {
+    expect(padDirections(40, 10)).toEqual(['E']);
+    expect(padDirections(-40, 10)).toEqual(['O']);
+    expect(padDirections(10, 40)).toEqual(['S']);
+    expect(padDirections(10, -40)).toEqual(['N']);
+  });
+
+  it('da dos direcciones en diagonal, la dominante primero', () => {
+    expect(padDirections(30, -30)).toEqual(['E', 'N']);
+    expect(padDirections(-30, 30)).toEqual(['O', 'S']);
+    expect(padDirections(20, 35)).toEqual(['S', 'E']);
+    expect(padDirections(-35, -20)).toEqual(['O', 'N']);
   });
 });

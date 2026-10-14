@@ -4,11 +4,22 @@ import type { Direction } from './models';
 /** Distancia (px CSS) que hay que alejar el dedo del centro para que cuente como dirección. */
 export const PAD_DEADZONE = 18;
 
-/** Dirección según el desplazamiento del dedo respecto al centro (eje dominante), o null en la zona muerta. */
-export function padDirection(dx: number, dy: number, deadzone = PAD_DEADZONE): Direction | null {
-  if (Math.hypot(dx, dy) < deadzone) return null;
-  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'E' : 'O';
-  return dy > 0 ? 'S' : 'N';
+/** Cuánto debe pesar el eje menor, respecto al mayor, para que cuente como diagonal. */
+export const PAD_DIAGONAL_RATIO = 0.45;
+
+/**
+ * Direcciones según el desplazamiento del dedo respecto al centro: una (eje dominante), dos si
+ * el dedo apunta en diagonal (como pulsar dos botones a la vez) o ninguna dentro de la zona muerta.
+ */
+export function padDirections(dx: number, dy: number, deadzone = PAD_DEADZONE): Direction[] {
+  if (Math.hypot(dx, dy) < deadzone) return [];
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  const horizontal: Direction = dx > 0 ? 'E' : 'O';
+  const vertical: Direction = dy > 0 ? 'S' : 'N';
+  if (ay < ax * PAD_DIAGONAL_RATIO) return [horizontal];
+  if (ax < ay * PAD_DIAGONAL_RATIO) return [vertical];
+  return ax >= ay ? [horizontal, vertical] : [vertical, horizontal];
 }
 
 const ARROWS: Record<Direction, string> = { N: '▲', E: '▶', S: '▼', O: '◀' };
@@ -35,12 +46,12 @@ export class AdaptivePad {
   show(x: number, y: number): void {
     this.root.style.left = `${x}px`;
     this.root.style.top = `${y}px`;
-    this.setActive(null);
+    this.setActive([]);
     this.root.hidden = false;
   }
 
-  setActive(direction: Direction | null): void {
-    for (const [d, arrow] of this.arrows) arrow.classList.toggle('on', d === direction);
+  setActive(directions: readonly Direction[]): void {
+    for (const [d, arrow] of this.arrows) arrow.classList.toggle('on', directions.includes(d));
   }
 
   hide(): void {
