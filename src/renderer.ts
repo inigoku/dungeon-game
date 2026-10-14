@@ -140,7 +140,8 @@ export class Renderer {
 
     g.confirmButtons = null;
     if (g.askingExitConfirmation) this.drawConfirmation('¿Salir del juego?', 400, 48);
-    if (g.askingMainMenuConfirmation) this.drawConfirmation('¿Volver al menú principal?', 450, 40);
+    if (g.askingMainMenuConfirmation) this.drawConfirmation('¿Salir al menú principal?', 450, 40);
+    if (g.askingRestartConfirmation) this.drawConfirmation('¿Reiniciar la partida?', 430, 44);
     if (g.showingGameOver) this.drawGameOver();
 
     this.drawDangerOverlay();

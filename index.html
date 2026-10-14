@@ -112,7 +112,7 @@
       }
       #side {
         display: grid;
-        grid-template-columns: repeat(2, 56px);
+        grid-template-columns: repeat(3, 56px);
         gap: 8px;
       }
       #touch button {
@@ -159,6 +159,298 @@
       .apad-S { left: 55px; bottom: 6px; }
       .apad-O { left: 6px; top: 55px; }
       .apad-E { right: 6px; top: 55px; }
+
+      /* Hoja de personaje (estilo juego de rol de mesa) */
+      #sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 10px;
+        box-sizing: border-box;
+        background: rgba(0, 0, 0, 0.78);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      #sheet[hidden] {
+        display: none;
+      }
+      .sheet-paper {
+        position: relative;
+        width: min(760px, 100%);
+        box-sizing: border-box;
+        padding: 14px 14px 18px;
+        color: #2c1d10;
+        font-family: Georgia, 'Palatino Linotype', 'Times New Roman', serif;
+        background: radial-gradient(ellipse at 30% 10%, #f6e9c8 0%, #ebd8a8 55%, #d9bf86 100%);
+        border: 4px double #7a1f1f;
+        border-radius: 8px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), inset 0 0 50px rgba(120, 80, 30, 0.35);
+      }
+      .sheet-close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 38px;
+        height: 38px;
+        font: 20px/1 Georgia, serif;
+        color: #f6e9c8;
+        background: #7a1f1f;
+        border: 2px solid #4a0e0e;
+        border-radius: 50%;
+        cursor: pointer;
+      }
+      .sheet-head {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding-right: 44px;
+        border-bottom: 3px double #7a1f1f;
+        padding-bottom: 10px;
+        margin-bottom: 10px;
+      }
+      .sheet-portrait {
+        flex: none;
+        width: 106px;
+        height: 130px;
+        border: 3px solid #7a1f1f;
+        border-radius: 60px 60px 8px 8px;
+        background: #e9d5a4;
+      }
+      .sheet-title {
+        flex: 1;
+        min-width: 0;
+      }
+      .sheet-class {
+        font-size: 12px;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: #7a1f1f;
+      }
+      .sheet-name {
+        font-size: clamp(20px, 5vw, 30px);
+        font-weight: bold;
+        line-height: 1.1;
+        margin: 2px 0 8px;
+      }
+      .sheet-fields {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 4px 10px;
+        margin: 0;
+      }
+      .sheet-fields div {
+        border-bottom: 1px solid #8a6a3a;
+      }
+      .sheet-fields dt,
+      .sheet-notes dt {
+        font-size: 9px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #7a1f1f;
+      }
+      .sheet-fields dd,
+      .sheet-notes dd {
+        margin: 0;
+        font-size: 14px;
+      }
+      .sheet-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .sheet-wide {
+        grid-column: 1 / -1;
+      }
+      @media (max-width: 560px) {
+        .sheet-grid {
+          grid-template-columns: 1fr;
+        }
+        .sheet-portrait {
+          width: 84px;
+          height: 104px;
+        }
+      }
+      .sheet-col h3 {
+        margin: 12px 0 4px;
+        padding-bottom: 2px;
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #7a1f1f;
+        border-bottom: 1px solid #7a1f1f;
+      }
+      .sheet-abilities {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .sheet-ability {
+        text-align: center;
+        padding: 4px 2px 0;
+        background: #f3e4bd;
+        border: 2px solid #7a1f1f;
+        border-radius: 10px;
+      }
+      .sheet-ability-name {
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #7a1f1f;
+      }
+      .sheet-ability-mod {
+        font-size: 24px;
+        font-weight: bold;
+        line-height: 1.1;
+      }
+      .sheet-ability-score {
+        display: inline-block;
+        min-width: 32px;
+        margin: 0 0 -9px;
+        padding: 1px 6px;
+        font-size: 13px;
+        background: #f6e9c8;
+        border: 2px solid #7a1f1f;
+        border-radius: 50%;
+      }
+      .sheet-box,
+      .sheet-shield {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 5px 4px;
+        text-align: center;
+        background: #f3e4bd;
+        border: 2px solid #7a1f1f;
+        border-radius: 8px;
+      }
+      .sheet-shield {
+        border-radius: 8px 8px 50% 50%;
+      }
+      .sheet-box-value {
+        font-size: 20px;
+        font-weight: bold;
+        line-height: 1.1;
+      }
+      .sheet-box-label {
+        font-size: 8.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #7a1f1f;
+      }
+      .sheet-vitals,
+      .sheet-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .sheet-row {
+        grid-template-columns: 1fr 1fr;
+      }
+      .sheet-hp {
+        margin-bottom: 8px;
+        padding: 6px;
+        text-align: center;
+        background: #f3e4bd;
+        border: 2px solid #7a1f1f;
+        border-radius: 8px;
+      }
+      .sheet-hp-label {
+        font-size: 9px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #7a1f1f;
+      }
+      .sheet-hp-value {
+        font-size: 28px;
+        font-weight: bold;
+        line-height: 1.1;
+      }
+      .sheet-hearts {
+        min-height: 20px;
+        font-size: 20px;
+        letter-spacing: 0.15em;
+        color: #a01818;
+      }
+      .sheet-list,
+      .sheet-plain {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 13px;
+      }
+      .sheet-list li {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 1px 0;
+        border-bottom: 1px dotted #a98b57;
+      }
+      .sheet-list small {
+        color: #7a5a2a;
+        font-size: 10px;
+      }
+      .sheet-plain li {
+        padding: 2px 0 2px 14px;
+        position: relative;
+      }
+      .sheet-plain li::before {
+        content: '◆';
+        position: absolute;
+        left: 0;
+        font-size: 8px;
+        top: 6px;
+        color: #7a1f1f;
+      }
+      .sheet-dot {
+        flex: none;
+        width: 9px;
+        height: 9px;
+        border: 1.5px solid #7a1f1f;
+        border-radius: 50%;
+        background: transparent;
+      }
+      .sheet-dot.on {
+        background: #7a1f1f;
+      }
+      .sheet-attacks {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+      .sheet-attacks th {
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        text-align: left;
+        text-transform: uppercase;
+        color: #7a1f1f;
+      }
+      .sheet-attacks td {
+        padding: 2px 4px 2px 0;
+        border-bottom: 1px dotted #a98b57;
+      }
+      .sheet-power {
+        margin-top: 6px;
+        padding: 5px 8px;
+        font-size: 12px;
+        font-style: italic;
+        background: rgba(122, 31, 31, 0.1);
+        border-left: 3px solid #7a1f1f;
+      }
+      .sheet-notes {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 4px 14px;
+        margin: 0;
+      }
+      .sheet-notes div {
+        padding-bottom: 3px;
+        border-bottom: 1px solid #8a6a3a;
+      }
     </style>
   </head>
   <body>
@@ -173,8 +465,15 @@
     </div>
     <div id="touch" aria-label="Controles táctiles">
       <div id="side">
-        <button data-key="Escape" aria-label="Menú">☰</button>
+        <button data-key="c" aria-label="Hoja de personaje">☰</button>
         <button data-key="r" aria-label="Reiniciar">↻</button>
+        <button data-key="Escape" aria-label="Salir">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4" />
+            <path d="M16 8l4 4-4 4" />
+            <path d="M20 12H9" />
+          </svg>
+        </button>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
