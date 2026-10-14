@@ -352,6 +352,7 @@ export class Game implements GameInput {
     } | null = null;
 
     const closePad = () => {
+      this.resetPadSteps();
       if (!drag) return;
       window.clearTimeout(drag.holdTimer);
       window.clearInterval(drag.repeatTimer);
@@ -810,8 +811,9 @@ export class Game implements GameInput {
     this.lastFootstepIndex++;
   }
 
-  /** Alterna las dos direcciones de una diagonal en pasos sucesivos. */
-  private padAlternate = 0;
+  /** Última dirección en que se movió la cruceta y dirección que encontró pared en el paso anterior. */
+  private padLast: Direction | null = null;
+  private padBlocked: Direction | null = null;
 
   /** ¿Entrar en esa dirección lo precipitaría al barranco? */
   private wouldFall(direction: Direction): boolean {
@@ -822,22 +824,33 @@ export class Game implements GameInput {
     );
   }
 
+  private resetPadSteps(): void {
+    this.padLast = null;
+    this.padBlocked = null;
+  }
+
   /**
    * Un paso con la cruceta. Con dos direcciones (diagonal) se alternan, así que se avanza en
-   * escalera; si una está bloqueada por una pared se usa la otra y se "caracolea" por la pared.
+   * escalera. Si una está bloqueada por una pared se usa la otra y se "caracolea" por la pared;
+   * en cuanto la dirección bloqueada se abre (una puerta), se entra por ella enseguida.
    * Con una diagonal nunca se elige una dirección que lleve al barranco si hay otra.
    */
   private padStep(directions: readonly Direction[]): void {
     this.cancelAutoMove();
     this.cameraManual = false;
-    let candidates = directions.length > 1 ? directions.filter((d) => !this.wouldFall(d)) : [...directions];
-    if (candidates.length === 0) candidates = [...directions];
-    if (candidates.length > 1 && this.padAlternate % 2 === 1) candidates.reverse();
-    for (const direction of candidates) {
+    let order = directions.length > 1 ? directions.filter((d) => !this.wouldFall(d)) : [...directions];
+    if (order.length === 0) order = [...directions];
+    if (order.length > 1) {
+      // Primero la que encontró pared la vez anterior; si no, la contraria a la última (escalera)
+      const first = this.padBlocked && order.includes(this.padBlocked) ? this.padBlocked : order.find((d) => d !== this.padLast) ?? order[0];
+      order = [first, ...order.filter((d) => d !== first)];
+    }
+    for (const direction of order) {
       const before = this.currentPosition;
       this.placeCellInDirection(direction);
       if (this.currentPosition !== before || this.showingGameOver) {
-        this.padAlternate++;
+        this.padBlocked = order.length > 1 && direction !== order[0] ? order[0] : null;
+        this.padLast = direction;
         return;
       }
     }
