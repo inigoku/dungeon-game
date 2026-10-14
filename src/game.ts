@@ -8,6 +8,7 @@ import { DEFAULT_BOARD_SIZE, DEFAULT_CELL_SIZE, DEFAULT_VIEW_SIZE } from './conf
 import type { Footprint } from './decorations';
 import { context2d, type Canvas, type Ctx } from './gfx';
 import { InputHandler, type GameInput } from './input';
+import { CharacterSheet } from './sheet';
 import { AdaptivePad, padDirections } from './touchpad';
 import { Cell, CellType, DELTA, DIRECTIONS, oppositeDirection, posKey, type Direction, type Pos } from './models';
 import { Renderer } from './renderer';
@@ -128,6 +129,8 @@ export class Game implements GameInput {
   titleImage: Canvas | null = null;
   askingExitConfirmation = false;
   askingMainMenuConfirmation = false;
+  askingRestartConfirmation = false;
+  showingSheet = false;
   introAnimActive = false;
   introAnimStartTime = 0;
   introShowWeapons = false;
@@ -1387,9 +1390,34 @@ export class Game implements GameInput {
     this.introAnimStartTime = ticks();
   }
 
+  private sheet: CharacterSheet | null = null;
+
+  /** Abre o cierra la hoja de personaje (la partida queda en pausa mientras está abierta). */
+  toggleSheet(): void {
+    if (this.showingSheet) {
+      this.showingSheet = false;
+      this.sheet?.hide();
+      return;
+    }
+    if (
+      this.showingTitle || this.showingGameOver || this.introAnimActive || this.fight || this.thoughtPending ||
+      this.audio.thoughtActive || this.askingExitConfirmation || this.askingMainMenuConfirmation || this.askingRestartConfirmation
+    ) return;
+    this.cancelAutoMove();
+    this.sheet ??= new CharacterSheet(
+      document.body,
+      () => this.toggleSheet(),
+      () => ({ hp: this.playerHealth, maxHp: this.maxHealth, swordPower: this.hasSwordPower, explored: this.visitedCells.size }),
+    );
+    this.showingSheet = true;
+    this.sheet.show();
+  }
+
   returnToMainMenu(): void {
     this.showingTitle = true;
     this.askingMainMenuConfirmation = false;
+    this.askingRestartConfirmation = false;
+    if (this.showingSheet) this.toggleSheet();
     this.audio.stopMusic();
     if (this.audio.thoughtActive) this.audio.cancelThought();
   }
@@ -1410,7 +1438,7 @@ export class Game implements GameInput {
       return;
     }
     // Confirmaciones: los botones Sí/No equivalen a S y N; el resto de la pantalla no hace nada
-    if (this.askingExitConfirmation || this.askingMainMenuConfirmation) {
+    if (this.askingExitConfirmation || this.askingMainMenuConfirmation || this.askingRestartConfirmation) {
       const hit = (r: RestartButton) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
       const buttons = this.confirmButtons;
       if (buttons && hit(buttons.yes)) {
@@ -1477,6 +1505,8 @@ export class Game implements GameInput {
       this.thoughtPending ||
       this.askingExitConfirmation ||
       this.askingMainMenuConfirmation ||
+      this.askingRestartConfirmation ||
+      this.showingSheet ||
       this.fight !== null ||
       (this.audio.thoughtActive && this.audio.thoughtBlocksMovement) ||
       (this.exitImageShown && ticks() - this.exitImageStartTime < EXIT_IMAGE_BLOCK_MS)
@@ -1540,6 +1570,8 @@ export class Game implements GameInput {
   private finish(restart: boolean): void {
     this.disposed = true;
     for (const cleanup of this.cleanups) cleanup();
+    this.sheet?.dispose();
+    this.sheet = null;
     this.audio.dispose();
     // Nada de la partida anterior debe seguir sonando (pasos, gritos, gruñidos, ambiente...)
     this.assets.mixer.stopAll();
@@ -1597,8 +1629,11 @@ export class Game implements GameInput {
 
     this.wasActive = audio.thoughtActive;
 
-    this.updateFight(now);
-    this.updateMonsters();
+    if (this.showingSheet && this.showingGameOver) this.toggleSheet();
+    if (!this.showingSheet) {
+      this.updateFight(now);
+      this.updateMonsters();
+    }
 
     if (now - this.lastFootprintCleanup > 1000) {
       this.lastFootprintCleanup = now;

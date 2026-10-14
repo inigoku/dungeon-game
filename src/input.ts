@@ -16,6 +16,8 @@ export interface GameInput {
   thoughtPending: boolean;
   askingExitConfirmation: boolean;
   askingMainMenuConfirmation: boolean;
+  askingRestartConfirmation: boolean;
+  showingSheet: boolean;
   showingTitle: boolean;
   introAnimActive: boolean;
   autoRevealMode: boolean;
@@ -27,6 +29,7 @@ export interface GameInput {
   placeCellInDirection(direction: Direction): void;
   startGame(): void;
   returnToMainMenu(): void;
+  toggleSheet(): void;
   teleportTo(pos: Pos): void;
 }
 
@@ -59,6 +62,12 @@ export class InputHandler {
       return key !== 'Escape';
     }
 
+    // Hoja de personaje abierta: Escape o C la cierran y el resto de teclas se ignora
+    if (game.showingSheet) {
+      if (key === 'Escape' || key === 'c') game.toggleSheet();
+      return true;
+    }
+
     // Entrada bloqueada mientras se espera un pensamiento
     if (game.thoughtPending) return true;
 
@@ -66,6 +75,13 @@ export class InputHandler {
     if (game.askingExitConfirmation) {
       if (key === 's') return false;
       if (key === 'n' || key === 'Escape') game.askingExitConfirmation = false;
+      return true;
+    }
+    if (game.askingRestartConfirmation) {
+      if (key === 's') {
+        game.askingRestartConfirmation = false;
+        game.restartRequested = true;
+      } else if (key === 'n' || key === 'Escape') game.askingRestartConfirmation = false;
       return true;
     }
     if (game.askingMainMenuConfirmation) {
@@ -111,6 +127,12 @@ export class InputHandler {
         break;
       case 'F7':
         game.teleportTo(game.world.exitPosition);
+        break;
+      case 'r':
+        if (!game.introAnimActive) game.askingRestartConfirmation = true;
+        break;
+      case 'c':
+        game.toggleSheet();
         break;
       case 'z':
         game.zoomIn();

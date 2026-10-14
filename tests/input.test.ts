@@ -16,6 +16,8 @@ function fakeGame(overrides: Partial<GameInput> = {}) {
     thoughtPending: false,
     askingExitConfirmation: false,
     askingMainMenuConfirmation: false,
+    askingRestartConfirmation: false,
+    showingSheet: false,
     showingTitle: false,
     introAnimActive: false,
     autoRevealMode: false,
@@ -27,6 +29,7 @@ function fakeGame(overrides: Partial<GameInput> = {}) {
     placeCellInDirection: (d: Direction) => moves.push(d),
     startGame: vi.fn(),
     returnToMainMenu: vi.fn(),
+    toggleSheet: vi.fn(),
     teleportTo: vi.fn(),
     ...overrides,
   } as unknown as GameInput;
@@ -132,5 +135,34 @@ describe('InputHandler', () => {
     input.handleKey('x');
     expect(game.zoomIn).toHaveBeenCalled();
     expect(game.zoomOut).toHaveBeenCalled();
+  });
+
+  it('R pide confirmación para reiniciar; S reinicia y N cancela', () => {
+    const { game } = fakeGame();
+    const input = new InputHandler(game);
+    input.handleKey('r');
+    expect(game.askingRestartConfirmation).toBe(true);
+    input.handleKey('n');
+    expect(game.askingRestartConfirmation).toBe(false);
+    expect(game.restartRequested).toBe(false);
+    input.handleKey('r');
+    input.handleKey('s');
+    expect(game.askingRestartConfirmation).toBe(false);
+    expect(game.restartRequested).toBe(true);
+  });
+
+  it('C abre la hoja de personaje y mientras está abierta solo Escape o C la cierran', () => {
+    const { game, moves } = fakeGame();
+    new InputHandler(game).handleKey('c');
+    expect(game.toggleSheet).toHaveBeenCalledTimes(1);
+
+    const open = fakeGame({ showingSheet: true });
+    const input = new InputHandler(open.game);
+    input.handleKey('w');
+    expect(open.moves).toEqual([]);
+    input.handleKey('Escape');
+    expect(open.game.toggleSheet).toHaveBeenCalledTimes(1);
+    expect(open.game.askingMainMenuConfirmation).toBe(false);
+    expect(moves).toEqual([]);
   });
 });
