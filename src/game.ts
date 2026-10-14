@@ -3,7 +3,7 @@
  * El dibujado vive en renderer.ts.
  */
 import { AudioManager, Sound } from './audio';
-import { fitImage, scaleImage, type Assets } from './assets';
+import { fitImage, type Assets } from './assets';
 import { DEFAULT_BOARD_SIZE, DEFAULT_CELL_SIZE, DEFAULT_VIEW_SIZE } from './config';
 import type { Footprint } from './decorations';
 import { context2d, type Canvas, type Ctx } from './gfx';
@@ -178,11 +178,6 @@ export class Game implements GameInput {
   private wasActive = false;
 
   // Imágenes
-  exitImage: Canvas | null = null;
-  torchImage: Canvas | null = null;
-  bloodImage: Canvas | null = null;
-  profundoImage: Canvas | null = null;
-  swordImage: Canvas | null = null;
 
   // Game over
   showingGameOver = false;
@@ -289,19 +284,32 @@ export class Game implements GameInput {
     this.footstepSounds = [this.sound('paso1', 0.4), this.sound('paso2', 0.4)].filter((s): s is Sound => s !== null);
   }
 
+  private imageSlot(image: Canvas | null, duration: number): Array<[Canvas, number]> | null {
+    return image ? [[image, duration]] : null;
+  }
+
   private loadImages(): void {
-    const { images } = this.assets;
-    if (images['titulo']) this.titleImage = scaleImage(images['titulo'], this.fixedWindowSize, this.fixedWindowSize);
+    if (this.assets.images['titulo']) this.fitTitleImage();
     else this.showingTitle = false;
+  }
 
-    const scaleToBox = (img: HTMLImageElement | null, box: number): Canvas | null =>
-      img ? fitImage(img, box, box) : null;
+  /** El título ocupa el máximo posible de la ventana, sea cual sea su forma. */
+  private fitTitleImage(): void {
+    const title = this.assets.images['titulo'];
+    if (title) this.titleImage = fitImage(title, this.width, this.height);
+  }
 
-    if (images['losa']) this.exitImage = fitImage(images['losa'], this.fixedWindowSize * 0.9, (this.fixedWindowSize - 120) * 0.9);
-    if (images['profundo']) this.profundoImage = fitImage(images['profundo'], this.fixedWindowSize * 0.9, this.fixedWindowSize - 200);
-    this.swordImage = scaleToBox(images['espada'], this.fixedWindowSize * 0.8);
-    this.torchImage = scaleToBox(images['antorcha'], this.fixedWindowSize * 0.6);
-    this.bloodImage = scaleToBox(images['sangre'], this.fixedWindowSize * 0.6);
+  /**
+   * Imagen de un pensamiento ajustada a la ventana actual. En móvil (pantalla táctil o vertical)
+   * ocupa el máximo posible; en escritorio deja el margen `factor` para ver el mapa alrededor.
+   * `reserveY` es la altura que se deja libre abajo para los subtítulos.
+   */
+  private thoughtImage(name: string, factor: number, reserveY = 0): Canvas | null {
+    const img = this.assets.images[name];
+    if (!img) return null;
+    const full = this.height > this.width || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
+    const f = full ? 1 : factor;
+    return fitImage(img, this.width * f, (this.height - reserveY) * f);
   }
 
   // --- Entrada ----------------------------------------------------------------
@@ -564,7 +572,7 @@ export class Game implements GameInput {
       if (this.disposed) return;
       const duration = this.biteSound ? Math.trunc(this.biteSound.getLength() * 1000) : 3000;
       this.audio.triggerThought({
-        images: this.profundoImage ? [[this.profundoImage, duration + 1500]] : null,
+        images: this.imageSlot(this.thoughtImage('profundo', 0.9, 200), duration + 1500),
         subtitles: [['¡¡¡AAAARRRRGGGHH!!!!', duration + 1500]],
         blocksMovement: true,
       });
@@ -627,6 +635,7 @@ export class Game implements GameInput {
     this.height = aspect >= 1 ? this.fixedWindowSize : long;
     this.canvas.width = this.width;
     this.canvas.height = this.height;
+    this.fitTitleImage();
     this.updateCameraTarget();
   }
 
@@ -905,7 +914,7 @@ export class Game implements GameInput {
       void this.delayedThought(500, () => {
         this.audio.triggerThought({
           sounds: this.swordSound ? [[this.swordSound, 0]] : [],
-          images: this.swordImage ? [[this.swordImage, 5000]] : null,
+          images: this.imageSlot(this.thoughtImage('espada', 0.8), 5000),
           subtitles: [['¡El poder de la espada sagrada!', 5000]],
           blocksMovement: true,
         });
@@ -922,7 +931,7 @@ export class Game implements GameInput {
       void this.delayedThought(1000, () => {
         this.audio.triggerThought({
           sounds: [[sound, 0]],
-          images: this.bloodImage ? [[this.bloodImage, 0]] : null,
+          images: this.imageSlot(this.thoughtImage('sangre', 0.6), 0),
           subtitles: [['¿Es eso... sangre?!?', 6000]],
           blocksMovement: true,
         });
@@ -938,7 +947,7 @@ export class Game implements GameInput {
       void this.delayedThought(1000, () => {
         this.audio.triggerThought({
           sounds: [[sound, 0]],
-          images: this.torchImage ? [[this.torchImage, 0]] : null,
+          images: this.imageSlot(this.thoughtImage('antorcha', 0.6), 0),
           subtitles: [['Una antorcha encendida... ¡Interesante!', 6000]],
           blocksMovement: true,
         });
@@ -958,7 +967,7 @@ export class Game implements GameInput {
         const imageDuration = Math.trunc(this.abominacionSound.getLength() * 1000) + 2000;
         this.audio.triggerThought({
           sounds: [[this.abominacionSound, 0]],
-          images: this.exitImage ? [[this.exitImage, imageDuration]] : null,
+          images: this.imageSlot(this.thoughtImage('losa', 0.9, 120), imageDuration),
           subtitles: [['¿Qué es esta abominación?', imageDuration]],
           blocksMovement: true,
         });
