@@ -184,6 +184,8 @@ export class Game implements GameInput {
   gameOverThoughtFinishedTime = 0;
   restartRequested = false;
   restartButtonRect: RestartButton | null = null;
+  /** Botones Sí/No de las confirmaciones (coordenadas del lienzo), solo mientras se muestran. */
+  confirmButtons: { yes: RestartButton; no: RestartButton } | null = null;
 
   // Caída por el barranco
   playerFallingActive = false;
@@ -1405,6 +1407,17 @@ export class Game implements GameInput {
   private handleClick(x: number, y: number): void {
     if (this.showingGameOver) {
       this.input.handleClick(x, y);
+      return;
+    }
+    // Confirmaciones: los botones Sí/No equivalen a S y N; el resto de la pantalla no hace nada
+    if (this.askingExitConfirmation || this.askingMainMenuConfirmation) {
+      const hit = (r: RestartButton) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+      const buttons = this.confirmButtons;
+      if (buttons && hit(buttons.yes)) {
+        if (!this.input.handleKey('s')) this.finish(false);
+      } else if (buttons && hit(buttons.no)) {
+        this.input.handleKey('n');
+      }
       return;
     }
     // Tocar el título equivale a pulsar una tecla

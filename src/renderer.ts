@@ -138,6 +138,7 @@ export class Renderer {
       ctx.drawImage(img, Math.floor((g.width - img.width) / 2), Math.floor((g.height - img.height) / 2));
     }
 
+    g.confirmButtons = null;
     if (g.askingExitConfirmation) this.drawConfirmation('¿Salir del juego?', 400, 48);
     if (g.askingMainMenuConfirmation) this.drawConfirmation('¿Volver al menú principal?', 450, 40);
     if (g.showingGameOver) this.drawGameOver();
@@ -769,13 +770,28 @@ export class Renderer {
     const g = this.game;
     const ctx = this.ctx;
     fillRect(ctx, [0, 0, 0], 0, 0, g.width, g.height, 180 / 255);
-    const dialogH = 150;
+    const dialogH = 170;
     const dx = Math.floor((g.width - dialogW) / 2);
     const dy = Math.floor((g.height - dialogH) / 2);
     fillRect(ctx, [40, 40, 40], dx, dy, dialogW, dialogH);
     strokeRect(ctx, [200, 200, 200], dx, dy, dialogW, dialogH, 3);
-    this.text(title, dx + dialogW / 2, dy + 50, titleSize, [255, 255, 255], 'center');
-    this.text('S = Sí  /  N = No', dx + dialogW / 2, dy + 105, 32, [200, 200, 200], 'center');
+    this.text(title, dx + dialogW / 2, dy + 48, titleSize, [255, 255, 255], 'center');
+
+    // Dos botones táctiles: también funcionan S y N con el teclado
+    const w = 140;
+    const h = 56;
+    const y = dy + dialogH - h - 22;
+    const yes = { x: dx + Math.floor(dialogW / 2) - w - 16, y, w, h };
+    const no = { x: dx + Math.floor(dialogW / 2) + 16, y, w, h };
+    g.confirmButtons = { yes, no };
+    for (const [rect, label, fill, edge] of [
+      [yes, 'SÍ', [60, 20, 20], [190, 60, 60]],
+      [no, 'NO', [30, 50, 30], [80, 170, 80]],
+    ] as const) {
+      fillRect(ctx, fill, rect.x, rect.y, rect.w, rect.h);
+      strokeRect(ctx, edge, rect.x, rect.y, rect.w, rect.h, 3);
+      this.text(label, rect.x + rect.w / 2, rect.y + rect.h / 2, 40, [255, 255, 255], 'center');
+    }
   }
 
   private drawGameOver(): void {
