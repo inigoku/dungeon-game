@@ -18,7 +18,7 @@ Un juego de exploración de mazmorras en 2D escrito en **TypeScript** y dibujado
 - **Barranco infranqueable**: una fila o columna entera divide el mapa; la salida está al otro lado y solo se llega cruzando un **puente volante** (hay dos, uno en el camino principal y otro opcional). Intentar cruzar el vacío es mortal.
 - **Niebla de guerra**: solo se ven las celdas visitadas; el barranco y los puentes aparecen al acercarse.
 - **Movimiento automático**: haz clic o toca una celda visible y el personaje irá hasta ella por el camino más corto (se detiene al ser herido o al empezar un pensamiento).
-- **Zoom** de 5 niveles (5×5 hasta el mapa completo) y **cámara suave**.
+- **Zoom** de 8 niveles (de 3×3 hasta el mapa completo) y **cámara suave**.
 - **Antorchas** cada vez menos frecuentes hacia la salida, **manchas de sangre** que anuncian el final y una fuente en la celda de inicio.
 
 ### Narrativa y secuencia final
