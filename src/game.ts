@@ -72,8 +72,9 @@ export class Game implements GameInput {
   readonly initialViewSize = DEFAULT_VIEW_SIZE;
   viewSize = DEFAULT_VIEW_SIZE;
   cellSize = DEFAULT_CELL_SIZE;
-  readonly zoomLevels = [5, 7, 11, 21, 51, DEFAULT_BOARD_SIZE];
-  currentZoomIndex = 0;
+  readonly zoomLevels = [3, 4, DEFAULT_VIEW_SIZE, 7, 11, 21, 51, DEFAULT_BOARD_SIZE];
+  /** Nivel de zoom inicial: la vista de 5×5 (hay dos niveles más cercanos). */
+  currentZoomIndex = 2;
   readonly fixedWindowSize = DEFAULT_VIEW_SIZE * DEFAULT_CELL_SIZE;
   /** Tamaño lógico del lienzo: el lado corto mide siempre `fixedWindowSize`; el otro se amplía según la ventana. */
   width = this.fixedWindowSize;
