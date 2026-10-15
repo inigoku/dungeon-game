@@ -21,6 +21,10 @@ export interface WarriorLook {
   swordPower: boolean;
   /** Reloj del juego en ms, para la respiración y el vaivén del penacho. */
   now: number;
+  /** Solo los personajes con bitmaps: herido, en alerta o un fotograma concreto del atlas. */
+  hurt?: boolean;
+  alerted?: boolean;
+  pose?: number;
 }
 
 // Paleta cálida y apagada, como las imágenes de los pensamientos

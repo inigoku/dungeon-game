@@ -1,5 +1,6 @@
 /** Clases jugables: aspecto del personaje y datos de su hoja de personaje. */
 import type { Ctx } from './gfx';
+import { drawAtlasFrame, hasAtlas, pickFrame } from './atlas';
 import { drawBarbarian } from './barbarian';
 import { drawWarrior, type WarriorLook } from './warrior';
 
@@ -35,6 +36,16 @@ export interface ClassInfo {
   label: string;
   draw: (ctx: Ctx, cx: number, cy: number, size: number, look: WarriorLook) => void;
   sheet: ClassSheetData;
+}
+
+/** El bárbaro usa su atlas de bitmaps si está cargado; si no, el dibujo vectorial. */
+function drawBarbarianBitmapOrVector(ctx: Ctx, cx: number, cy: number, size: number, look: WarriorLook): void {
+  if (!hasAtlas('barbaro') || !drawAtlasFrame(ctx, 'barbaro', pickFrame(look), cx, cy, size, look.swordPower)) drawBarbarian(ctx, cx, cy, size, look);
+}
+
+/** ¿Esta clase tiene fotogramas para morir, caer, etc.? (si no, se gira y se encoge el dibujo) */
+export function hasPoses(cls: PlayerClass): boolean {
+  return cls === 'barbaro' && hasAtlas('barbaro');
 }
 
 export const CLASSES: Record<PlayerClass, ClassInfo> = {
@@ -92,7 +103,7 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
   barbaro: {
     id: 'barbaro',
     label: 'Bárbaro',
-    draw: drawBarbarian,
+    draw: drawBarbarianBitmapOrVector,
     sheet: {
       name: 'Brak, el Furioso',
       classLevel: 'Bárbaro 1',
