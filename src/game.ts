@@ -8,6 +8,7 @@ import { DEFAULT_BOARD_SIZE, DEFAULT_CELL_SIZE, DEFAULT_VIEW_SIZE } from './conf
 import type { Footprint } from './decorations';
 import { context2d, type Canvas, type Ctx } from './gfx';
 import { InputHandler, type GameInput } from './input';
+import { CLASSES, initialClass, type PlayerClass } from './classes';
 import { CharacterSheet } from './sheet';
 import { AdaptivePad, padDirections } from './touchpad';
 import { Cell, CellType, DELTA, DIRECTIONS, oppositeDirection, posKey, type Direction, type Pos } from './models';
@@ -239,6 +240,7 @@ export class Game implements GameInput {
   constructor(
     readonly canvas: HTMLCanvasElement,
     private readonly assets: Assets,
+    readonly playerClass: PlayerClass = initialClass(),
   ) {
     this.ctx = context2d(canvas);
 
@@ -1407,6 +1409,7 @@ export class Game implements GameInput {
     this.cancelAutoMove();
     this.sheet ??= new CharacterSheet(
       document.body,
+      CLASSES[this.playerClass],
       () => this.toggleSheet(),
       () => ({ hp: this.playerHealth, maxHp: this.maxHealth, swordPower: this.hasSwordPower, explored: this.visitedCells.size }),
     );
