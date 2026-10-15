@@ -9,9 +9,9 @@ describe('pickFrame', () => {
     expect(pickFrame({ ...base, alerted: true }).index).toBe(POSE.ALERT);
     expect(pickFrame({ ...base, hurt: true }).index).toBe(POSE.HURT_REST);
   });
-  it('el oeste es el este reflejado', () => {
+  it('el oeste tiene sus propios fotogramas', () => {
     const west = pickFrame({ ...base, facing: 'O' });
-    expect(west).toEqual({ index: 16, mirror: true });
+    expect(west).toEqual({ index: 20, mirror: false });
   });
   it('el ciclo de marcha recorre cuatro fases', () => {
     const idx = [0, 1.6, 3.2, 4.8].map((a) => pickFrame({ ...base, facing: 'N', moving: true, walkAngle: a }).index);

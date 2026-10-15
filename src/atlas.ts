@@ -42,8 +42,8 @@ export const POSE = {
   PORTRAIT: 63,
 } as const;
 
-/** Primer fotograma (el de "mirando") de cada dirección; el oeste es el este reflejado. */
-const DIRECTION_BASE = { S: 8, N: 12, E: 16, O: 16 } as const;
+/** Primer fotograma (el de "mirando") de cada dirección; la hoja trae el oeste dibujado. */
+const DIRECTION_BASE = { S: 8, N: 12, E: 16, O: 20 } as const;
 /** Desplazamiento del bloque equivalente cuando el personaje está herido. */
 const HURT_OFFSET = 24;
 /** Ciclo de marcha sobre los tres fotogramas de movimiento: paso A, pasada, paso B, pasada. */
@@ -62,13 +62,13 @@ export function hasAtlas(id: string): boolean {
 
 export interface FramePick {
   index: number;
-  /** Dibujar reflejado (el oeste usa los fotogramas del este). */
+  /** Dibujar reflejado (para atlas que solo traen un lado). */
   mirror: boolean;
 }
 
 /** Elige el fotograma según el estado del personaje. */
 export function pickFrame(look: Pick<WarriorLook, 'facing' | 'moving' | 'walkAngle' | 'hurt' | 'alerted' | 'pose'>): FramePick {
-  const mirror = look.facing === 'O';
+  const mirror = false;
   if (look.pose !== undefined) return { index: look.pose, mirror: false };
   const hurt = look.hurt === true;
   const base = DIRECTION_BASE[look.facing] + (hurt ? HURT_OFFSET : 0);

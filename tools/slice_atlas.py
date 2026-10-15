@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Convierte una hoja de sprites 8×8 generada con IA (fondo gris, con los números de cada celda) en un
+Convierte una hoja de sprites 8×8 generada con IA (fondo de tablero gris pintado, con los números de cada celda) en un
 atlas limpio con transparencia: 8×8 fotogramas de 128×128 con los pies anclados en el mismo punto.
 
-Uso:  python3 tools/slice_atlas.py art/barbaro-hoja-origen.webp images/atlas_barbaro.png
+Uso:  python3 tools/slice_atlas.py art/barbaro-hoja-origen.jpg images/atlas_barbaro.png
 Necesita: pip install pillow numpy scipy
 """
 import json
@@ -17,23 +17,27 @@ CELLS = 8
 OUT = 128            # lado de cada fotograma de salida
 BASELINE = 122       # fila donde apoyan los pies
 CENTER_X = 64        # columna donde se centra el personaje
-SCALE = 1.15         # factor sobre el tamaño nativo de la celda
-INSET = 3            # margen que se descarta en cada celda (bordes de la cuadrícula)
-THRESHOLD = 34       # distancia de color al fondo para considerarlo personaje
+SCALE = 0.50         # factor sobre el tamaño nativo de la celda (2048/8 = 256 px → 128)
+INSET = 4            # margen que se descarta en cada celda (bordes de la cuadrícula)
 UNANCHORED = {63}    # el retrato se encaja sin anclar los pies
 
 
-def background_color(rgb: np.ndarray) -> np.ndarray:
-    h, w, _ = rgb.shape
-    ring = np.concatenate([rgb[:6].reshape(-1, 3), rgb[-6:].reshape(-1, 3), rgb[:, :6].reshape(-1, 3), rgb[:, -6:].reshape(-1, 3)])
-    return np.median(ring, axis=0)
-
-
 def extract(rgb: np.ndarray) -> np.ndarray:
-    """Máscara (float 0..1) del personaje dentro de una celda."""
-    bg = background_color(rgb)
-    dist = np.sqrt(((rgb.astype(float) - bg) ** 2).sum(axis=2))
-    fg = dist > THRESHOLD
+    """Máscara (float 0..1) del personaje dentro de una celda.
+
+    El fondo de la hoja es un tablero gris (dos tonos casi sin color) pintado en la imagen: se detecta
+    como gris poco saturado y claridad media, y solo cuenta si está conectado con el borde de la celda.
+    """
+    pix = rgb.astype(int)
+    sat = pix.max(axis=2) - pix.min(axis=2)
+    lum = pix.mean(axis=2)
+    checker = (sat < 18) & (lum > 90) & (lum < 150)
+    checker = ndi.binary_closing(checker, structure=np.ones((3, 3)), iterations=1) | checker
+    seeds = np.zeros_like(checker)
+    seeds[0, :] = seeds[-1, :] = seeds[:, 0] = seeds[:, -1] = True
+    bg = ndi.binary_propagation(seeds & checker, mask=checker)
+    # Los cuadros blancos del borde de la cuadrícula
+    fg = ~ndi.binary_dilation(bg, iterations=1)
     # Quita los números de la esquina y las motas sueltas: solo se conservan componentes grandes
     labels, n = ndi.label(fg)
     keep = np.zeros_like(fg)
@@ -41,7 +45,7 @@ def extract(rgb: np.ndarray) -> np.ndarray:
     biggest = max(sizes) if n else 0
     for i, size in enumerate(sizes, start=1):
         ys, xs = np.where(labels == i)
-        in_label_box = xs.max() < 40 and ys.max() < 26
+        in_label_box = xs.max() < 70 and ys.max() < 44
         if size >= max(60, biggest * 0.01) and not in_label_box:
             keep |= labels == i
     # Rellena los huecos pequeños (reflejos dentro de la ropa) pero no los grandes (entre brazo y cuerpo)
@@ -59,7 +63,7 @@ def extract(rgb: np.ndarray) -> np.ndarray:
     labels, n = ndi.label(keep)
     for i in range(1, n + 1):
         ys, xs = np.where(labels == i)
-        if xs.max() < 40 and ys.max() < 26:
+        if xs.max() < 70 and ys.max() < 44:
             keep[labels == i] = False
             continue
         # Salpicaduras de sangre sueltas (rojizas y pequeñas)
