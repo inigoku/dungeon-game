@@ -36,7 +36,8 @@ import { CellType, DELTA, oppositeDirection, posKey, type Cell, type Direction }
 import { seeded } from './rng';
 import { drawFightCloud } from './fight';
 import { drawDeepOne } from './sprites';
-import { CLASSES } from './classes';
+import { CLASSES, hasPoses } from './classes';
+import { POSE } from './atlas';
 import { ticks } from './time';
 
 interface CachedTexture {
@@ -972,11 +973,17 @@ export class Renderer {
         const [pr, pc] = g.currentPosition;
         this.drawBloodPool(centerX, centerY, g.gameOverThoughtFinishedTime, pr * 1000 + pc);
       }
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      ctx.rotate(-Math.PI / 2);
-      this.drawWarriorSprite(ctx, 0, 0, spriteSize);
-      ctx.restore();
+      if (hasPoses(g.playerClass)) {
+        const dead = ticks() - g.gameOverStartTime - 1000;
+        const pose = dead < 350 ? POSE.DYING_1 : dead < 700 ? POSE.DYING_2 : dead < 1050 ? POSE.DYING_3 : POSE.DEAD;
+        this.drawWarriorSprite(ctx, Math.trunc(centerX), Math.trunc(centerY), spriteSize, pose);
+      } else {
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(-Math.PI / 2);
+        this.drawWarriorSprite(ctx, 0, 0, spriteSize);
+        ctx.restore();
+      }
     } else {
       this.drawWarriorSprite(ctx, Math.trunc(centerX), Math.trunc(centerY), spriteSize);
     }
@@ -1007,13 +1014,16 @@ export class Renderer {
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.trunc(255 * (1 - t))) / 255;
     ctx.translate(centerX, centerY);
-    ctx.rotate(-((t * 220) * Math.PI) / 180);
-    this.drawWarriorSprite(ctx, 0, 0, spriteSize);
+    if (hasPoses(g.playerClass)) this.drawWarriorSprite(ctx, 0, 0, spriteSize, t < 0.3 ? POSE.STUMBLE : POSE.FALL);
+    else {
+      ctx.rotate(-((t * 220) * Math.PI) / 180);
+      this.drawWarriorSprite(ctx, 0, 0, spriteSize);
+    }
     ctx.restore();
   }
 
   /** Guerrero procedimental (vectorial) centrado en (cx, cy); escala con `size`. */
-  private drawWarriorSprite(ctx: Ctx, cx: number, cy: number, size: number): void {
+  private drawWarriorSprite(ctx: Ctx, cx: number, cy: number, size: number, pose?: number): void {
     const g = this.game;
     const s = Math.max(8, Math.trunc(size));
     const headR = Math.max(4, Math.floor(s / 6));
@@ -1046,6 +1056,9 @@ export class Renderer {
       showWeapons: g.introShowWeapons,
       swordPower: g.hasSwordPower,
       now: t,
+      hurt: g.playerHealth < g.maxHealth,
+      alerted: g.deepOnes.some((m) => m.alerted && !m.dead),
+      pose,
     });
   }
 

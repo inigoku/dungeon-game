@@ -1,4 +1,5 @@
 /** Punto de entrada: carga los recursos, espera un gesto del usuario (audio) y lanza el juego. */
+import { setAtlas } from './atlas';
 import { loadAssets, type Assets } from './assets';
 import { CLASSES, CLASS_IDS, initialClass, rememberClass, type PlayerClass } from './classes';
 import { Game } from './game';
@@ -136,6 +137,7 @@ async function boot(): Promise<void> {
   const assets = await loadAssets((fraction) => {
     barFill.style.width = `${Math.round(fraction * 100)}%`;
   });
+  setAtlas('barbaro', assets.images['atlas_barbaro'] ?? null);
   if (new URLSearchParams(location.search).has('audio')) showAudioPanel(assets);
   // Los navegadores solo dejan sonar el audio tras un gesto del usuario
   buildClassPicker();
