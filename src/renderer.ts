@@ -36,7 +36,7 @@ import { CellType, DELTA, oppositeDirection, posKey, type Cell, type Direction }
 import { seeded } from './rng';
 import { drawFightCloud } from './fight';
 import { drawDeepOne } from './sprites';
-import { drawWarrior } from './warrior';
+import { CLASSES } from './classes';
 import { ticks } from './time';
 
 interface CachedTexture {
@@ -1038,7 +1038,7 @@ export class Renderer {
     const t = ticks();
     const moving = t < g.playerWalkUntil;
 
-    drawWarrior(ctx, cx, cy, s, {
+    CLASSES[g.playerClass].draw(ctx, cx, cy, s, {
       walkAngle: ((t % 900) / 900) * Math.PI * 2,
       moving,
       facing: g.introAnimActive || t - g.lastMoveAttemptTime > FACE_FRONT_AFTER_MS ? 'S' : g.playerFacing,

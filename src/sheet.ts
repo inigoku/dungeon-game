@@ -1,10 +1,10 @@
 /**
- * Hoja de personaje del Guerrero, al estilo de las de los juegos de rol de mesa (D&D).
- * Por ahora es una ficha fija con unos pocos datos vivos (vida, poder de la espada, exploración).
+ * Hoja de personaje de la clase elegida, al estilo de las de los juegos de rol de mesa (D&D).
+ * Por ahora es una ficha fija con unos pocos datos vivos (vida, poder del arma, exploración).
  */
+import type { ClassInfo } from './classes';
 import { context2d } from './gfx';
 import { ticks } from './time';
-import { drawWarrior } from './warrior';
 
 /** Datos de la partida que la hoja muestra en vivo. */
 export interface SheetData {
@@ -14,72 +14,56 @@ export interface SheetData {
   explored: number;
 }
 
-interface Ability {
-  key: string;
-  name: string;
-  score: number;
-  save: boolean;
-}
-
-const ABILITIES: readonly Ability[] = [
-  { key: 'FUE', name: 'Fuerza', score: 16, save: true },
-  { key: 'DES', name: 'Destreza', score: 12, save: false },
-  { key: 'CON', name: 'Constitución', score: 14, save: true },
-  { key: 'INT', name: 'Inteligencia', score: 10, save: false },
-  { key: 'SAB', name: 'Sabiduría', score: 11, save: false },
-  { key: 'CAR', name: 'Carisma', score: 9, save: false },
-];
-
 const PROFICIENCY = 2;
-
-/** Habilidades: [nombre, atributo, competente]. */
-const SKILLS: ReadonlyArray<readonly [string, string, boolean]> = [
-  ['Atletismo', 'FUE', true],
-  ['Intimidación', 'CAR', true],
-  ['Percepción', 'SAB', false],
-  ['Supervivencia', 'SAB', false],
-  ['Sigilo', 'DES', false],
-  ['Historia', 'INT', false],
-  ['Investigación', 'INT', false],
-  ['Trato con animales', 'SAB', false],
-];
 
 const modifier = (score: number): number => Math.floor((score - 10) / 2);
 const signed = (n: number): string => (n >= 0 ? `+${n}` : `${n}`);
 
-function html(): string {
-  const byKey = new Map(ABILITIES.map((a) => [a.key, a]));
-  const abilities = ABILITIES.map(
-    (a) => `
-      <div class="sheet-ability" title="${a.name}">
-        <div class="sheet-ability-name">${a.name}</div>
-        <div class="sheet-ability-mod">${signed(modifier(a.score))}</div>
-        <div class="sheet-ability-score">${a.score}</div>
+function html(info: ClassInfo): string {
+  const d = info.sheet;
+  const byKey = new Map(d.abilities.map(([key, , score]) => [key, score]));
+  const abilities = d.abilities
+    .map(
+      ([, name, score]) => `
+      <div class="sheet-ability" title="${name}">
+        <div class="sheet-ability-name">${name}</div>
+        <div class="sheet-ability-mod">${signed(modifier(score))}</div>
+        <div class="sheet-ability-score">${score}</div>
       </div>`,
-  ).join('');
-  const saves = ABILITIES.map((a) => {
-    const value = modifier(a.score) + (a.save ? PROFICIENCY : 0);
-    return `<li><span class="sheet-dot${a.save ? ' on' : ''}"></span><b>${signed(value)}</b> ${a.name}</li>`;
-  }).join('');
-  const skills = SKILLS.map(([name, key, proficient]) => {
-    const value = modifier(byKey.get(key)?.score ?? 10) + (proficient ? PROFICIENCY : 0);
-    return `<li><span class="sheet-dot${proficient ? ' on' : ''}"></span><b>${signed(value)}</b> ${name} <small>(${key})</small></li>`;
-  }).join('');
+    )
+    .join('');
+  const saves = d.abilities
+    .map(([, name, score, proficient]) => {
+      const value = modifier(score) + (proficient ? PROFICIENCY : 0);
+      return `<li><span class="sheet-dot${proficient ? ' on' : ''}"></span><b>${signed(value)}</b> ${name}</li>`;
+    })
+    .join('');
+  const skills = d.skills
+    .map(([name, key, proficient]) => {
+      const value = modifier(byKey.get(key) ?? 10) + (proficient ? PROFICIENCY : 0);
+      return `<li><span class="sheet-dot${proficient ? ' on' : ''}"></span><b>${signed(value)}</b> ${name} <small>(${key})</small></li>`;
+    })
+    .join('');
+  const initiative = modifier(byKey.get('DES') ?? 10);
+  const attacks = d.attacks.map(([name, hit, dmg]) => `<tr><td>${name}</td><td>${hit}</td><td>${dmg}</td></tr>`).join('');
+  const equipment = d.equipment.map((e) => `<li>${e}</li>`).join('');
+  const personality = d.personality.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+  const features = d.features.map((f) => `<li>${f}</li>`).join('');
 
   return `
   <div class="sheet-paper" role="document">
     <button class="sheet-close" type="button" aria-label="Cerrar la hoja de personaje">✕</button>
 
     <header class="sheet-head">
-      <canvas class="sheet-portrait" width="170" height="210" aria-label="Retrato del Guerrero"></canvas>
+      <canvas class="sheet-portrait" width="170" height="210" aria-label="Retrato de ${info.label}"></canvas>
       <div class="sheet-title">
-        <div class="sheet-class">Guerrero</div>
-        <div class="sheet-name">Ser Aldo, el Valiente</div>
+        <div class="sheet-class">${info.label}</div>
+        <div class="sheet-name">${d.name}</div>
         <dl class="sheet-fields">
-          <div><dt>Clase y nivel</dt><dd>Guerrero 1</dd></div>
-          <div><dt>Trasfondo</dt><dd>Soldado</dd></div>
-          <div><dt>Raza</dt><dd>Humano</dd></div>
-          <div><dt>Alineamiento</dt><dd>Legal bueno</dd></div>
+          <div><dt>Clase y nivel</dt><dd>${d.classLevel}</dd></div>
+          <div><dt>Trasfondo</dt><dd>${d.background}</dd></div>
+          <div><dt>Raza</dt><dd>${d.race}</dd></div>
+          <div><dt>Alineamiento</dt><dd>${d.alignment}</dd></div>
           <div><dt>Experiencia</dt><dd>0 PX</dd></div>
           <div><dt>Celdas exploradas</dt><dd data-bind="explored">1</dd></div>
         </dl>
@@ -98,9 +82,9 @@ function html(): string {
 
       <section class="sheet-col">
         <div class="sheet-vitals">
-          <div class="sheet-shield"><span class="sheet-box-value">18</span><span class="sheet-box-label">Clase de armadura</span></div>
-          <div class="sheet-box"><span class="sheet-box-value">${signed(modifier(12))}</span><span class="sheet-box-label">Iniciativa</span></div>
-          <div class="sheet-box"><span class="sheet-box-value">9 m</span><span class="sheet-box-label">Velocidad</span></div>
+          <div class="sheet-shield"><span class="sheet-box-value">${d.armorClass}</span><span class="sheet-box-label">Clase de armadura</span></div>
+          <div class="sheet-box"><span class="sheet-box-value">${signed(initiative)}</span><span class="sheet-box-label">Iniciativa</span></div>
+          <div class="sheet-box"><span class="sheet-box-value">${d.speed}</span><span class="sheet-box-label">Velocidad</span></div>
         </div>
         <div class="sheet-hp">
           <div class="sheet-hp-label">Puntos de golpe</div>
@@ -108,43 +92,24 @@ function html(): string {
           <div class="sheet-hearts" data-bind="hearts" aria-hidden="true"></div>
         </div>
         <div class="sheet-row">
-          <div class="sheet-box"><span class="sheet-box-value">1d10</span><span class="sheet-box-label">Dados de golpe</span></div>
+          <div class="sheet-box"><span class="sheet-box-value">${d.hitDie}</span><span class="sheet-box-label">Dados de golpe</span></div>
           <div class="sheet-box"><span class="sheet-box-value">○ ○ ○</span><span class="sheet-box-label">Salvaciones contra muerte</span></div>
         </div>
         <h3>Ataques</h3>
         <table class="sheet-attacks">
           <thead><tr><th>Nombre</th><th>Ataque</th><th>Daño</th></tr></thead>
-          <tbody>
-            <tr><td>Espada larga</td><td>+5</td><td>1d8+3 cortante</td></tr>
-            <tr><td>Embestida de escudo</td><td>+5</td><td>1d4+3 contundente</td></tr>
-          </tbody>
+          <tbody>${attacks}</tbody>
         </table>
         <div class="sheet-power" data-bind="power"></div>
         <h3>Equipo</h3>
-        <ul class="sheet-plain">
-          <li>Cota de mallas y coraza</li>
-          <li>Escudo de cometa</li>
-          <li>Espada larga</li>
-          <li>Yelmo de ranuras con penacho rojo</li>
-          <li>Bufanda roja</li>
-          <li>Mochila, cuerda y yesca</li>
-        </ul>
+        <ul class="sheet-plain">${equipment}</ul>
       </section>
 
       <section class="sheet-col sheet-wide">
         <h3>Personalidad</h3>
-        <dl class="sheet-notes">
-          <div><dt>Rasgo</dt><dd>Valiente aunque no lo parezca; habla solo cuando está nervioso.</dd></div>
-          <div><dt>Ideal</dt><dd>Salir de la mazmorra con vida y con la espada en la mano.</dd></div>
-          <div><dt>Vínculo</dt><dd>Debe volver al inicio para reclamar lo que le espera allí.</dd></div>
-          <div><dt>Defecto</dt><dd>Las abominaciones le dejan sin palabras.</dd></div>
-        </dl>
+        <dl class="sheet-notes">${personality}</dl>
         <h3>Rasgos y atributos</h3>
-        <ul class="sheet-plain">
-          <li><b>Estilo de combate: Defensa.</b> +1 a la CA mientras lleva armadura.</li>
-          <li><b>Tomar aliento.</b> Una vez por descanso recupera 1d10+1 puntos de golpe.</li>
-          <li><b>Rango militar.</b> Los soldados de bajo rango le obedecen.</li>
-        </ul>
+        <ul class="sheet-plain">${features}</ul>
       </section>
     </div>
   </div>`;
@@ -160,6 +125,7 @@ export class CharacterSheet {
 
   constructor(
     parent: HTMLElement,
+    private readonly info: ClassInfo,
     private readonly onClose: () => void,
     private readonly read: () => SheetData,
   ) {
@@ -168,7 +134,7 @@ export class CharacterSheet {
     this.root.hidden = true;
     this.root.setAttribute('role', 'dialog');
     this.root.setAttribute('aria-label', 'Hoja de personaje');
-    this.root.innerHTML = html();
+    this.root.innerHTML = html(info);
     parent.append(this.root);
 
     this.portrait = this.root.querySelector<HTMLCanvasElement>('.sheet-portrait') as HTMLCanvasElement;
@@ -218,7 +184,7 @@ export class CharacterSheet {
     this.set('hp', String(data.hp));
     this.set('maxHp', String(data.maxHp));
     this.set('explored', String(data.explored));
-    this.set('power', data.swordPower ? '⚔ Poder de la espada: ¡activo! Los monstruos huyen y caen a su paso.' : '⚔ Poder de la espada: dormida. Vuelve al inicio tras ver la salida para despertarla.');
+    this.set('power', data.swordPower ? this.info.sheet.powerOn : this.info.sheet.powerOff);
     const hearts = '♥'.repeat(Math.max(0, data.hp)) + '♡'.repeat(Math.max(0, data.maxHp - data.hp));
     if (hearts !== this.lastHearts) {
       this.lastHearts = hearts;
@@ -233,7 +199,7 @@ export class CharacterSheet {
     grad.addColorStop(1, 'rgba(184,140,84,0.55)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
-    drawWarrior(ctx, width / 2, height / 2 + 6, 196, {
+    this.info.draw(ctx, width / 2, height / 2 + 6, 196, {
       walkAngle: 0,
       moving: false,
       facing: 'S',

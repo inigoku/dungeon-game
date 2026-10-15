@@ -1,5 +1,6 @@
 /** Punto de entrada: carga los recursos, espera un gesto del usuario (audio) y lanza el juego. */
 import { loadAssets, type Assets } from './assets';
+import { CLASSES, CLASS_IDS, initialClass, rememberClass, type PlayerClass } from './classes';
 import { Game } from './game';
 
 function element<T extends HTMLElement>(id: string): T {
@@ -15,12 +16,48 @@ const overlayText = element<HTMLParagraphElement>('overlay-text');
 const bar = element<HTMLDivElement>('bar');
 const barFill = element<HTMLDivElement>('bar-fill');
 const action = element<HTMLButtonElement>('action');
+const classBox = element<HTMLDivElement>('classes');
 
-function showOverlay(title: string, text: string, button: string | null): Promise<void> {
+let selectedClass: PlayerClass = initialClass();
+
+/** Botones de clase con un pequeño retrato de cada una. */
+function buildClassPicker(): void {
+  for (const id of CLASS_IDS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.cls = id;
+    button.setAttribute('role', 'radio');
+    const canvas = document.createElement('canvas');
+    canvas.width = 110;
+    canvas.height = 134;
+    const ctx = canvas.getContext('2d');
+    ctx?.clearRect(0, 0, 110, 134);
+    CLASSES[id].draw(ctx as CanvasRenderingContext2D, 55, 70, 118, { walkAngle: 0, moving: false, facing: 'S', headTurn: 0, showWeapons: true, swordPower: false, now: 0 });
+    button.append(canvas, document.createTextNode(CLASSES[id].label));
+    button.addEventListener('click', () => {
+      selectedClass = id;
+      rememberClass(id);
+      refreshClassPicker();
+    });
+    classBox.append(button);
+  }
+  refreshClassPicker();
+}
+
+function refreshClassPicker(): void {
+  for (const button of classBox.querySelectorAll<HTMLButtonElement>('button')) {
+    const on = button.dataset.cls === selectedClass;
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-checked', String(on));
+  }
+}
+
+function showOverlay(title: string, text: string, button: string | null, pickClass = false): Promise<void> {
   overlayTitle.textContent = title;
   overlayText.textContent = text;
   bar.hidden = true;
   action.hidden = button === null;
+  classBox.hidden = !pickClass;
   overlay.hidden = false;
   if (button === null) return Promise.resolve();
 
@@ -47,7 +84,7 @@ async function playLoop(assets: Assets): Promise<void> {
   for (;;) {
     overlay.hidden = true;
     canvas.focus();
-    const game = new Game(canvas, assets);
+    const game = new Game(canvas, assets, selectedClass);
     // ?debug expone la partida en la consola del navegador (window.__game)
     if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __game: Game }).__game = game;
     const restart = await game.run();
@@ -101,7 +138,8 @@ async function boot(): Promise<void> {
   });
   if (new URLSearchParams(location.search).has('audio')) showAudioPanel(assets);
   // Los navegadores solo dejan sonar el audio tras un gesto del usuario
-  await showOverlay('Dungeon Explorer 2D', 'Explora la mazmorra, encuentra la salida y sobrevive. Mejor con auriculares.', 'Empezar');
+  buildClassPicker();
+  await showOverlay('Dungeon Explorer 2D', 'Explora la mazmorra, encuentra la salida y sobrevive. Mejor con auriculares.', 'Empezar', true);
   await assets.mixer.unlock();
   await playLoop(assets);
 }

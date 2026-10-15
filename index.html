@@ -451,6 +451,40 @@
         padding-bottom: 3px;
         border-bottom: 1px solid #8a6a3a;
       }
+
+      /* Selector de clase en la pantalla de inicio */
+      #classes {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+      }
+      #classes[hidden] {
+        display: none;
+      }
+      #classes button {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        padding: 8px 12px 6px;
+        font: inherit;
+        font-size: 14px;
+        color: #ccc;
+        background: #140a0a;
+        border: 2px solid #4a2020;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      #classes button.on {
+        color: #fff;
+        background: #3a1010;
+        border-color: #d4af37;
+      }
+      #classes canvas {
+        width: 66px;
+        height: 80px;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
@@ -460,6 +494,7 @@
         <h1 id="overlay-title">Dungeon Explorer 2D</h1>
         <p id="overlay-text">Cargando recursos…</p>
         <div id="bar"><div id="bar-fill"></div></div>
+        <div id="classes" role="radiogroup" aria-label="Clase" hidden></div>
         <button id="action" type="button" hidden>Empezar</button>
       </div>
     </div>
