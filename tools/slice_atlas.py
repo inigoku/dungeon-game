@@ -19,7 +19,7 @@ BASELINE = 122       # fila donde apoyan los pies
 CENTER_X = 64        # columna donde se centra el personaje
 SCALE = 0.50         # factor sobre el tamaño nativo de la celda (2048/8 = 256 px → 128)
 INSET = 4            # margen que se descarta en cada celda (bordes de la cuadrícula)
-UNANCHORED = {63}    # el retrato se encaja sin anclar los pies
+UNANCHORED = {56, 57, 63}  # retrato y caídas en el aire: se encajan enteros, sin anclar los pies
 
 
 def extract(rgb: np.ndarray) -> np.ndarray:
@@ -70,6 +70,10 @@ def extract(rgb: np.ndarray) -> np.ndarray:
         pix = rgb[ys, xs].astype(int)
         if len(xs) < 200 and (pix[:, 0] - pix[:, 1]).mean() > 40:
             keep[labels == i] = False
+            continue
+        # Trozos de escenario (el borde de musgo del barranco): verdosos y nada que ver con la piel
+        if len(xs) > 200 and (pix[:, 1] - pix[:, 0]).mean() > 6 and pix[:, 1].mean() > 70:
+            keep[labels == i] = False
     soft = ndi.gaussian_filter(keep.astype(float), 0.6)
     return np.clip((soft - 0.3) / 0.5, 0, 1)
 
@@ -97,6 +101,9 @@ def main(src: str, dst: str) -> None:
         x1, y1 = round((col + 1) * pitch) - INSET, round((row + 1) * pitch) - INSET
         rgb = np.array(sheet.convert('RGB').crop((x0, y0, x1, y1)))
         mask = extract(rgb)
+        if index == 56:  # el borde del barranco que asoma en la esquina
+            h, w = mask.shape
+            mask[int(h * 0.68):, : int(w * 0.42)] = 0
         rgba = np.dstack([rgb, (mask * 255).astype(np.uint8)])
         frame = Image.fromarray(rgba, 'RGBA')
         if index in UNANCHORED:
