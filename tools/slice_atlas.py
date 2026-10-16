@@ -18,6 +18,7 @@ OUT = 128            # lado de cada fotograma de salida
 BASELINE = 122       # fila donde apoyan los pies
 CENTER_X = 64        # columna donde se centra el personaje
 SCALE = 0.50         # factor sobre el tamaño nativo de la celda (2048/8 = 256 px → 128)
+TINT_MIN = 5         # tinte mínimo del tablero (R-G) frente al gris neutro del metal
 INSET = 4            # margen que se descarta en cada celda (bordes de la cuadrícula)
 UNANCHORED = {56, 57, 63}  # retrato y caídas en el aire: se encajan enteros, sin anclar los pies
 
@@ -31,11 +32,20 @@ def extract(rgb: np.ndarray) -> np.ndarray:
     pix = rgb.astype(int)
     sat = pix.max(axis=2) - pix.min(axis=2)
     lum = pix.mean(axis=2)
-    checker = (sat < 18) & (lum > 90) & (lum < 150)
+    # El tablero es gris con un tinte morado (R-G ≈ 8, B-G ≈ 7); el metal de las dagas es gris neutro
+    tint = ((pix[:, :, 0] - pix[:, :, 1]) >= TINT_MIN) & ((pix[:, :, 2] - pix[:, :, 1]) >= TINT_MIN - 1)
+    checker = (sat < 24) & (lum > 90) & (lum < 150) & tint
     checker = ndi.binary_closing(checker, structure=np.ones((3, 3)), iterations=1) | checker
+    # El contorno oscuro (o con color) del personaje hace de muro: el interior de una daga tiene el mismo
+    # gris que el tablero y se colaría por cualquier hueco del contorno
+    walls = ndi.binary_dilation((lum < 85) | (sat > 40), iterations=2)
+    open_checker = checker & ~walls
     seeds = np.zeros_like(checker)
     seeds[0, :] = seeds[-1, :] = seeds[:, 0] = seeds[:, -1] = True
-    bg = ndi.binary_propagation(seeds & checker, mask=checker)
+    core = ndi.binary_opening(open_checker, structure=np.ones((13, 13)))
+    bg = ndi.binary_propagation(seeds & core, mask=open_checker)
+    # Recupera el borde del tablero pegado al contorno, sin llegar al interior de las dagas
+    bg = ndi.binary_dilation(bg, iterations=3, mask=checker) | bg
     # Los cuadros blancos del borde de la cuadrícula
     fg = ~ndi.binary_dilation(bg, iterations=1)
     # Quita los números de la esquina y las motas sueltas: solo se conservan componentes grandes
@@ -101,9 +111,6 @@ def main(src: str, dst: str) -> None:
         x1, y1 = round((col + 1) * pitch) - INSET, round((row + 1) * pitch) - INSET
         rgb = np.array(sheet.convert('RGB').crop((x0, y0, x1, y1)))
         mask = extract(rgb)
-        if index == 56:  # el borde del barranco que asoma en la esquina
-            h, w = mask.shape
-            mask[int(h * 0.68):, : int(w * 0.42)] = 0
         rgba = np.dstack([rgb, (mask * 255).astype(np.uint8)])
         frame = Image.fromarray(rgba, 'RGBA')
         if index in UNANCHORED:
