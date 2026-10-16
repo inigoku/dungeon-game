@@ -5,6 +5,7 @@ import {
   drawCliffSide,
   drawRoughFloor,
   drawStoneInWalls,
+  drawWallShadows,
 } from './effects';
 import {
   drawBloodStains,
@@ -257,6 +258,7 @@ export class Renderer {
     else fillRect(ctx, bg, 0, 0, size, size);
     drawStoneInWalls(ctx, size, boardRow, boardCol, 0, 0, cell, wb, null);
     if (insetSize > 0) drawRoughFloor(ctx, inset, inset, insetSize, insetSize, floorColor, boardRow, boardCol);
+    drawWallShadows(ctx, size, 0, 0, cell, wb, null);
 
     this.textureCache.set(key, { sig, type: cell.cellType, canvas });
     if (this.textureCache.size > MAX_TEXTURE_CACHE) {
@@ -295,6 +297,7 @@ export class Renderer {
       const wallBrightness = Math.trunc((20 + Math.min(120, torchCount * 30)) * brightnessFactor);
       drawStoneInWalls(ctx, size, boardRow, boardCol, x, y, cell, wallBrightness, barrancoDirs);
       drawRoughFloor(ctx, x + inset, y + inset, size - 2 * inset, size - 2 * inset, floorColor, boardRow, boardCol);
+      drawWallShadows(ctx, size, x, y, cell, wallBrightness, barrancoDirs);
       // El acantilado va el último para quedar sólido
       for (const dir of barrancoDirs) drawCliffSide(ctx, size, x, y, dir, boardRow, boardCol);
       drawBarrancoDoorCorners(ctx, size, boardRow, boardCol, x, y, cell, barrancoDirs);
