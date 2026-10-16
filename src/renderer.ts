@@ -34,6 +34,7 @@ import {
   type RGB,
 } from './gfx';
 import { CellType, DELTA, oppositeDirection, posKey, type Cell, type Direction } from './models';
+import { reportError } from './errors';
 import { seeded } from './rng';
 import { drawFightCloud } from './fight';
 import { drawDeepOne } from './sprites';
@@ -258,9 +259,17 @@ export class Renderer {
 
     if (drawFullFloor) drawRoughFloor(ctx, 0, 0, size, size, floorColor, boardRow, boardCol);
     else fillRect(ctx, bg, 0, 0, size, size);
-    drawStoneInWalls(ctx, size, boardRow, boardCol, 0, 0, cell, wb, barrancoDirs, style);
-    if (insetSize > 0) drawRoughFloor(ctx, inset, inset, insetSize, insetSize, floorColor, boardRow, boardCol);
-    drawWallShadows(ctx, size, 0, 0, cell, wb, barrancoDirs, style, boardRow, boardCol);
+    try {
+      drawStoneInWalls(ctx, size, boardRow, boardCol, 0, 0, cell, wb, barrancoDirs, style);
+      if (insetSize > 0) drawRoughFloor(ctx, inset, inset, insetSize, insetSize, floorColor, boardRow, boardCol);
+      drawWallShadows(ctx, size, 0, 0, cell, wb, barrancoDirs, style, boardRow, boardCol);
+    } catch (error) {
+      // Una pared que falla no debe tumbar el dibujo: se deja lisa y se avisa
+      reportError(error);
+      canvas.width = canvas.width; // reinicia el estado del lienzo (por si quedó a medias un save/clip)
+      fillRect(ctx, gray(wb + 20), 0, 0, size, size);
+      if (insetSize > 0) drawRoughFloor(ctx, inset, inset, insetSize, insetSize, floorColor, boardRow, boardCol);
+    }
     if (barrancoDirs.length > 0) {
       // El acantilado va el último para quedar sólido
       for (const dir of barrancoDirs) drawCliffSide(ctx, size, 0, 0, dir, boardRow, boardCol);
