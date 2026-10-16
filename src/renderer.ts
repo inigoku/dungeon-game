@@ -1057,7 +1057,8 @@ export class Renderer {
       swordPower: g.hasSwordPower,
       now: t,
       hurt: g.playerHealth < g.maxHealth,
-      alerted: g.deepOnes.some((m) => m.alerted && !m.dead),
+      // En guardia mientras hay un enemigo cerca o hace menos de 3 s que se movió; después, reposo
+      alerted: t - g.lastMoveAttemptTime <= FACE_FRONT_AFTER_MS || g.deepOnes.some((m) => !m.dead && (m.alerted || Math.max(Math.abs(m.row - g.currentPosition[0]), Math.abs(m.col - g.currentPosition[1])) <= 3)),
       pose,
     });
   }

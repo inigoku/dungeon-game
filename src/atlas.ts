@@ -42,12 +42,10 @@ export const POSE = {
   PORTRAIT: 63,
 } as const;
 
-/** Primer fotograma (el de "mirando") de cada dirección; la hoja trae el oeste dibujado. */
-const DIRECTION_BASE = { S: 8, N: 12, E: 16, O: 20 } as const;
+/** Icono que se muestra mientras se mueve en cada dirección: siempre uno con las armas a la vista. */
+const MOVE_ICON = { S: POSE.ALERT_TO_REST, N: 12, E: 17, O: 20 } as const;
 /** Desplazamiento del bloque equivalente cuando el personaje está herido. */
 const HURT_OFFSET = 24;
-/** Ciclo de marcha sobre los tres fotogramas de movimiento: paso A, pasada, paso B, pasada. */
-const WALK_CYCLE = [1, 2, 3, 2] as const;
 
 const atlases = new Map<string, HTMLImageElement>();
 
@@ -64,24 +62,21 @@ export interface FramePick {
   index: number;
   /** Dibujar reflejado (para atlas que solo traen un lado). */
   mirror: boolean;
+  /** Salto vertical (0..1 del tamaño) para dar sensación de paso con un solo icono. */
+  hop: number;
 }
 
-/** Elige el fotograma según el estado del personaje. */
+/**
+ * Elige el fotograma. Secuencia: en guardia → icono de movimiento → en guardia; pasados 3 s sin
+ * enemigos cerca (`alerted` falso) se pasa a reposo.
+ */
 export function pickFrame(look: Pick<WarriorLook, 'facing' | 'moving' | 'walkAngle' | 'hurt' | 'alerted' | 'pose'>): FramePick {
-  const mirror = false;
-  if (look.pose !== undefined) return { index: look.pose, mirror: false };
-  const hurt = look.hurt === true;
-  const base = DIRECTION_BASE[look.facing] + (hurt ? HURT_OFFSET : 0);
+  if (look.pose !== undefined) return { index: look.pose, mirror: false, hop: 0 };
+  const shift = look.hurt === true ? HURT_OFFSET : 0;
   if (look.moving) {
-    const turn = Math.PI * 2;
-    const phase = Math.floor((((look.walkAngle % turn) + turn) % turn) / turn * WALK_CYCLE.length) % WALK_CYCLE.length;
-    return { index: base + WALK_CYCLE[phase], mirror };
+    return { index: MOVE_ICON[look.facing], mirror: false, hop: Math.abs(Math.sin(look.walkAngle * 2)) * 0.035 };
   }
-  if (look.facing === 'S') {
-    const index = look.alerted ? POSE.ALERT : POSE.REST;
-    return { index: index + (hurt ? HURT_OFFSET : 0), mirror: false };
-  }
-  return { index: base, mirror };
+  return { index: (look.alerted ? POSE.ALERT : POSE.REST) + shift, mirror: false, hop: 0 };
 }
 
 /** Dibuja un fotograma del atlas con los pies en (cx, cy + 0,47·size), igual que los sprites vectoriales. */
@@ -91,7 +86,7 @@ export function drawAtlasFrame(ctx: Ctx, id: string, pick: FramePick, cx: number
   const drawSize = size * 1.18;
   const row = Math.floor(pick.index / COLUMNS);
   const col = pick.index % COLUMNS;
-  const feetY = cy + size * 0.47;
+  const feetY = cy + size * 0.47 - pick.hop * size;
   const dy = feetY - (BASELINE / CELL) * drawSize;
 
   // Sombra en el suelo
