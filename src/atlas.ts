@@ -12,40 +12,43 @@ export const COLUMNS = 8;
 const BASELINE = 122;
 const CENTER_X = 64;
 
-/** Fotogramas con nombre propio. */
-export const POSE = {
-  ALERT: 0,
-  REST: 1,
-  ALERT_TO_REST: 2,
-  REST_TO_ALERT: 3,
-  SWAGGER_1: 4,
-  SWAGGER_2: 5,
-  WAVE_1: 6,
-  WAVE_2: 7,
-  HURT_ALERT: 24,
-  HURT_REST: 25,
-  DYING_1: 48,
-  DYING_2: 49,
-  DYING_3: 50,
-  DEAD: 51,
-  ATTACK_1: 52,
-  ATTACK_2: 53,
-  SCARED: 54,
-  AMAZED: 55,
-  STUMBLE: 56,
-  FALL: 57,
-  POWER: 58,
-  TRAIT: 59,
-  LOOK_AROUND: 60,
-  TIRED: 61,
-  VICTORY: 62,
-  PORTRAIT: 63,
-} as const;
+/** Qué fotograma de la hoja de cada clase hace cada papel (cada hoja generada ordena las poses a su manera). */
+export interface AtlasLayout {
+  /** En guardia (armas a la vista) y en reposo. */
+  guard: number;
+  rest: number;
+  /** Si > 0, desplazamiento al bloque equivalente cuando está herido. */
+  hurtShift: number;
+  /** Icono de movimiento por dirección; `mirror` para dibujarlo reflejado. */
+  move: Record<'N' | 'E' | 'S' | 'O', { index: number; mirror: boolean }>;
+  /** Muerte (cuatro fotogramas seguidos) y caída por el barranco (tropiezo, caída). */
+  dying: readonly [number, number, number, number];
+  stumble: number;
+  fall: number;
+}
 
-/** Icono que se muestra mientras se mueve en cada dirección: siempre uno con las armas a la vista. */
-const MOVE_ICON = { S: POSE.ALERT_TO_REST, N: 12, E: 17, O: 20 } as const;
-/** Desplazamiento del bloque equivalente cuando el personaje está herido. */
-const HURT_OFFSET = 24;
+export const LAYOUTS: Record<string, AtlasLayout> = {
+  barbaro: {
+    guard: 0,
+    rest: 1,
+    hurtShift: 24,
+    move: { N: { index: 12, mirror: false }, E: { index: 17, mirror: false }, S: { index: 2, mirror: false }, O: { index: 20, mirror: false } },
+    dying: [48, 49, 50, 51],
+    stumble: 56,
+    fall: 57,
+  },
+  // Esta hoja no distingue heridos y sus vistas laterales no enseñan la espada: se usa el 3/4 con la espada
+  // en la mano (fotograma 32) y el oeste es el este reflejado
+  guerrero: {
+    guard: 0,
+    rest: 4,
+    hurtShift: 0,
+    move: { N: { index: 12, mirror: false }, E: { index: 32, mirror: false }, S: { index: 10, mirror: false }, O: { index: 32, mirror: true } },
+    dying: [48, 49, 50, 51],
+    stumble: 56,
+    fall: 57,
+  },
+};
 
 const atlases = new Map<string, HTMLImageElement>();
 
@@ -70,13 +73,24 @@ export interface FramePick {
  * Elige el fotograma. Secuencia: en guardia → icono de movimiento → en guardia; pasados 3 s sin
  * enemigos cerca (`alerted` falso) se pasa a reposo.
  */
-export function pickFrame(look: Pick<WarriorLook, 'facing' | 'moving' | 'walkAngle' | 'hurt' | 'alerted' | 'pose'>): FramePick {
+export function pickFrame(layout: AtlasLayout, look: Pick<WarriorLook, 'facing' | 'moving' | 'walkAngle' | 'hurt' | 'alerted' | 'pose'>): FramePick {
   if (look.pose !== undefined) return { index: look.pose, mirror: false, hop: 0 };
-  const shift = look.hurt === true ? HURT_OFFSET : 0;
   if (look.moving) {
-    return { index: MOVE_ICON[look.facing], mirror: false, hop: Math.abs(Math.sin(look.walkAngle * 2)) * 0.035 };
+    const icon = layout.move[look.facing];
+    return { index: icon.index, mirror: icon.mirror, hop: Math.abs(Math.sin(look.walkAngle * 2)) * 0.035 };
   }
-  return { index: (look.alerted ? POSE.ALERT : POSE.REST) + shift, mirror: false, hop: 0 };
+  const shift = look.hurt === true ? layout.hurtShift : 0;
+  return { index: (look.alerted ? layout.guard : layout.rest) + shift, mirror: false, hop: 0 };
+}
+
+/** Fotograma de la muerte según los ms transcurridos desde que cayó. */
+export function dyingFrame(layout: AtlasLayout, ms: number): number {
+  return layout.dying[ms < 350 ? 0 : ms < 700 ? 1 : ms < 1050 ? 2 : 3];
+}
+
+/** Fotograma de la caída por el barranco según su progreso (0..1). */
+export function fallFrame(layout: AtlasLayout, t: number): number {
+  return t < 0.3 ? layout.stumble : layout.fall;
 }
 
 /** Dibuja un fotograma del atlas con los pies en (cx, cy + 0,47·size), igual que los sprites vectoriales. */

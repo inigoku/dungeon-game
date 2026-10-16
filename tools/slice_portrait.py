@@ -2,7 +2,7 @@
 """
 Extrae un fotograma de una hoja 8×8 (por defecto el 63, el busto) como PNG recortado y transparente.
 
-Uso:  python3 tools/slice_portrait.py hoja.jpg images/retrato_barbaro.png [indice]
+Uso:  python3 tools/slice_portrait.py hoja.jpg images/retrato_barbaro.png [indice] [--fondo-plano]
 """
 import sys
 
@@ -12,13 +12,13 @@ from PIL import Image
 import slice_atlas as sa
 
 
-def main(src: str, dst: str, index: int = 63) -> None:
+def main(src: str, dst: str, index: int = 63, flat: bool = False) -> None:
     sheet = Image.open(src).convert('RGB')
     pitch = sheet.width / sa.CELLS
     row, col = divmod(index, sa.CELLS)
     box = (round(col * pitch) + sa.INSET, round(row * pitch) + sa.INSET, round((col + 1) * pitch) - sa.INSET, round((row + 1) * pitch) - sa.INSET)
     rgb = np.array(sheet.crop(box))
-    mask = sa.extract(rgb)
+    mask = sa.extract(rgb, flat)
     frame = Image.fromarray(np.dstack([rgb, (mask * 255).astype(np.uint8)]), 'RGBA')
     frame = frame.crop(frame.getchannel('A').point(lambda v: 255 if v > 20 else 0).getbbox())
     frame.save(dst, optimize=True)
@@ -26,6 +26,7 @@ def main(src: str, dst: str, index: int = 63) -> None:
 
 
 if __name__ == '__main__':
-    if len(sys.argv) not in (3, 4):
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    if len(args) not in (2, 3):
         sys.exit(__doc__)
-    main(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) == 4 else 63)
+    main(args[0], args[1], int(args[2]) if len(args) == 3 else 63, '--fondo-plano' in sys.argv)

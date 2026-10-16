@@ -3,7 +3,8 @@
 Convierte una hoja de sprites 8×8 generada con IA (fondo de tablero gris pintado, con los números de cada celda) en un
 atlas limpio con transparencia: 8×8 fotogramas de 128×128 con los pies anclados en el mismo punto.
 
-Uso:  python3 tools/slice_atlas.py art/barbaro-hoja-origen.jpg images/atlas_barbaro.png
+Uso:  python3 tools/slice_atlas.py art/barbaro-hoja-origen.jpg images/atlas_barbaro.png [--fondo-plano]
+      (--fondo-plano: cada celda tiene un gris liso en vez del tablero)
 Necesita: pip install pillow numpy scipy
 """
 import json
@@ -17,27 +18,47 @@ CELLS = 8
 OUT = 128            # lado de cada fotograma de salida
 BASELINE = 122       # fila donde apoyan los pies
 CENTER_X = 64        # columna donde se centra el personaje
-SCALE = 0.50         # factor sobre el tamaño nativo de la celda (2048/8 = 256 px → 128)
+SCALE = 0.5          # factor sobre el tamaño nativo de la celda (≈250 px → 128)
 INSET = 4            # margen que se descarta en cada celda (bordes de la cuadrícula)
+FLAT_EDGE = 14       # gradiente máximo dentro de una región plana (fondo liso)
 UNANCHORED = {56, 57, 63}  # retrato y caídas en el aire: se encajan enteros, sin anclar los pies
 
 
-def extract(rgb: np.ndarray) -> np.ndarray:
+def extract(rgb: np.ndarray, flat: bool = False) -> np.ndarray:
     """Máscara (float 0..1) del personaje dentro de una celda.
 
     El fondo de la hoja es un tablero gris (dos tonos casi sin color) pintado en la imagen: se detecta
     como gris poco saturado y claridad media, y solo cuenta si está conectado con el borde de la celda.
     """
-    pix = rgb.astype(int)
-    sat = pix.max(axis=2) - pix.min(axis=2)
-    lum = pix.mean(axis=2)
-    checker = (sat < 18) & (lum > 90) & (lum < 150)
-    checker = ndi.binary_closing(checker, structure=np.ones((3, 3)), iterations=1) | checker
-    seeds = np.zeros_like(checker)
-    seeds[0, :] = seeds[-1, :] = seeds[:, 0] = seeds[:, -1] = True
-    bg = ndi.binary_propagation(seeds & checker, mask=checker)
-    # Los cuadros blancos del borde de la cuadrícula
-    fg = ~ndi.binary_dilation(bg, iterations=1)
+    if flat:
+        # Fondo liso (un gris por celda, a veces con dos tonos): se parte la imagen en regiones planas separadas
+        # por bordes, y es fondo toda región grande que toque el borde de la celda. El acero gris del personaje
+        # queda dentro de su contorno oscuro, así que no se confunde con el fondo.
+        f = ndi.gaussian_filter(rgb.astype(float), sigma=(0.8, 0.8, 0))
+        grad = np.max([np.hypot(ndi.sobel(f[:, :, c], axis=0), ndi.sobel(f[:, :, c], axis=1)) for c in range(3)], axis=0)
+        flat_px = grad < FLAT_EDGE
+        regions, n_regions = ndi.label(flat_px)
+        touching = np.zeros(n_regions + 1, bool)
+        edge_ids = np.unique(np.concatenate([regions[:3].ravel(), regions[-3:].ravel(), regions[:, :3].ravel(), regions[:, -3:].ravel()]))
+        touching[edge_ids] = True
+        touching[0] = False
+        sizes = np.bincount(regions.ravel(), minlength=n_regions + 1)
+        bg = touching[regions] & (sizes[regions] > 400)
+        lum_px = rgb.astype(float).mean(axis=2)
+        # La franja de transición entre el fondo y el contorno oscuro también es fondo
+        bg = ndi.binary_dilation(bg, iterations=3, mask=lum_px > 75) | bg
+        fg = ~bg
+    else:
+        pix = rgb.astype(int)
+        sat = pix.max(axis=2) - pix.min(axis=2)
+        lum = pix.mean(axis=2)
+        checker = (sat < 18) & (lum > 90) & (lum < 150)
+        checker = ndi.binary_closing(checker, structure=np.ones((3, 3)), iterations=1) | checker
+        seeds = np.zeros_like(checker)
+        seeds[0, :] = seeds[-1, :] = seeds[:, 0] = seeds[:, -1] = True
+        bg = ndi.binary_propagation(seeds & checker, mask=checker)
+        # Los cuadros blancos del borde de la cuadrícula
+        fg = ~ndi.binary_dilation(bg, iterations=1)
     # Quita los números de la esquina y las motas sueltas: solo se conservan componentes grandes
     labels, n = ndi.label(fg)
     keep = np.zeros_like(fg)
@@ -90,7 +111,7 @@ def anchor(mask: np.ndarray) -> tuple[float, float]:
     return float(cx), float(base)
 
 
-def main(src: str, dst: str) -> None:
+def main(src: str, dst: str, flat: bool = False) -> None:
     sheet = Image.open(src).convert('RGBA')
     pitch = sheet.width / CELLS
     atlas = Image.new('RGBA', (OUT * CELLS, OUT * CELLS), (0, 0, 0, 0))
@@ -100,7 +121,7 @@ def main(src: str, dst: str) -> None:
         x0, y0 = round(col * pitch) + INSET, round(row * pitch) + INSET
         x1, y1 = round((col + 1) * pitch) - INSET, round((row + 1) * pitch) - INSET
         rgb = np.array(sheet.convert('RGB').crop((x0, y0, x1, y1)))
-        mask = extract(rgb)
+        mask = extract(rgb, flat)
         if index == 56:  # el borde del barranco que asoma en la esquina
             h, w = mask.shape
             mask[int(h * 0.68):, : int(w * 0.42)] = 0
@@ -131,6 +152,7 @@ def paste_clipped(cell: Image.Image, img: Image.Image, offset: tuple[float, floa
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    if len(args) != 2:
         sys.exit(__doc__)
-    main(sys.argv[1], sys.argv[2])
+    main(args[0], args[1], '--fondo-plano' in sys.argv)
