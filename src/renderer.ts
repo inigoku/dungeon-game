@@ -240,12 +240,13 @@ export class Renderer {
     wallBrightness: number,
     drawFullFloor: boolean,
     background: RGB | null,
+    barrancoDirs: readonly Direction[],
   ): Canvas {
     const size = this.cellSize;
     const wb = Math.trunc(wallBrightness);
     const bg = background ?? floorColor;
     const style = this.game.world.wallStyle(boardRow, boardCol);
-    const key = `${boardRow},${boardCol},${size},${floorColor[0]},${wb},${drawFullFloor ? 1 : 0},${bg.join('-')},${style}`;
+    const key = `${boardRow},${boardCol},${size},${floorColor[0]},${wb},${drawFullFloor ? 1 : 0},${bg.join('-')},${style},${barrancoDirs.join('')}`;
     const sig = exitsSignature(cell);
     const cached = this.textureCache.get(key);
     if (cached && cached.sig === sig && cached.type === cell.cellType) return cached.canvas;
@@ -257,9 +258,14 @@ export class Renderer {
 
     if (drawFullFloor) drawRoughFloor(ctx, 0, 0, size, size, floorColor, boardRow, boardCol);
     else fillRect(ctx, bg, 0, 0, size, size);
-    drawStoneInWalls(ctx, size, boardRow, boardCol, 0, 0, cell, wb, null, style);
+    drawStoneInWalls(ctx, size, boardRow, boardCol, 0, 0, cell, wb, barrancoDirs, style);
     if (insetSize > 0) drawRoughFloor(ctx, inset, inset, insetSize, insetSize, floorColor, boardRow, boardCol);
-    drawWallShadows(ctx, size, 0, 0, cell, wb, null, style, boardRow, boardCol);
+    drawWallShadows(ctx, size, 0, 0, cell, wb, barrancoDirs, style, boardRow, boardCol);
+    if (barrancoDirs.length > 0) {
+      // El acantilado va el último para quedar sólido
+      for (const dir of barrancoDirs) drawCliffSide(ctx, size, 0, 0, dir, boardRow, boardCol);
+      drawBarrancoDoorCorners(ctx, size, boardRow, boardCol, 0, 0, cell, barrancoDirs);
+    }
 
     this.textureCache.set(key, { sig, type: cell.cellType, canvas });
     if (this.textureCache.size > MAX_TEXTURE_CACHE) {
@@ -286,29 +292,11 @@ export class Renderer {
   ): void {
     const g = this.game;
     const ctx = this.ctx;
-    const size = this.cellSize;
     const barrancoDirs = g.world.barrancoFacingDirections(boardRow, boardCol);
-
-    // Las celdas junto al barranco se dibujan en vivo para integrarse con el acantilado
-    if (barrancoDirs.length > 0) {
-      const inset = Math.trunc(size * 0.15);
-      if (drawFullFloor) drawRoughFloor(ctx, x, y, size, size, floorColor, boardRow, boardCol);
-      else if (background) fillRect(ctx, background, x, y, size, size);
-      const torchCount = g.countTorches(boardRow, boardCol, cell);
-      const wallBrightness = Math.trunc((20 + Math.min(120, torchCount * 30)) * brightnessFactor);
-      const style = g.world.wallStyle(boardRow, boardCol);
-      drawStoneInWalls(ctx, size, boardRow, boardCol, x, y, cell, wallBrightness, barrancoDirs, style);
-      drawRoughFloor(ctx, x + inset, y + inset, size - 2 * inset, size - 2 * inset, floorColor, boardRow, boardCol);
-      drawWallShadows(ctx, size, x, y, cell, wallBrightness, barrancoDirs, style, boardRow, boardCol);
-      // El acantilado va el último para quedar sólido
-      for (const dir of barrancoDirs) drawCliffSide(ctx, size, x, y, dir, boardRow, boardCol);
-      drawBarrancoDoorCorners(ctx, size, boardRow, boardCol, x, y, cell, barrancoDirs);
-      return;
-    }
 
     const torchCount = g.countTorches(boardRow, boardCol, cell);
     const wallBrightness = (20 + Math.min(120, torchCount * 30)) * brightnessFactor;
-    const tile = this.getCellTexture(boardRow, boardCol, cell, floorColor, wallBrightness, drawFullFloor, background);
+    const tile = this.getCellTexture(boardRow, boardCol, cell, floorColor, wallBrightness, drawFullFloor, background, barrancoDirs);
     ctx.drawImage(tile, x, y);
   }
 
