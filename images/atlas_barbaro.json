@@ -6,159 +6,159 @@
  "frames": [
   {
    "index": 0,
-   "opaque": 0.341
-  },
-  {
-   "index": 1,
-   "opaque": 0.331
-  },
-  {
-   "index": 2,
-   "opaque": 0.35
-  },
-  {
-   "index": 3,
-   "opaque": 0.342
-  },
-  {
-   "index": 4,
-   "opaque": 0.321
-  },
-  {
-   "index": 5,
-   "opaque": 0.36
-  },
-  {
-   "index": 6,
    "opaque": 0.375
   },
   {
-   "index": 7,
+   "index": 1,
+   "opaque": 0.399
+  },
+  {
+   "index": 2,
+   "opaque": 0.385
+  },
+  {
+   "index": 3,
+   "opaque": 0.372
+  },
+  {
+   "index": 4,
    "opaque": 0.364
   },
   {
+   "index": 5,
+   "opaque": 0.354
+  },
+  {
+   "index": 6,
+   "opaque": 0.378
+  },
+  {
+   "index": 7,
+   "opaque": 0.381
+  },
+  {
    "index": 8,
-   "opaque": 0.324
+   "opaque": 0.384
   },
   {
    "index": 9,
-   "opaque": 0.315
+   "opaque": 0.382
   },
   {
    "index": 10,
-   "opaque": 0.321
+   "opaque": 0.367
   },
   {
    "index": 11,
-   "opaque": 0.318
+   "opaque": 0.368
   },
   {
    "index": 12,
-   "opaque": 0.326
+   "opaque": 0.374
   },
   {
    "index": 13,
-   "opaque": 0.321
+   "opaque": 0.369
   },
   {
    "index": 14,
-   "opaque": 0.316
+   "opaque": 0.369
   },
   {
    "index": 15,
-   "opaque": 0.318
+   "opaque": 0.365
   },
   {
    "index": 16,
-   "opaque": 0.234
+   "opaque": 0.265
   },
   {
    "index": 17,
-   "opaque": 0.234
+   "opaque": 0.292
   },
   {
    "index": 18,
-   "opaque": 0.239
+   "opaque": 0.306
   },
   {
    "index": 19,
-   "opaque": 0.242
+   "opaque": 0.299
   },
   {
    "index": 20,
-   "opaque": 0.244
+   "opaque": 0.267
   },
   {
    "index": 21,
-   "opaque": 0.241
+   "opaque": 0.289
   },
   {
    "index": 22,
-   "opaque": 0.234
+   "opaque": 0.292
   },
   {
    "index": 23,
-   "opaque": 0.238
+   "opaque": 0.292
   },
   {
    "index": 24,
-   "opaque": 0.304
+   "opaque": 0.314
   },
   {
    "index": 25,
-   "opaque": 0.288
+   "opaque": 0.38
   },
   {
    "index": 26,
-   "opaque": 0.316
+   "opaque": 0.38
   },
   {
    "index": 27,
-   "opaque": 0.333
+   "opaque": 0.394
   },
   {
    "index": 28,
-   "opaque": 0.303
+   "opaque": 0.369
   },
   {
    "index": 29,
-   "opaque": 0.308
+   "opaque": 0.352
   },
   {
    "index": 30,
-   "opaque": 0.341
+   "opaque": 0.371
   },
   {
    "index": 31,
-   "opaque": 0.349
+   "opaque": 0.359
   },
   {
    "index": 32,
-   "opaque": 0.312
+   "opaque": 0.308
   },
   {
    "index": 33,
-   "opaque": 0.282
+   "opaque": 0.325
   },
   {
    "index": 34,
-   "opaque": 0.273
+   "opaque": 0.332
   },
   {
    "index": 35,
-   "opaque": 0.269
+   "opaque": 0.333
   },
   {
    "index": 36,
-   "opaque": 0.298
+   "opaque": 0.346
   },
   {
    "index": 37,
-   "opaque": 0.274
+   "opaque": 0.344
   },
   {
    "index": 38,
-   "opaque": 0.268
+   "opaque": 0.34
   },
   {
    "index": 39,
@@ -166,99 +166,99 @@
   },
   {
    "index": 40,
-   "opaque": 0.256
+   "opaque": 0.282
   },
   {
    "index": 41,
-   "opaque": 0.258
+   "opaque": 0.277
   },
   {
    "index": 42,
-   "opaque": 0.255
+   "opaque": 0.278
   },
   {
    "index": 43,
-   "opaque": 0.255
+   "opaque": 0.26
   },
   {
    "index": 44,
-   "opaque": 0.251
+   "opaque": 0.267
   },
   {
    "index": 45,
-   "opaque": 0.259
+   "opaque": 0.271
   },
   {
    "index": 46,
-   "opaque": 0.257
+   "opaque": 0.271
   },
   {
    "index": 47,
-   "opaque": 0.257
+   "opaque": 0.278
   },
   {
    "index": 48,
-   "opaque": 0.342
+   "opaque": 0.333
   },
   {
    "index": 49,
-   "opaque": 0.292
+   "opaque": 0.283
   },
   {
    "index": 50,
-   "opaque": 0.27
+   "opaque": 0.203
   },
   {
    "index": 51,
-   "opaque": 0.263
+   "opaque": 0.205
   },
   {
    "index": 52,
-   "opaque": 0.311
+   "opaque": 0.285
   },
   {
    "index": 53,
-   "opaque": 0.268
+   "opaque": 0.335
   },
   {
    "index": 54,
-   "opaque": 0.387
+   "opaque": 0.328
   },
   {
    "index": 55,
-   "opaque": 0.353
+   "opaque": 0.323
   },
   {
    "index": 56,
-   "opaque": 0.293
+   "opaque": 0.289
   },
   {
    "index": 57,
-   "opaque": 0.286
+   "opaque": 0.225
   },
   {
    "index": 58,
-   "opaque": 0.488
+   "opaque": 0.354
   },
   {
    "index": 59,
-   "opaque": 0.37
+   "opaque": 0.335
   },
   {
    "index": 60,
-   "opaque": 0.35
+   "opaque": 0.283
   },
   {
    "index": 61,
-   "opaque": 0.293
+   "opaque": 0.265
   },
   {
    "index": 62,
-   "opaque": 0.389
+   "opaque": 0.317
   },
   {
    "index": 63,
-   "opaque": 0.763
+   "opaque": 0.365
   }
  ]
 }
