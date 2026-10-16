@@ -156,3 +156,32 @@ describe('World.findPath', () => {
     expect(w.findPath(w.startPosition, w.startPosition, everything)).toEqual([]);
   });
 });
+
+describe('estilo de pared', () => {
+  it('losas cerca de la entrada y de la salida, y con los dos estilos en el resto', () => {
+    const w = new World(SIZE);
+    const [sr, sc] = w.startPosition;
+    const [er, ec] = w.exitPosition;
+    expect(w.wallStyle(sr, sc)).toBe('losas');
+    expect(w.wallStyle(sr + World.SLAB_RADIUS, sc)).toBe('losas');
+    expect(w.wallStyle(er, ec)).toBe('losas');
+    const styles = new Set<string>();
+    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) styles.add(w.wallStyle(r, c));
+    expect(styles).toEqual(new Set(['losas', 'cueva']));
+  });
+  it('es determinista y constante dentro de una zona', () => {
+    const w = new World(SIZE);
+    expect(w.wallStyle(3, 4)).toBe(w.wallStyle(3, 4));
+    const zone = World.STYLE_ZONE;
+    // Dos celdas de la misma zona lejos de entrada y salida comparten estilo
+    const far = (r: number, c: number) =>
+      Math.max(Math.abs(r - w.startPosition[0]), Math.abs(c - w.startPosition[1])) > World.SLAB_RADIUS &&
+      Math.max(Math.abs(r - w.exitPosition[0]), Math.abs(c - w.exitPosition[1])) > World.SLAB_RADIUS;
+    for (let r = 0; r + 1 < SIZE; r += zone) {
+      const base = r - (r % zone);
+      if (far(base, 0) && far(base + 1, 1) && Math.floor(base / zone) === Math.floor((base + 1) / zone)) {
+        expect(w.wallStyle(base, 0)).toBe(w.wallStyle(base + 1, 1));
+      }
+    }
+  });
+});
