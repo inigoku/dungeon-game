@@ -3,6 +3,7 @@
  * Por ahora es una ficha fija con unos pocos datos vivos (vida, poder del arma, exploración).
  */
 import type { ClassInfo } from './classes';
+import { drawPortraitImage } from './atlas';
 import { context2d } from './gfx';
 import { ticks } from './time';
 
@@ -199,6 +200,7 @@ export class CharacterSheet {
     grad.addColorStop(1, 'rgba(184,140,84,0.55)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
+    if (this.info.portrait && drawPortraitImage(ctx, this.info.portrait, width, height)) return;
     this.info.draw(ctx, width / 2, height / 2 + 6, 196, {
       walkAngle: 0,
       moving: false,

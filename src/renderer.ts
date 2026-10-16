@@ -37,7 +37,7 @@ import { seeded } from './rng';
 import { drawFightCloud } from './fight';
 import { drawDeepOne } from './sprites';
 import { CLASSES, hasPoses } from './classes';
-import { POSE } from './atlas';
+import { dyingFrame, fallFrame, LAYOUTS } from './atlas';
 import { ticks } from './time';
 
 interface CachedTexture {
@@ -975,7 +975,7 @@ export class Renderer {
       }
       if (hasPoses(g.playerClass)) {
         const dead = ticks() - g.gameOverStartTime - 1000;
-        const pose = dead < 350 ? POSE.DYING_1 : dead < 700 ? POSE.DYING_2 : dead < 1050 ? POSE.DYING_3 : POSE.DEAD;
+        const pose = dyingFrame(LAYOUTS[g.playerClass], dead);
         this.drawWarriorSprite(ctx, Math.trunc(centerX), Math.trunc(centerY), spriteSize, pose);
       } else {
         ctx.save();
@@ -1014,7 +1014,7 @@ export class Renderer {
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.trunc(255 * (1 - t))) / 255;
     ctx.translate(centerX, centerY);
-    if (hasPoses(g.playerClass)) this.drawWarriorSprite(ctx, 0, 0, spriteSize, t < 0.3 ? POSE.STUMBLE : POSE.FALL);
+    if (hasPoses(g.playerClass)) this.drawWarriorSprite(ctx, 0, 0, spriteSize, fallFrame(LAYOUTS[g.playerClass], t));
     else {
       ctx.rotate(-((t * 220) * Math.PI) / 180);
       this.drawWarriorSprite(ctx, 0, 0, spriteSize);

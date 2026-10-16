@@ -138,6 +138,9 @@ async function boot(): Promise<void> {
     barFill.style.width = `${Math.round(fraction * 100)}%`;
   });
   setAtlas('barbaro', assets.images['atlas_barbaro'] ?? null);
+  setAtlas('retrato_barbaro', assets.images['retrato_barbaro'] ?? null);
+  setAtlas('guerrero', assets.images['atlas_guerrero'] ?? null);
+  setAtlas('retrato_guerrero', assets.images['retrato_guerrero'] ?? null);
   if (new URLSearchParams(location.search).has('audio')) showAudioPanel(assets);
   // Los navegadores solo dejan sonar el audio tras un gesto del usuario
   buildClassPicker();

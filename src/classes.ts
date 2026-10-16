@@ -1,6 +1,6 @@
 /** Clases jugables: aspecto del personaje y datos de su hoja de personaje. */
 import type { Ctx } from './gfx';
-import { drawAtlasFrame, hasAtlas, pickFrame } from './atlas';
+import { drawAtlasFrame, hasAtlas, LAYOUTS, pickFrame } from './atlas';
 import { drawBarbarian } from './barbarian';
 import { drawWarrior, type WarriorLook } from './warrior';
 
@@ -35,24 +35,29 @@ export interface ClassInfo {
   id: PlayerClass;
   label: string;
   draw: (ctx: Ctx, cx: number, cy: number, size: number, look: WarriorLook) => void;
+  /** Imagen de busto para la hoja de personaje (si no hay, se dibuja el sprite). */
+  portrait?: string;
   sheet: ClassSheetData;
 }
 
-/** El bárbaro usa su atlas de bitmaps si está cargado; si no, el dibujo vectorial. */
-function drawBarbarianBitmapOrVector(ctx: Ctx, cx: number, cy: number, size: number, look: WarriorLook): void {
-  if (!hasAtlas('barbaro') || !drawAtlasFrame(ctx, 'barbaro', pickFrame(look), cx, cy, size, look.swordPower)) drawBarbarian(ctx, cx, cy, size, look);
+/** Dibuja con el atlas de bitmaps de la clase si está cargado; si no, con el dibujo vectorial. */
+function bitmapOrVector(cls: PlayerClass, vector: ClassInfo['draw']): ClassInfo['draw'] {
+  return (ctx, cx, cy, size, look) => {
+    if (!hasAtlas(cls) || !drawAtlasFrame(ctx, cls, pickFrame(LAYOUTS[cls], look), cx, cy, size, look.swordPower)) vector(ctx, cx, cy, size, look);
+  };
 }
 
 /** ¿Esta clase tiene fotogramas para morir, caer, etc.? (si no, se gira y se encoge el dibujo) */
 export function hasPoses(cls: PlayerClass): boolean {
-  return cls === 'barbaro' && hasAtlas('barbaro');
+  return hasAtlas(cls);
 }
 
 export const CLASSES: Record<PlayerClass, ClassInfo> = {
   guerrero: {
     id: 'guerrero',
     label: 'Guerrero',
-    draw: drawWarrior,
+    draw: bitmapOrVector('guerrero', drawWarrior),
+    portrait: 'retrato_guerrero',
     sheet: {
       name: 'Ser Aldo, el Valiente',
       classLevel: 'Guerrero 1',
@@ -103,7 +108,8 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
   barbaro: {
     id: 'barbaro',
     label: 'Bárbaro',
-    draw: drawBarbarianBitmapOrVector,
+    draw: bitmapOrVector('barbaro', drawBarbarian),
+    portrait: 'retrato_barbaro',
     sheet: {
       name: 'Brak, el Furioso',
       classLevel: 'Bárbaro 1',
