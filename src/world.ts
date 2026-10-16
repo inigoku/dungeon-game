@@ -36,6 +36,10 @@ export class World {
   readonly mainBridgePoint: Pos;
 
   exitPosition: Pos = [0, 0];
+  /** Radio (en celdas) alrededor de la entrada y de la salida donde las paredes son siempre de losas. */
+  static readonly SLAB_RADIUS = 6;
+  /** Lado (en celdas) de las zonas del laberinto con un mismo estilo de pared. */
+  static readonly STYLE_ZONE = 7;
   mainPathOrdered: Pos[] = [];
   mainPath = new Set<number>();
 
@@ -197,6 +201,19 @@ export class World {
   }
 
   // --- Conectividad -----------------------------------------------------------
+
+  /**
+   * Estilo de pared de una celda: losas de piedra labrada cerca de la entrada y de la salida, y en algunas zonas
+   * del laberinto; roca natural de cueva en el resto. Es una función pura de la posición y del mapa generado.
+   */
+  wallStyle(row: number, col: number): 'losas' | 'cueva' {
+    const near = (p: Pos) => Math.max(Math.abs(row - p[0]), Math.abs(col - p[1])) <= World.SLAB_RADIUS;
+    if (near(this.startPosition) || near(this.exitPosition)) return 'losas';
+    const zr = Math.floor(row / World.STYLE_ZONE);
+    const zc = Math.floor(col / World.STYLE_ZONE);
+    const salt = this.exitPosition[0] * 131 + this.exitPosition[1] * 31;
+    return seeded(zr * 7919 + zc * 104729 + salt).random() < 0.3 ? 'losas' : 'cueva';
+  }
 
   /** BFS entre start y end, exigiendo salidas enfrentadas entre celdas contiguas. */
   checkConnectivity(start: Pos, end: Pos): boolean {

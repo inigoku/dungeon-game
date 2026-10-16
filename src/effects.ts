@@ -8,6 +8,9 @@ export const CLIFF_BASE_COLOR: RGB = [34, 24, 38];
 
 type Rect = [number, number, number, number];
 
+/** Estilo de pared: losas de piedra labrada o roca natural de cueva. */
+export type WallStyle = 'losas' | 'cueva';
+
 export function drawBrokenLine(
   ctx: Ctx,
   color: RGB,
@@ -181,8 +184,82 @@ function drawStoneBlock(ctx: Ctx, rnd: ReturnType<typeof seeded>, bx: number, by
   }
 }
 
+/** Roca natural: masa oscura con peñascos irregulares, de formas angulosas y sin hiladas. */
+function drawCaveRock(ctx: Ctx, rnd: ReturnType<typeof seeded>, rect: Rect, level: number): void {
+  const [rx, ry, rw, rh] = rect;
+  fillRect(ctx, rockColor(level * 0.42 - 4), rx, ry, rw, rh);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(rx, ry, rw, rh);
+  ctx.clip();
+  const count = Math.max(6, Math.trunc((rw * rh) / 110));
+  for (let i = 0; i < count; i++) {
+    const cx = rx + rnd.random() * rw;
+    const cy = ry + rnd.random() * rh;
+    drawBoulder(ctx, rnd, cx, cy, rnd.uniform(5, 12), level + rnd.randint(-18, 24));
+  }
+  // Grietas oscuras entre los peñascos
+  for (let i = Math.trunc(count / 5); i > 0; i--) {
+    let cx = rx + rnd.random() * rw;
+    let cy = ry + rnd.random() * rh;
+    ctx.strokeStyle = rgb(rockColor(level * 0.15 - 4), 0.8);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    for (let k = rnd.randint(2, 4); k > 0; k--) {
+      cx += rnd.randint(-5, 5);
+      cy += rnd.randint(-5, 5);
+      ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Color de roca con un tinte pardo, algo más cálido y apagado que la piedra labrada. */
+function rockColor(level: number): RGB {
+  return [clamp(level + 7, 0, 255), clamp(level + 1, 0, 255), clamp(level - 7, 0, 255)];
+}
+
+/** Peñasco poligonal: cara en sombra, cara iluminada arriba-izquierda, filo claro y contorno oscuro. */
+function drawBoulder(ctx: Ctx, rnd: ReturnType<typeof seeded>, cx: number, cy: number, radius: number, level: number): void {
+  const n = rnd.randint(5, 7);
+  const pts: [number, number][] = [];
+  const phase = rnd.random() * Math.PI * 2;
+  const squash = rnd.uniform(0.7, 1.15);
+  for (let i = 0; i < n; i++) {
+    const ang = phase + (i / n) * Math.PI * 2;
+    const r = radius * rnd.uniform(0.62, 1.12);
+    pts.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r * squash]);
+  }
+  const trace = (dx = 0, dy = 0, k = 1) => {
+    ctx.beginPath();
+    pts.forEach(([px, py], i) => {
+      const x = cx + (px - cx) * k + dx;
+      const y = cy + (py - cy) * k + dy;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+  };
+  trace();
+  ctx.fillStyle = rgb(rockColor(level - 10));
+  ctx.fill();
+  // Cara iluminada: el mismo polígono más pequeño y desplazado hacia la luz
+  trace(-radius * 0.12, -radius * 0.14, 0.72);
+  ctx.fillStyle = rgb(rockColor(level + 8));
+  ctx.fill();
+  trace(-radius * 0.2, -radius * 0.24, 0.4);
+  ctx.fillStyle = rgb(rockColor(level + 20), 0.7);
+  ctx.fill();
+  trace();
+  ctx.strokeStyle = rgb(rockColor(level - 38), 0.9);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
 /** Sillería en aparejo a soga: hiladas a lo largo del muro, con las juntas desfasadas y bloques de largo irregular. */
-function drawMasonry(ctx: Ctx, rnd: ReturnType<typeof seeded>, rect: Rect, courseH: number, level: number): void {
+function drawMasonry(ctx: Ctx, rnd: ReturnType<typeof seeded>, rect: Rect, courseH: number, level: number, long: [number, number], spread: [number, number]): void {
   const [rx, ry, rw, rh] = rect;
   const horizontal = rw >= rh;
   const along = horizontal ? rw : rh;
@@ -196,12 +273,12 @@ function drawMasonry(ctx: Ctx, rnd: ReturnType<typeof seeded>, rect: Rect, cours
   for (let c = 0; c < courses; c++) {
     let p = -rnd.randint(0, Math.round(ch * 2));
     while (p < along) {
-      const len = rnd.randint(Math.round(ch * 1.3), Math.round(ch * 3.1));
+      const len = rnd.randint(Math.round(ch * long[0]), Math.round(ch * long[1]));
       const a = Math.max(0, p);
       const b = Math.min(along, p + len);
       p += len;
       if (b - a < 3) continue;
-      const tone = level + rnd.randint(-14, 26);
+      const tone = level + rnd.randint(spread[0], spread[1]);
       const u0 = a + (a === 0 ? 0 : joint / 2);
       const u1 = b - (b === along ? 0 : joint / 2);
       const v0 = c * ch + joint / 2;
@@ -227,15 +304,21 @@ export function drawStoneInWalls(
   cell: Cell,
   wallBrightness: number,
   barrancoDirs: Iterable<Direction> | null = null,
+  style: WallStyle = 'losas',
 ): void {
   const rnd = seeded(boardRow * 100000 + boardCol + 7);
   const allRects = wallRects(cellSize, x, y, cell, new Set<Direction>(barrancoDirs ?? []));
   const level = Math.trunc(wallBrightness);
-  const courseH = Math.max(5, cellSize * 0.075);
+  // Losas grandes y casi regulares (dos hiladas por muro) o roca natural sin hiladas
+  const courseH = Math.max(8, cellSize * 0.135);
 
   // Primero los muros verticales y encima los horizontales, para que las esquinas encajen
   const ordered = [...allRects.filter(([, , w, h]) => w < h), ...allRects.filter(([, , w, h]) => w >= h)];
-  for (const rect of ordered) drawMasonry(ctx, rnd, rect, courseH, level);
+  for (const rect of ordered) {
+    if (style === 'cueva') drawCaveRock(ctx, rnd, rect, level);
+    else drawMasonry(ctx, rnd, rect, courseH, level, [1.5, 2.5], [-8, 14]);
+  }
+  if (style === 'cueva') return;
 
   // Grietas finas que cruzan alguna junta
   const crack = stoneColor(level * 0.25 - 4);
@@ -258,6 +341,16 @@ export function drawStoneInWalls(
   }
 }
 
+/** Borde irregular de la roca sobre el suelo: peñascos pequeños que asoman a lo largo de la línea del muro. */
+function caveEdge(ctx: Ctx, rnd: ReturnType<typeof seeded>, from: number, to: number, edge: number, axis: 0 | 1, level: number): void {
+  for (let p = from; p < to; p += rnd.uniform(3.5, 7)) {
+    const off = rnd.uniform(-2.5, 1.5);
+    const r = rnd.uniform(2.5, 5);
+    if (axis === 0) drawBoulder(ctx, rnd, p, edge + off, r, level + rnd.randint(-8, 16));
+    else drawBoulder(ctx, rnd, edge + off, p, r, level + rnd.randint(-8, 16));
+  }
+}
+
 /**
  * Remate y sombra de las paredes sobre el suelo: un filo claro donde la piedra termina y una penumbra que se
  * funde con el suelo. Va después de pintar el suelo (que tapa la parte interior del muro).
@@ -270,6 +363,9 @@ export function drawWallShadows(
   cell: Cell,
   wallBrightness: number,
   barrancoDirs: Iterable<Direction> | null = null,
+  style: WallStyle = 'losas',
+  boardRow = 0,
+  boardCol = 0,
 ): void {
   const size = cellSize;
   const inset = Math.trunc(size * 0.15);
@@ -281,6 +377,7 @@ export function drawWallShadows(
   const floorTop = y + inset;
   const floorBottom = y + size - inset;
 
+  const rnd = seeded(boardRow * 100000 + boardCol + 13);
   for (const [rx, ry, rw, rh] of wallRects(size, x, y, cell, new Set<Direction>(barrancoDirs ?? []))) {
     const horizontal = rw >= rh;
     ctx.save();
@@ -299,7 +396,8 @@ export function drawWallShadows(
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       ctx.fillRect(x0, north ? edge : edge - reach, x1 - x0, reach);
-      fillRect(ctx, stoneColor(level + (north ? 26 : -4)), x0, north ? edge - lipW : edge, x1 - x0, lipW, 0.8);
+      if (style === 'cueva') caveEdge(ctx, rnd, x0, x1, edge, 0, level);
+      else fillRect(ctx, stoneColor(level + (north ? 26 : -4)), x0, north ? edge - lipW : edge, x1 - x0, lipW, 0.8);
     } else {
       const west = rx < x + size / 2;
       const y0 = Math.max(ry, floorTop);
@@ -315,7 +413,8 @@ export function drawWallShadows(
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       ctx.fillRect(west ? edge : edge - reach, y0, reach, y1 - y0);
-      fillRect(ctx, stoneColor(level + (west ? 18 : -4)), west ? edge - lipW : edge, y0, lipW, y1 - y0, 0.8);
+      if (style === 'cueva') caveEdge(ctx, rnd, y0, y1, edge, 1, level);
+      else fillRect(ctx, stoneColor(level + (west ? 18 : -4)), west ? edge - lipW : edge, y0, lipW, y1 - y0, 0.8);
     }
     ctx.restore();
   }
