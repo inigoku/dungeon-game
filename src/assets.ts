@@ -2,7 +2,7 @@
 import { Mixer } from './audio';
 import { context2d, createCanvas, type Canvas } from './gfx';
 
-export const IMAGE_NAMES = ['titulo', 'losa', 'profundo', 'espada', 'antorcha', 'sangre', 'atlas_barbaro'] as const;
+export const IMAGE_NAMES = ['titulo', 'losa', 'profundo', 'espada', 'antorcha', 'sangre', 'atlas_barbaro', 'retrato_barbaro'] as const;
 export const SOUND_NAMES = [
   'abominacion',
   'adagio',

@@ -112,3 +112,14 @@ export function drawAtlasFrame(ctx: Ctx, id: string, pick: FramePick, cx: number
   ctx.restore();
   return true;
 }
+
+/** Dibuja una imagen suelta (p. ej. un busto) ajustada al lienzo y apoyada abajo. false si no está cargada. */
+export function drawPortraitImage(ctx: Ctx, id: string, width: number, height: number): boolean {
+  const image = atlases.get(id);
+  if (!image) return false;
+  const k = Math.min(width / image.width, height / image.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, (width - image.width * k) / 2, height - image.height * k, image.width * k, image.height * k);
+  return true;
+}

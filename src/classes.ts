@@ -35,6 +35,8 @@ export interface ClassInfo {
   id: PlayerClass;
   label: string;
   draw: (ctx: Ctx, cx: number, cy: number, size: number, look: WarriorLook) => void;
+  /** Imagen de busto para la hoja de personaje (si no hay, se dibuja el sprite). */
+  portrait?: string;
   sheet: ClassSheetData;
 }
 
@@ -104,6 +106,7 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
     id: 'barbaro',
     label: 'Bárbaro',
     draw: drawBarbarianBitmapOrVector,
+    portrait: 'retrato_barbaro',
     sheet: {
       name: 'Brak, el Furioso',
       classLevel: 'Bárbaro 1',
