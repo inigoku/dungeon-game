@@ -8,6 +8,9 @@ export const CLIFF_BASE_COLOR: RGB = [34, 24, 38];
 
 type Rect = [number, number, number, number];
 
+/** Por debajo de este tamaño de celda (px) las paredes se dibujan sin sillares ni peñascos. */
+const SIMPLE_WALL_BELOW = 40;
+
 /** Estilo de pared: losas de piedra labrada o roca natural de cueva. */
 export type WallStyle = 'losas' | 'cueva';
 
@@ -169,7 +172,7 @@ function drawStoneBlock(ctx: Ctx, rnd: ReturnType<typeof seeded>, bx: number, by
   ctx.stroke();
 
   // Grano de la piedra
-  const specks = Math.trunc((bw * bh) / 38);
+  const specks = Math.trunc((bw * bh) / 80);
   for (let i = 0; i < specks; i++) {
     const v = rnd.randint(-16, 16);
     ctx.fillStyle = rgb(stoneColor(level + v), 0.7);
@@ -192,7 +195,7 @@ function drawCaveRock(ctx: Ctx, rnd: ReturnType<typeof seeded>, rect: Rect, leve
   ctx.beginPath();
   ctx.rect(rx, ry, rw, rh);
   ctx.clip();
-  const count = Math.max(6, Math.trunc((rw * rh) / 110));
+  const count = Math.max(6, Math.trunc((rw * rh) / 140));
   for (let i = 0; i < count; i++) {
     const cx = rx + rnd.random() * rw;
     const cy = ry + rnd.random() * rh;
@@ -309,6 +312,17 @@ export function drawStoneInWalls(
   const rnd = seeded(boardRow * 100000 + boardCol + 7);
   const allRects = wallRects(cellSize, x, y, cell, new Set<Direction>(barrancoDirs ?? []));
   const level = Math.trunc(wallBrightness);
+  // Con las celdas pequeñas (zoom alejado) el detalle no se distingue: relleno liso con un poco de grano
+  if (cellSize < SIMPLE_WALL_BELOW) {
+    for (const [rx, ry, rw, rh] of allRects) {
+      fillRect(ctx, style === 'cueva' ? rockColor(level * 0.8) : stoneColor(level), rx, ry, rw, rh);
+      for (let i = Math.trunc((rw * rh) / 60); i > 0; i--) {
+        ctx.fillStyle = rgb(stoneColor(level + rnd.randint(-22, 22)), 0.8);
+        ctx.fillRect(rx + rnd.random() * Math.max(0, rw - 2), ry + rnd.random() * Math.max(0, rh - 2), 2, 2);
+      }
+    }
+    return;
+  }
   // Losas grandes y casi regulares (dos hiladas por muro) o roca natural sin hiladas
   const courseH = Math.max(8, cellSize * 0.135);
 
@@ -396,7 +410,7 @@ export function drawWallShadows(
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       ctx.fillRect(x0, north ? edge : edge - reach, x1 - x0, reach);
-      if (style === 'cueva') caveEdge(ctx, rnd, x0, x1, edge, 0, level);
+      if (style === 'cueva' && size >= SIMPLE_WALL_BELOW) caveEdge(ctx, rnd, x0, x1, edge, 0, level);
       else fillRect(ctx, stoneColor(level + (north ? 26 : -4)), x0, north ? edge - lipW : edge, x1 - x0, lipW, 0.8);
     } else {
       const west = rx < x + size / 2;
@@ -413,7 +427,7 @@ export function drawWallShadows(
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       ctx.fillRect(west ? edge : edge - reach, y0, reach, y1 - y0);
-      if (style === 'cueva') caveEdge(ctx, rnd, y0, y1, edge, 1, level);
+      if (style === 'cueva' && size >= SIMPLE_WALL_BELOW) caveEdge(ctx, rnd, y0, y1, edge, 1, level);
       else fillRect(ctx, stoneColor(level + (west ? 18 : -4)), west ? edge - lipW : edge, y0, lipW, y1 - y0, 0.8);
     }
     ctx.restore();

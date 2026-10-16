@@ -2,6 +2,7 @@
  * Lógica del juego: estado, movimiento, pensamientos, música, monstruos y bucle principal.
  * El dibujado vive en renderer.ts.
  */
+import { reportError } from './errors';
 import { AudioManager, Sound } from './audio';
 import { fitImage, type Assets } from './assets';
 import { DEFAULT_BOARD_SIZE, DEFAULT_CELL_SIZE, DEFAULT_VIEW_SIZE } from './config';
@@ -1583,11 +1584,25 @@ export class Game implements GameInput {
     this.resolveRun = null;
   }
 
+  /**
+   * Un fotograma. Si algo falla dentro, el error se muestra en pantalla y el bucle sigue: antes una sola
+   * excepción dejaba el juego congelado en el último dibujo, sin forma de salir.
+   */
   private frame = (): void => {
     if (this.disposed) return;
+    try {
+      if (!this.tick()) return;
+    } catch (error) {
+      reportError(error);
+    }
+    requestAnimationFrame(this.frame);
+  };
+
+  /** Devuelve false cuando la partida termina y no hay que pedir otro fotograma. */
+  private tick(): boolean {
     if (this.restartRequested) {
       this.finish(true);
-      return;
+      return false;
     }
 
     const nowMs = performance.now();
@@ -1662,14 +1677,18 @@ export class Game implements GameInput {
     for (const click of this.clickQueue.splice(0)) this.handleClick(click.x, click.y);
     this.updateAutoMove(now);
 
-    this.renderer.draw(frames);
+    try {
+      this.renderer.draw(frames);
+    } catch (error) {
+      reportError(error);
+    }
 
     if (!running) {
       this.finish(false);
-      return;
+      return false;
     }
-    requestAnimationFrame(this.frame);
-  };
+    return true;
+  }
 }
 
 interface GameKeyEvent {
