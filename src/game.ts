@@ -967,6 +967,7 @@ export class Game implements GameInput {
     // Volver al inicio tras visitar la salida: poder de la espada
     if (row === this.startPosition[0] && col === this.startPosition[1] && this.exitVisited && !this.hasSwordPower) {
       this.hasSwordPower = true;
+      this.playerHealth = this.maxHealth; // el poder de la espada también cura todos los corazones
       this.thoughtPending = true;
       this.swordThoughtTriggered = true;
       this.audio.startFadeOut(500);
@@ -974,7 +975,7 @@ export class Game implements GameInput {
         this.audio.triggerThought({
           sounds: this.swordSound ? [[this.swordSound, 0]] : [],
           images: this.imageSlot(this.thoughtImage('espada', 0.8), 5000),
-          subtitles: [['¡El poder de la espada sagrada!', 5000]],
+          subtitles: [['¡El poder de la espada sagrada! Tus heridas se curan.', 5000]],
           blocksMovement: true,
         });
       });
