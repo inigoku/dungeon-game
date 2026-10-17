@@ -17,8 +17,8 @@ export interface AtlasLayout {
   /** En guardia (armas a la vista) y en reposo. */
   guard: number;
   rest: number;
-  /** Si > 0, desplazamiento al bloque equivalente cuando está herido. */
-  hurtShift: number;
+  /** Fotogramas en guardia y en reposo cuando está herido (si la hoja los distingue). */
+  hurt?: { guard: number; rest: number };
   /** Icono de movimiento por dirección; `mirror` para dibujarlo reflejado. */
   move: Record<'N' | 'E' | 'S' | 'O', { index: number; mirror: boolean }>;
   /** Muerte (cuatro fotogramas seguidos) y caída por el barranco (tropiezo, caída). */
@@ -31,19 +31,28 @@ export const LAYOUTS: Record<string, AtlasLayout> = {
   barbaro: {
     guard: 0,
     rest: 1,
-    hurtShift: 24,
+    hurt: { guard: 24, rest: 25 },
     move: { N: { index: 12, mirror: false }, E: { index: 17, mirror: false }, S: { index: 2, mirror: false }, O: { index: 20, mirror: false } },
     dying: [48, 49, 50, 51],
     stumble: 56,
     fall: 57,
   },
-  // Esta hoja no distingue heridos y sus vistas laterales no enseñan la espada: se usa el 3/4 con la espada
-  // en la mano (fotograma 32) y el oeste es el este reflejado
+  // Caballero: de frente solo el 0-3 enseña la espada; en reposo se usa el fotograma neutro con la espada envainada
   guerrero: {
     guard: 0,
-    rest: 4,
-    hurtShift: 0,
-    move: { N: { index: 12, mirror: false }, E: { index: 32, mirror: false }, S: { index: 10, mirror: false }, O: { index: 32, mirror: true } },
+    rest: 8,
+    hurt: { guard: 24, rest: 25 },
+    move: { N: { index: 12, mirror: false }, E: { index: 18, mirror: false }, S: { index: 2, mirror: false }, O: { index: 22, mirror: false } },
+    dying: [48, 49, 50, 51],
+    stumble: 56,
+    fall: 57,
+  },
+  // Dafne, la exploradora: siempre con el arco a la vista
+  exploradora: {
+    guard: 0,
+    rest: 1,
+    hurt: { guard: 24, rest: 25 },
+    move: { N: { index: 11, mirror: false }, E: { index: 17, mirror: false }, S: { index: 9, mirror: false }, O: { index: 21, mirror: false } },
     dying: [48, 49, 50, 51],
     stumble: 56,
     fall: 57,
@@ -79,8 +88,8 @@ export function pickFrame(layout: AtlasLayout, look: Pick<WarriorLook, 'facing' 
     const icon = layout.move[look.facing];
     return { index: icon.index, mirror: icon.mirror, hop: Math.abs(Math.sin(look.walkAngle * 2)) * 0.035 };
   }
-  const shift = look.hurt === true ? layout.hurtShift : 0;
-  return { index: (look.alerted ? layout.guard : layout.rest) + shift, mirror: false, hop: 0 };
+  const frames = look.hurt === true && layout.hurt ? layout.hurt : layout;
+  return { index: look.alerted ? frames.guard : frames.rest, mirror: false, hop: 0 };
 }
 
 /** Fotograma de la muerte según los ms transcurridos desde que cayó. */
