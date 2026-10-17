@@ -20,6 +20,7 @@ const action = element<HTMLButtonElement>('action');
 const classBox = element<HTMLDivElement>('classes');
 
 let selectedClass: PlayerClass = initialClass();
+element<HTMLDivElement>('version').textContent = `versión ${__BUILD__}`;
 
 /** Botones de clase con un pequeño retrato de cada una. */
 function buildClassPicker(): void {

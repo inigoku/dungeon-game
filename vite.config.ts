@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
+import { execSync } from 'node:child_process';
 import { cpSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -16,7 +17,18 @@ function copyAssets(): Plugin {
   };
 }
 
+/** Identificador corto de la versión (commit), para saber qué versión está corriendo en cada dispositivo. */
+function buildId(): string {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 7);
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return 'dev';
+  }
+}
+
 export default defineConfig({
+  define: { __BUILD__: JSON.stringify(buildId()) },
   // Ruta relativa: funciona tanto en la raíz como en un subdirectorio (GitHub Pages)
   base: './',
   // `public/` solo lleva el manifiesto de la aplicación: se copia tal cual a la raíz de `dist`
