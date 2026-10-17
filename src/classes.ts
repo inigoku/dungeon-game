@@ -2,6 +2,7 @@
 import type { Ctx } from './gfx';
 import { drawAtlasFrame, hasAtlas, LAYOUTS, pickFrame } from './atlas';
 import { drawBarbarian } from './barbarian';
+import type { WeaponKind } from './scenes';
 import { drawWarrior, type WarriorLook } from './warrior';
 
 export type PlayerClass = 'guerrero' | 'barbaro' | 'exploradora';
@@ -39,6 +40,8 @@ export interface ClassInfo {
   portrait?: string;
   /** Corazones (puntos de vida) con los que empieza la partida. */
   hearts: number;
+  /** Arma que sale en la escena del poder de la espada. */
+  weapon: WeaponKind;
   sheet: ClassSheetData;
 }
 
@@ -60,6 +63,7 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
     label: 'Guerrero',
     draw: bitmapOrVector('guerrero', drawWarrior),
     hearts: 4,
+    weapon: 'espada',
     portrait: 'retrato_guerrero',
     sheet: {
       name: 'Ser Aldo, el Valiente',
@@ -113,6 +117,7 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
     label: 'Bárbaro',
     draw: bitmapOrVector('barbaro', drawBarbarian),
     hearts: 3,
+    weapon: 'daga',
     portrait: 'retrato_barbaro',
     sheet: {
       name: 'Brak, el Furioso',
@@ -167,6 +172,7 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
     // Sin dibujo vectorial propio: si no carga su hoja de bitmaps se muestra al caballero
     draw: bitmapOrVector('exploradora', drawWarrior),
     hearts: 2,
+    weapon: 'arco',
     portrait: 'retrato_exploradora',
     sheet: {
       name: 'Dafne, la Exploradora',

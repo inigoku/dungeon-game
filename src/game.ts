@@ -5,6 +5,7 @@
 import { reportError } from './errors';
 import { AudioManager, Sound } from './audio';
 import { fitImage, type Assets } from './assets';
+import { renderScene, type SceneName } from './scenes';
 import { DEFAULT_BOARD_SIZE, DEFAULT_CELL_SIZE, DEFAULT_VIEW_SIZE } from './config';
 import type { Footprint } from './decorations';
 import { context2d, type Canvas, type Ctx } from './gfx';
@@ -149,6 +150,7 @@ export class Game implements GameInput {
   private bloodSound: Sound | null = null;
   private rafagaSound: Sound | null = null;
   private abominacionSound: Sound | null = null;
+  private readonly scenes = new Map<SceneName, Canvas>();
   private grunidoSound: Sound | null = null;
   private biteSound: Sound | null = null;
   private swordSound: Sound | null = null;
@@ -299,13 +301,37 @@ export class Game implements GameInput {
   }
 
   private loadImages(): void {
-    if (this.assets.images['titulo']) this.fitTitleImage();
+    if (this.sceneSource('titulo')) this.fitTitleImage();
     else this.showingTitle = false;
+    // Las demás escenas se dibujan poco a poco mientras se juega, para que no haya tirones al llegar el pensamiento
+    const pending: SceneName[] = ['antorcha', 'sangre', 'espada', 'profundo', 'losa'];
+    const next = (): void => {
+      const name = pending.shift();
+      if (!name || this.disposed) return;
+      this.sceneSource(name);
+      setTimeout(next, 500);
+    };
+    setTimeout(next, 2500);
+  }
+
+  /**
+   * Escena de un pensamiento o del título, dibujada con el personaje elegido. Si la clase no tiene su tira
+   * de expresiones, se usa la imagen estática de siempre.
+   */
+  private sceneSource(name: SceneName): Canvas | HTMLImageElement | null {
+    const faces = this.assets.images[`caras_${this.playerClass}`];
+    if (!faces) return this.assets.images[name];
+    let scene = this.scenes.get(name);
+    if (!scene) {
+      scene = renderScene(name, faces, CLASSES[this.playerClass].weapon);
+      this.scenes.set(name, scene);
+    }
+    return scene;
   }
 
   /** El título ocupa el máximo posible de la ventana, sea cual sea su forma. */
   private fitTitleImage(): void {
-    const title = this.assets.images['titulo'];
+    const title = this.sceneSource('titulo');
     if (title) this.titleImage = fitImage(title, this.width, this.height);
   }
 
@@ -314,8 +340,8 @@ export class Game implements GameInput {
    * ocupa el máximo posible; en escritorio deja el margen `factor` para ver el mapa alrededor.
    * `reserveY` es la altura que se deja libre abajo para los subtítulos.
    */
-  private thoughtImage(name: string, factor: number, reserveY = 0): Canvas | null {
-    const img = this.assets.images[name];
+  private thoughtImage(name: Exclude<SceneName, 'titulo'>, factor: number, reserveY = 0): Canvas | null {
+    const img = this.sceneSource(name);
     if (!img) return null;
     const full = this.height > this.width || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
     const f = full ? 1 : factor;
