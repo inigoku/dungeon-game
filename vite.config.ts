@@ -19,7 +19,8 @@ function copyAssets(): Plugin {
 export default defineConfig({
   // Ruta relativa: funciona tanto en la raíz como en un subdirectorio (GitHub Pages)
   base: './',
-  publicDir: false,
+  // `public/` solo lleva el manifiesto de la aplicación: se copia tal cual a la raíz de `dist`
+  publicDir: 'public',
   plugins: [copyAssets()],
   build: { outDir: 'dist', target: 'es2022' },
 });
