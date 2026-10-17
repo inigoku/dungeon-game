@@ -4,7 +4,7 @@ import { drawAtlasFrame, hasAtlas, LAYOUTS, pickFrame } from './atlas';
 import { drawBarbarian } from './barbarian';
 import { drawWarrior, type WarriorLook } from './warrior';
 
-export type PlayerClass = 'guerrero' | 'barbaro';
+export type PlayerClass = 'guerrero' | 'barbaro' | 'exploradora';
 
 export interface ClassSheetData {
   /** Nombre del personaje. */
@@ -155,6 +155,59 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
       ],
       powerOff: '⚔ Furia de las dagas: dormida. Vuelve al inicio tras ver la salida para despertarla.',
       powerOn: '⚔ Furia de las dagas: ¡activa! Los monstruos huyen y caen a su paso.',
+    },
+  },
+  exploradora: {
+    id: 'exploradora',
+    label: 'Exploradora',
+    // Sin dibujo vectorial propio: si no carga su hoja de bitmaps se muestra al caballero
+    draw: bitmapOrVector('exploradora', drawWarrior),
+    portrait: 'retrato_exploradora',
+    sheet: {
+      name: 'Dafne, la Exploradora',
+      classLevel: 'Explorador 1',
+      background: 'Guardabosques',
+      race: 'Elfa de los bosques',
+      alignment: 'Neutral bueno',
+      abilities: [
+        ['FUE', 'Fuerza', 10, false],
+        ['DES', 'Destreza', 17, true],
+        ['CON', 'Constitución', 13, false],
+        ['INT', 'Inteligencia', 12, false],
+        ['SAB', 'Sabiduría', 15, true],
+        ['CAR', 'Carisma', 11, false],
+      ],
+      skills: [
+        ['Sigilo', 'DES', true],
+        ['Supervivencia', 'SAB', true],
+        ['Percepción', 'SAB', true],
+        ['Atletismo', 'FUE', false],
+        ['Intimidación', 'CAR', false],
+        ['Historia', 'INT', false],
+        ['Investigación', 'INT', false],
+        ['Trato con animales', 'SAB', false],
+      ],
+      armorClass: 14,
+      speed: '10,5 m',
+      hitDie: '1d10',
+      attacks: [
+        ['Arco largo', '+5', '1d8+3 perforante'],
+        ['Daga', '+5', '1d4+3 cortante'],
+      ],
+      equipment: ['Arco largo y carcaj con flechas', 'Armadura de cuero con hojas', 'Daga de caza', 'Capa de viaje verde', 'Cantimplora y raciones', 'Cuerda de seda élfica'],
+      personality: [
+        ['Rasgo', 'Camina sin hacer ruido y nunca dice dónde ha estado.'],
+        ['Ideal', 'Conocer cada rincón del bosque, y ahora también de la mazmorra.'],
+        ['Vínculo', 'Las hojas de su pelo se las regaló quien la crió.'],
+        ['Defecto', 'Se fía más de su arco que de las personas.'],
+      ],
+      features: [
+        '<b>Enemigo predilecto.</b> Ventaja para rastrear y recordar lo que acecha en la oscuridad.',
+        '<b>Explorador nata.</b> No se pierde en terreno natural y avanza sin que la oigan.',
+        '<b>Sentidos élficos.</b> Visión en la oscuridad y ventaja contra el sueño y el encantamiento.',
+      ],
+      powerOff: '⚔ Flecha de luz: dormida. Vuelve al inicio tras ver la salida para despertarla.',
+      powerOn: '⚔ Flecha de luz: ¡activa! Los monstruos huyen y caen a su paso.',
     },
   },
 };

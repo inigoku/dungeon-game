@@ -3,7 +3,7 @@ import { CLASSES, CLASS_IDS, initialClass } from '../src/classes';
 
 describe('clases', () => {
   it('cada clase tiene su dibujo y una hoja completa', () => {
-    expect(CLASS_IDS).toEqual(['guerrero', 'barbaro']);
+    expect(CLASS_IDS).toEqual(['guerrero', 'barbaro', 'exploradora']);
     for (const id of CLASS_IDS) {
       const info = CLASSES[id];
       expect(info.id).toBe(id);

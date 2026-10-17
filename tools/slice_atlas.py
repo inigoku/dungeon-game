@@ -3,7 +3,8 @@
 Convierte una hoja de sprites 8×8 generada con IA (fondo de tablero gris pintado, con los números de cada celda) en un
 atlas limpio con transparencia: 8×8 fotogramas de 128×128 con los pies anclados en el mismo punto.
 
-Uso:  python3 tools/slice_atlas.py art/barbaro-hoja-origen.jpg images/atlas_barbaro.png [--fondo-plano]
+Uso:  python3 tools/slice_atlas.py art/barbaro-hoja-origen.jpg images/atlas_barbaro.png [--fondo-plano] [--sin-texto] [--sin-acantilado]
+      (--sin-texto: borra los rótulos al pie de cada celda; --sin-acantilado: quita el borde de roca de los fotogramas 56 y 57)
       (--fondo-plano: cada celda tiene un gris liso en vez del tablero)
 Necesita: pip install pillow numpy scipy
 """
@@ -19,7 +20,7 @@ OUT = 128            # lado de cada fotograma de salida
 BASELINE = 122       # fila donde apoyan los pies
 CENTER_X = 64        # columna donde se centra el personaje
 SCALE = 0.5          # factor sobre el tamaño nativo de la celda (≈250 px → 128)
-INSET = 4            # margen que se descarta en cada celda (bordes de la cuadrícula)
+INSET = 6            # margen que se descarta en cada celda (bordes de la cuadrícula)
 FLAT_EDGE = 14       # gradiente máximo dentro de una región plana (fondo liso)
 UNANCHORED = {56, 57, 63}  # retrato y caídas en el aire: se encajan enteros, sin anclar los pies
 
@@ -43,7 +44,13 @@ def extract(rgb: np.ndarray, flat: bool = False) -> np.ndarray:
         touching[edge_ids] = True
         touching[0] = False
         sizes = np.bincount(regions.ravel(), minlength=n_regions + 1)
-        bg = touching[regions] & (sizes[regions] > 400)
+        border_color = np.median(np.concatenate([rgb[:6].reshape(-1, 3), rgb[-6:].reshape(-1, 3), rgb[:, :6].reshape(-1, 3), rgb[:, -6:].reshape(-1, 3)]), axis=0)
+        region_ids = np.arange(n_regions + 1)
+        counts = np.maximum(sizes, 1)
+        region_mean = np.stack([np.bincount(regions.ravel(), weights=rgb[:, :, c].ravel().astype(float), minlength=n_regions + 1) / counts for c in range(3)], axis=1)
+        # También es fondo el hueco encerrado (el interior de un arco) con el color liso del fondo
+        enclosed = (np.abs(region_mean - border_color).max(axis=1) < 8) & (sizes > 60) & (region_ids > 0)
+        bg = (touching & (sizes > 250) | enclosed)[regions]
         lum_px = rgb.astype(float).mean(axis=2)
         # La franja de transición entre el fondo y el contorno oscuro también es fondo
         bg = ndi.binary_dilation(bg, iterations=3, mask=lum_px > 75) | bg
@@ -67,7 +74,8 @@ def extract(rgb: np.ndarray, flat: bool = False) -> np.ndarray:
     for i, size in enumerate(sizes, start=1):
         ys, xs = np.where(labels == i)
         in_label_box = xs.max() < 70 and ys.max() < 44
-        if size >= max(60, biggest * 0.01) and not in_label_box:
+        in_text_band = False
+        if size >= max(60, biggest * 0.01) and not in_label_box and not in_text_band:
             keep |= labels == i
     # Rellena los huecos pequeños (reflejos dentro de la ropa) pero no los grandes (entre brazo y cuerpo)
     filled = ndi.binary_fill_holes(keep)
@@ -111,7 +119,7 @@ def anchor(mask: np.ndarray) -> tuple[float, float]:
     return float(cx), float(base)
 
 
-def main(src: str, dst: str, flat: bool = False) -> None:
+def main(src: str, dst: str, flat: bool = False, options: frozenset[str] = frozenset()) -> None:
     sheet = Image.open(src).convert('RGBA')
     pitch = sheet.width / CELLS
     atlas = Image.new('RGBA', (OUT * CELLS, OUT * CELLS), (0, 0, 0, 0))
@@ -122,6 +130,16 @@ def main(src: str, dst: str, flat: bool = False) -> None:
         x1, y1 = round((col + 1) * pitch) - INSET, round((row + 1) * pitch) - INSET
         rgb = np.array(sheet.convert('RGB').crop((x0, y0, x1, y1)))
         mask = extract(rgb, flat)
+        if 'sin-texto' in options and row >= 6:
+            # Rótulos al pie de las dos últimas filas ("Muriendo 1"...): se descarta la franja inferior de la celda
+            mask[int(mask.shape[0] * 0.88):, :] = 0
+        if 'sin-acantilado' in options and index in (56, 57):
+            mask[int(mask.shape[0] * 0.72):, : int(mask.shape[1] * 0.38)] = 0
+            # Y lo que quede suelto de la roca: solo se conserva el personaje (el trozo más grande)
+            parts, count = ndi.label(mask > 0.3)
+            if count > 1:
+                biggest_part = int(np.argmax(ndi.sum(mask > 0.3, parts, range(1, count + 1)))) + 1
+                mask[parts != biggest_part] = 0
         if index == 56:  # el borde del barranco que asoma en la esquina
             h, w = mask.shape
             mask[int(h * 0.68):, : int(w * 0.42)] = 0
@@ -155,4 +173,4 @@ if __name__ == '__main__':
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     if len(args) != 2:
         sys.exit(__doc__)
-    main(args[0], args[1], '--fondo-plano' in sys.argv)
+    main(args[0], args[1], '--fondo-plano' in sys.argv, frozenset(a[2:] for a in sys.argv[1:] if a in ('--sin-texto', '--sin-acantilado')))
