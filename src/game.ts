@@ -137,6 +137,8 @@ export class Game implements GameInput {
   showingSheet = false;
   introAnimActive = false;
   introAnimStartTime = 0;
+  /** Siguiente frase del personaje durante la introducción. */
+  private introLine = 0;
   introShowWeapons = false;
 
   // Sonidos
@@ -429,6 +431,13 @@ export class Game implements GameInput {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (e.pointerType === 'touch') {
         touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      // Un toque o clic salta la introducción
+      if (this.introAnimActive) {
+        this.skipIntro();
+        closePad();
+        drag = null;
+        return;
       }
       // Un toque o clic cancela el pensamiento activo (y no hace nada más)
       if (this.audio.thoughtActive && !this.showingTitle && !this.showingGameOver) {
@@ -1421,6 +1430,33 @@ export class Game implements GameInput {
     }
     this.introAnimActive = true;
     this.introAnimStartTime = ticks();
+    this.introLine = 0;
+  }
+
+  /** Lo que dice el personaje en cada momento de la introducción: [ms desde el inicio, frase, duración]. */
+  private static readonly INTRO_LINES: ReadonlyArray<readonly [number, string, number]> = [
+    [0, '¡¡Aaaaargh!!', 800],
+    [800, '¿Hola...?', 1900],
+    [2800, '¿Hay alguien ahí?', 1900],
+    [4800, '¡Vamos allá!', 900],
+  ];
+
+  /** Durante la introducción el personaje cae y habla; termina sola o con cualquier tecla o toque. */
+  private updateIntro(now: number): void {
+    if (!this.introAnimActive) return;
+    const line = Game.INTRO_LINES[this.introLine];
+    if (line && now - this.introAnimStartTime >= line[0]) {
+      this.audio.showSubtitle(line[1], line[2]);
+      this.introLine++;
+    }
+  }
+
+  /** Salta la introducción: el personaje ya está en pie con las armas listas. */
+  skipIntro(): void {
+    if (!this.introAnimActive) return;
+    this.introAnimActive = false;
+    this.introShowWeapons = true;
+    this.audio.clearSubtitle();
   }
 
   private sheet: CharacterSheet | null = null;
@@ -1646,6 +1682,8 @@ export class Game implements GameInput {
     audio.updateFades();
     audio.updateSubtitles();
     audio.updateThoughts();
+
+    this.updateIntro(now);
 
     const wasActive = this.wasActive;
     const active = audio.thoughtActive;

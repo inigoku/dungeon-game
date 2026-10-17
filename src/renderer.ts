@@ -1073,13 +1073,24 @@ export class Renderer {
     // Animación de introducción: caída desde arriba y miradas a los lados
     let introOffsetY = 0;
     let headTurn = 0;
+    let introPose: number | undefined;
+    let introGuard = false;
     if (g.introAnimActive) {
       const elapsed = ticks() - g.introAnimStartTime;
-      if (elapsed < 800) introOffsetY = Math.trunc(-this.cellSize * (1 - elapsed / 800));
-      else if (elapsed < 2800) headTurn = Math.floor(-headR / 2);
-      else if (elapsed < 4800) headTurn = Math.floor(headR / 2);
-      else if (elapsed < 5300) g.introShowWeapons = true;
-      else {
+      const layout = LAYOUTS[g.playerClass];
+      if (elapsed < 800) {
+        introOffsetY = Math.trunc(-this.cellSize * (1 - elapsed / 800));
+        introPose = layout.stumble;
+      } else if (elapsed < 2800) {
+        headTurn = Math.floor(-headR / 2);
+        introPose = layout.move.O.index;
+      } else if (elapsed < 4800) {
+        headTurn = Math.floor(headR / 2);
+        introPose = layout.move.E.index;
+      } else if (elapsed < 5300) {
+        g.introShowWeapons = true;
+        introGuard = true;
+      } else {
         g.introAnimActive = false;
         g.introShowWeapons = true;
       }
@@ -1100,8 +1111,8 @@ export class Renderer {
       now: t,
       hurt: g.playerHealth < g.maxHealth,
       // En guardia mientras hay un enemigo cerca o hace menos de 3 s que se movió; después, reposo
-      alerted: t - g.lastMoveAttemptTime <= FACE_FRONT_AFTER_MS || g.deepOnes.some((m) => !m.dead && (m.alerted || Math.max(Math.abs(m.row - g.currentPosition[0]), Math.abs(m.col - g.currentPosition[1])) <= 3)),
-      pose,
+      alerted: introGuard || t - g.lastMoveAttemptTime <= FACE_FRONT_AFTER_MS || g.deepOnes.some((m) => !m.dead && (m.alerted || Math.max(Math.abs(m.row - g.currentPosition[0]), Math.abs(m.col - g.currentPosition[1])) <= 3)),
+      pose: pose ?? (hasPoses(g.playerClass) ? introPose : undefined),
     });
   }
 
