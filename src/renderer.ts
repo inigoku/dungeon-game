@@ -733,7 +733,7 @@ export class Renderer {
     }
   }
 
-  /** Tinte rojo por salud baja y proximidad de monstruos. */
+  /** Tinte rojo con pulso cuando solo queda un corazón (y solo entonces). */
   private drawDangerOverlay(): void {
     const g = this.game;
     if (g.showingGameOver) return;
@@ -744,18 +744,6 @@ export class Renderer {
     if (g.playerHealth === 1) {
       const pulse = (Math.sin(now * 0.005) + 1) * 0.5;
       alpha = 30 + Math.trunc(pulse * 70);
-    }
-    if (g.hasEncounteredMonsters) {
-      let closest = Infinity;
-      for (const monster of g.deepOnes) {
-        if (monster.dead) continue;
-        const dist = Math.abs(monster.row - g.currentPosition[0]) + Math.abs(monster.col - g.currentPosition[1]);
-        if (dist < closest) closest = dist;
-      }
-      if (closest < 6) {
-        const proximity = Math.trunc((1 - closest / 6) * 100);
-        alpha = Math.min(200, alpha + proximity);
-      }
     }
     if (alpha > 0) fillRect(this.ctx, [255, 0, 0], 0, 0, g.width, g.height, alpha / 255);
   }
