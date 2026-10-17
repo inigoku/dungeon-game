@@ -90,7 +90,8 @@ async function playLoop(assets: Assets): Promise<void> {
     if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __game: Game }).__game = game;
     const restart = await game.run();
     if (restart) continue;
-    await showOverlay('Has salido de la mazmorra', 'Gracias por jugar.', 'Jugar de nuevo');
+    // Salir lleva de nuevo a la selección de personaje
+    await showOverlay('Dungeon Explorer 2D', 'Explora la mazmorra, encuentra la salida y sobrevive. Mejor con auriculares.', 'Empezar', true);
   }
 }
 

@@ -29,7 +29,6 @@ export interface GameInput {
   placeCellInDirection(direction: Direction): void;
   startGame(): void;
   skipIntro(): void;
-  returnToMainMenu(): void;
   toggleSheet(): void;
   teleportTo(pos: Pos): void;
 }
@@ -86,7 +85,7 @@ export class InputHandler {
       return true;
     }
     if (game.askingMainMenuConfirmation) {
-      if (key === 's') game.returnToMainMenu();
+      if (key === 's') return false; // la partida termina y se vuelve a la selección de personaje
       else if (key === 'n' || key === 'Escape') game.askingMainMenuConfirmation = false;
       return true;
     }

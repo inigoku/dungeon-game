@@ -29,7 +29,6 @@ function fakeGame(overrides: Partial<GameInput> = {}) {
     placeCellInDirection: (d: Direction) => moves.push(d),
     startGame: vi.fn(),
     skipIntro: vi.fn(),
-    returnToMainMenu: vi.fn(),
     toggleSheet: vi.fn(),
     teleportTo: vi.fn(),
     ...overrides,
@@ -80,10 +79,15 @@ describe('InputHandler', () => {
     expect(walking.moves).toEqual([]);
   });
 
-  it('confirmar con S vuelve al menú principal', () => {
+  it('confirmar con S sale de la partida (vuelve a la selección de personaje)', () => {
     const { game } = fakeGame({ askingMainMenuConfirmation: true });
-    new InputHandler(game).handleKey('s');
-    expect(game.returnToMainMenu).toHaveBeenCalled();
+    expect(new InputHandler(game).handleKey('s')).toBe(false);
+  });
+
+  it('cancelar con N sigue en la partida', () => {
+    const { game } = fakeGame({ askingMainMenuConfirmation: true });
+    expect(new InputHandler(game).handleKey('n')).toBe(true);
+    expect(game.askingMainMenuConfirmation).toBe(false);
   });
 
   it('bloquea la entrada mientras se espera un pensamiento', () => {

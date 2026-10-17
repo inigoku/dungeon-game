@@ -1483,15 +1483,6 @@ export class Game implements GameInput {
     this.sheet.show();
   }
 
-  returnToMainMenu(): void {
-    this.showingTitle = true;
-    this.askingMainMenuConfirmation = false;
-    this.askingRestartConfirmation = false;
-    if (this.showingSheet) this.toggleSheet();
-    this.audio.stopMusic();
-    if (this.audio.thoughtActive) this.audio.cancelThought();
-  }
-
   teleportTo(pos: Pos): void {
     this.currentPosition = pos;
     this.playerAnimating = false;
