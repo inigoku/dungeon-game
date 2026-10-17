@@ -202,8 +202,9 @@ export class Game implements GameInput {
   playerFellIntoBarranco = false;
 
   // Salud
-  readonly maxHealth = 2;
-  playerHealth = this.maxHealth;
+  /** Corazones de la clase: el caballero 4, el bárbaro 3 y la exploradora 2. */
+  readonly maxHealth: number;
+  playerHealth: number;
   invulnerable = false;
   readonly invulnerableDuration = 2000;
   lastDamageTime = 0;
@@ -244,6 +245,8 @@ export class Game implements GameInput {
     readonly playerClass: PlayerClass = initialClass(),
   ) {
     this.ctx = context2d(canvas);
+    this.maxHealth = CLASSES[playerClass].hearts;
+    this.playerHealth = this.maxHealth;
 
     this.world = new World(this.size);
     const center = this.world.center;
@@ -591,6 +594,8 @@ export class Game implements GameInput {
   fallIntoBarranco(direction: Direction): void {
     if (this.showingGameOver) return;
     console.log('[GAME OVER] El jugador ha caído por el barranco.');
+    // La caída mata al instante, tenga los corazones que tenga
+    this.playerHealth = 0;
 
     // Viento superfuerte en el instante de la caída
     this.audio.setBarrancoWindVolume(1.0);

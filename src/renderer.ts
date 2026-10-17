@@ -59,6 +59,18 @@ function exitsSignature(cell: Cell): number {
   return sig;
 }
 
+/** Traza un corazón de ancho `size` centrado en el origen. */
+function heartPath(ctx: Ctx, size: number): void {
+  const k = size / 2;
+  ctx.beginPath();
+  ctx.moveTo(0, k * 0.85);
+  ctx.bezierCurveTo(-k * 1.25, k * 0.15, -k * 1.1, -k * 0.95, -k * 0.5, -k * 0.95);
+  ctx.bezierCurveTo(-k * 0.2, -k * 0.95, 0, -k * 0.75, 0, -k * 0.5);
+  ctx.bezierCurveTo(0, -k * 0.75, k * 0.2, -k * 0.95, k * 0.5, -k * 0.95);
+  ctx.bezierCurveTo(k * 1.1, -k * 0.95, k * 1.25, k * 0.15, 0, k * 0.85);
+  ctx.closePath();
+}
+
 export class Renderer {
   private readonly ctx: Ctx;
   private readonly textureCache = new Map<string, CachedTexture>();
@@ -149,6 +161,7 @@ export class Renderer {
 
     this.drawDangerOverlay();
     if (g.flashActive) this.drawScreenFlash();
+    this.drawHearts();
   }
 
   private drawTitle(): void {
@@ -682,6 +695,44 @@ export class Renderer {
     }
   }
 
+  /** Puntos de vida en la esquina superior izquierda: un corazón por punto, lleno o vacío. */
+  private drawHearts(): void {
+    const g = this.game;
+    if (g.showingTitle) return;
+    const ctx = this.ctx;
+    const portrait = g.height > g.width;
+    const size = Math.round(Math.min(g.width, g.height) * 0.055);
+    const gap = Math.round(size * 0.22);
+    const x0 = Math.round(size * 0.6);
+    // En vertical se deja sitio para la barra de estado del móvil
+    const y0 = portrait ? Math.round(g.height * 0.045) : Math.round(size * 0.6);
+    const now = ticks();
+    for (let i = 0; i < g.maxHealth; i++) {
+      const full = i < g.playerHealth;
+      // El último corazón late cuando es el único que queda
+      const beat = full && g.playerHealth === 1 ? 1 + 0.12 * Math.max(0, Math.sin(now * 0.012)) : 1;
+      const cx = x0 + size / 2 + i * (size + gap);
+      const cy = y0 + size / 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(beat, beat);
+      heartPath(ctx, size);
+      ctx.fillStyle = full ? 'rgb(214,32,48)' : 'rgba(20,10,12,0.75)';
+      ctx.fill();
+      ctx.lineWidth = Math.max(2, size * 0.09);
+      ctx.strokeStyle = full ? 'rgb(255,200,205)' : 'rgb(120,70,76)';
+      ctx.stroke();
+      if (full) {
+        // Brillo
+        ctx.beginPath();
+        ctx.ellipse(-size * 0.2, -size * 0.18, size * 0.1, size * 0.06, -0.6, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
   /** Tinte rojo por salud baja y proximidad de monstruos. */
   private drawDangerOverlay(): void {
     const g = this.game;
@@ -689,7 +740,8 @@ export class Renderer {
 
     let alpha = 0;
     const now = ticks();
-    if (g.playerHealth < g.maxHealth) {
+    // La pantalla se pone roja cuando solo queda un corazón
+    if (g.playerHealth === 1) {
       const pulse = (Math.sin(now * 0.005) + 1) * 0.5;
       alpha = 30 + Math.trunc(pulse * 70);
     }

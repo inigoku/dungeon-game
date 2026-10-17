@@ -14,6 +14,10 @@ describe('clases', () => {
     }
   });
 
+  it('corazones: caballero 4, bárbaro 3 y exploradora 2', () => {
+    expect([CLASSES.guerrero.hearts, CLASSES.barbaro.hearts, CLASSES.exploradora.hearts]).toEqual([4, 3, 2]);
+  });
+
   it('sin navegador la clase inicial es el guerrero', () => {
     expect(initialClass()).toBe('guerrero');
   });
