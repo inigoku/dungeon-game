@@ -2,7 +2,7 @@
 import { Mixer } from './audio';
 import { context2d, createCanvas, type Canvas } from './gfx';
 
-export const IMAGE_NAMES = ['titulo', 'losa', 'profundo', 'espada', 'antorcha', 'sangre', 'atlas_barbaro', 'retrato_barbaro', 'atlas_guerrero', 'retrato_guerrero', 'atlas_exploradora', 'retrato_exploradora'] as const;
+export const IMAGE_NAMES = ['titulo', 'losa', 'profundo', 'espada', 'antorcha', 'sangre', 'atlas_barbaro', 'retrato_barbaro', 'atlas_guerrero', 'retrato_guerrero', 'atlas_exploradora', 'retrato_exploradora', 'caras_guerrero', 'caras_barbaro', 'caras_exploradora'] as const;
 export const SOUND_NAMES = [
   'abominacion',
   'adagio',
@@ -126,7 +126,7 @@ export async function loadAssets(onProgress: (fraction: number) => void): Promis
 }
 
 /** Escala una imagen a (w, h) con suavizado de calidad alta. */
-export function scaleImage(img: HTMLImageElement, w: number, h: number): Canvas {
+export function scaleImage(img: HTMLImageElement | Canvas, w: number, h: number): Canvas {
   const canvas = createCanvas(w, h);
   const ctx = context2d(canvas);
   ctx.imageSmoothingEnabled = true;
@@ -136,7 +136,7 @@ export function scaleImage(img: HTMLImageElement, w: number, h: number): Canvas 
 }
 
 /** Escala `img` para que quepa en (maxW, maxH) manteniendo la proporción. */
-export function fitImage(img: HTMLImageElement, maxW: number, maxH: number): Canvas {
+export function fitImage(img: HTMLImageElement | Canvas, maxW: number, maxH: number): Canvas {
   const scale = Math.min(maxW / img.width, maxH / img.height);
   return scaleImage(img, Math.trunc(img.width * scale), Math.trunc(img.height * scale));
 }
