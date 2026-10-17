@@ -213,7 +213,6 @@ export class Game implements GameInput {
   deepOnes: DeepOne[] = [];
   deepOnesSpawned = false;
   monsterFootprints = new Map<number, Footprint[]>();
-  hasEncounteredMonsters = false;
   exitVisited = false;
   hasSwordPower = false;
   swordThoughtTriggered = false;
@@ -555,7 +554,6 @@ export class Game implements GameInput {
     this.playerHealth -= 1;
     this.lastDamageTime = ticks();
     this.invulnerable = true;
-    this.hasEncounteredMonsters = true;
     this.triggerScreenFlash([255, 0, 0], 300);
 
     if (this.playerHealth <= 0) {
@@ -1177,7 +1175,6 @@ export class Game implements GameInput {
     monster.animating = false;
     monster.state = 'IDLE';
     this.fight = { monster, row: this.currentPosition[0], col: this.currentPosition[1], start: now, shakes: 0 };
-    this.hasEncounteredMonsters = true;
     this.triggerCameraShake(1.5, 700);
     this.grunidoSound?.setVolume(0.9);
     this.grunidoSound?.play();
