@@ -12,7 +12,7 @@ export type SceneName = 'antorcha' | 'sangre' | 'espada' | 'profundo' | 'losa' |
 export type WeaponKind = 'espada' | 'daga' | 'arco';
 
 /** Expresiones de la tira `caras_<clase>.png`: una celda de 256×256 por cada una. */
-export const FACE = { guardia: 0, grito: 1, susto: 2, asombro: 3, poder: 4, mirar: 5 } as const;
+export const FACE = { guardia: 0, grito: 1, susto: 2, asombro: 3, poder: 4, mirar: 5, ladoE: 6, ladoO: 7 } as const;
 const FACE_CELL = 256;
 const INK = '#140c07';
 
@@ -445,7 +445,7 @@ function weapon(ctx: Ctx, hx: number, hy: number, kind: WeaponKind): void {
 }
 
 /** Dibuja la expresión `slot` del personaje con su pie en `bottom`; `lightX` es de dónde llega la luz. */
-function character(ctx: Ctx, faces: HTMLImageElement, slot: number, cx: number, bottom: number, height: number, lightX: number, flip = false): void {
+function character(ctx: Ctx, faces: HTMLImageElement, slot: number, cx: number, bottom: number, height: number, lightX: number, flip = false): { headX: number; top: number } {
   const k = height / FACE_CELL;
   const tmp = createCanvas(FACE_CELL, FACE_CELL);
   const t = context2d(tmp);
@@ -471,6 +471,42 @@ function character(ctx: Ctx, faces: HTMLImageElement, slot: number, cx: number, 
   if (flip) ctx.scale(-1, 1);
   ctx.drawImage(tmp, -w / 2, -height, w, height);
   ctx.restore();
+
+  // Dónde está la cabeza: la primera fila opaca y el centro de las filas de arriba
+  const data = t.getImageData(0, 0, FACE_CELL, FACE_CELL).data;
+  let topRow = FACE_CELL;
+  let sumX = 0;
+  let count = 0;
+  for (let y = 0; y < FACE_CELL && count < 400; y++) {
+    for (let x = 0; x < FACE_CELL; x++) {
+      if (data[(y * FACE_CELL + x) * 4 + 3] > 40) {
+        if (topRow === FACE_CELL) topRow = y;
+        if (y < topRow + 30) {
+          sumX += x;
+          count++;
+        }
+      }
+    }
+  }
+  const px = count ? sumX / count : FACE_CELL / 2;
+  const headX = cx + (flip ? -1 : 1) * (px - FACE_CELL / 2) * k;
+  return { headX, top: bottom - height + topRow * k };
+}
+
+/** Exclamación roja con gotas de sudor sobre la cabeza: el personaje se sobresalta. */
+function startle(ctx: Ctx, x: number, y: number): void {
+  roundRect(ctx, x - 16, y - 120, 32, 78, 14);
+  inked(ctx, '#e0281c', 6);
+  ctx.beginPath();
+  ctx.arc(x, y - 18, 18, 0, Math.PI * 2);
+  inked(ctx, '#e0281c', 6);
+  for (const [dx, dy] of [[-70, -30], [-90, 6], [70, -26]] as const) {
+    ctx.beginPath();
+    ctx.moveTo(x + dx, y + dy - 22);
+    ctx.quadraticCurveTo(x + dx + 20, y + dy + 6, x + dx, y + dy + 14);
+    ctx.quadraticCurveTo(x + dx - 20, y + dy + 6, x + dx, y + dy - 22);
+    inked(ctx, '#8fd8ff', 4);
+  }
 }
 
 /** Pantalla de título: atardecer, la boca de la cueva con ojos rojos y el personaje con el arma lista. */
@@ -594,16 +630,19 @@ export function renderScene(name: SceneName, faces: HTMLImageElement | null, wea
   wall(ctx, S, torchAt, rnd);
   floor(ctx, S, torchAt, rnd);
   glow(ctx, torchAt[0], torchAt[1], 640, 'rgba(255,160,50,0.42)');
-  const slot = { antorcha: FACE.mirar, sangre: FACE.susto, espada: FACE.poder, profundo: FACE.grito, losa: FACE.asombro }[name];
+  const slot = { antorcha: FACE.ladoO, sangre: FACE.ladoO, espada: FACE.poder, profundo: FACE.grito, losa: FACE.asombro }[name];
 
   if (name === 'antorcha') {
     torch(ctx, torchAt[0], torchAt[1]);
-    if (faces) character(ctx, faces, slot, 640, S + 260, 980, torchAt[0]);
+    if (faces) character(ctx, faces, slot, 560, S + 260, 980, torchAt[0]);
   } else if (name === 'sangre') {
     for (const [x, y, r] of [[120, 300, 70], [330, 180, 54], [210, 470, 60], [470, 360, 40]] as const) bloodSplat(ctx, x, y, r, rnd);
     for (const [x, y, rx, ry] of [[260, 900, 190, 44], [620, 960, 150, 34], [90, 980, 120, 30]] as const) bloodPool(ctx, x, y, rx, ry);
     torch(ctx, torchAt[0] + 380, torchAt[1] - 30);
-    if (faces) character(ctx, faces, slot, 560, S + 260, 980, torchAt[0] + 380);
+    if (faces) {
+      const head = character(ctx, faces, slot, 640, S + 260, 980, torchAt[0] + 380);
+      startle(ctx, head.headX, head.top - 10);
+    }
   } else if (name === 'espada') {
     torch(ctx, torchAt[0], torchAt[1]);
     well(ctx, 300, 740);

@@ -398,6 +398,13 @@ export class AudioManager {
     }
   }
 
+  /** Quita ya el subtítulo suelto que se esté mostrando. */
+  clearSubtitle(): void {
+    if (this.thoughtActive) return;
+    this.showingSubtitles = false;
+    this.subtitleText = '';
+  }
+
   showSubtitle(text: string, duration: number): void {
     this.showingSubtitles = true;
     this.subtitleText = text;

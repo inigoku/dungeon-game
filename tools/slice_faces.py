@@ -4,7 +4,8 @@ Recorta de una hoja 8×8 los fotogramas con expresión que usan los pensamientos
 a su resolución original, y los coloca en una tira de celdas de 256×256 (alineados abajo y al centro).
 
 Uso:  python3 tools/slice_faces.py art/guerrero-hoja-origen.jpg images/caras_guerrero.png [--fondo-plano] [--sin-texto]
-Los fotogramas, en orden: 0 en guardia, 48 grito, 54 susto, 55 asombro, 58 poder, 60 mirando alrededor.
+Los fotogramas, en orden: 0 en guardia, 48 grito, 54 susto, 55 asombro, 58 poder, 60 mirando alrededor,
+16 de perfil mirando a la derecha y 20 de perfil mirando a la izquierda.
 """
 import sys
 
@@ -13,7 +14,7 @@ from PIL import Image
 
 import slice_atlas as sa
 
-FRAMES = [0, 48, 54, 55, 58, 60]
+FRAMES = [0, 48, 54, 55, 58, 60, 16, 20]
 CELL = 256
 
 

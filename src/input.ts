@@ -28,6 +28,7 @@ export interface GameInput {
   zoomOut(): void;
   placeCellInDirection(direction: Direction): void;
   startGame(): void;
+  skipIntro(): void;
   returnToMainMenu(): void;
   toggleSheet(): void;
   teleportTo(pos: Pos): void;
@@ -94,6 +95,12 @@ export class InputHandler {
     if (game.showingTitle) {
       if (key === 'Escape') return false;
       game.startGame();
+      return true;
+    }
+
+    // 2b. Cualquier tecla salta la introducción (y no hace nada más)
+    if (game.introAnimActive) {
+      game.skipIntro();
       return true;
     }
 

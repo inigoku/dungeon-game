@@ -28,6 +28,7 @@ function fakeGame(overrides: Partial<GameInput> = {}) {
     zoomOut: vi.fn(),
     placeCellInDirection: (d: Direction) => moves.push(d),
     startGame: vi.fn(),
+    skipIntro: vi.fn(),
     returnToMainMenu: vi.fn(),
     toggleSheet: vi.fn(),
     teleportTo: vi.fn(),
@@ -44,9 +45,10 @@ describe('InputHandler', () => {
     expect(moves).toEqual(['N', 'S', 'E', 'O', 'N', 'S', 'E', 'O']);
   });
 
-  it('no se mueve durante la animación de introducción', () => {
+  it('cualquier tecla salta la introducción y no mueve al personaje', () => {
     const { game, moves } = fakeGame({ introAnimActive: true });
     new InputHandler(game).handleKey('w');
+    expect(game.skipIntro).toHaveBeenCalledTimes(1);
     expect(moves).toEqual([]);
   });
 
