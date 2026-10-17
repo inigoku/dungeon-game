@@ -37,6 +37,8 @@ export interface ClassInfo {
   draw: (ctx: Ctx, cx: number, cy: number, size: number, look: WarriorLook) => void;
   /** Imagen de busto para la hoja de personaje (si no hay, se dibuja el sprite). */
   portrait?: string;
+  /** Corazones (puntos de vida) con los que empieza la partida. */
+  hearts: number;
   sheet: ClassSheetData;
 }
 
@@ -57,6 +59,7 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
     id: 'guerrero',
     label: 'Guerrero',
     draw: bitmapOrVector('guerrero', drawWarrior),
+    hearts: 4,
     portrait: 'retrato_guerrero',
     sheet: {
       name: 'Ser Aldo, el Valiente',
@@ -109,6 +112,7 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
     id: 'barbaro',
     label: 'Bárbaro',
     draw: bitmapOrVector('barbaro', drawBarbarian),
+    hearts: 3,
     portrait: 'retrato_barbaro',
     sheet: {
       name: 'Brak, el Furioso',
@@ -162,6 +166,7 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
     label: 'Exploradora',
     // Sin dibujo vectorial propio: si no carga su hoja de bitmaps se muestra al caballero
     draw: bitmapOrVector('exploradora', drawWarrior),
+    hearts: 2,
     portrait: 'retrato_exploradora',
     sheet: {
       name: 'Dafne, la Exploradora',
