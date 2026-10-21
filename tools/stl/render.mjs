@@ -31,6 +31,23 @@ const jobs = {
   'c6': { ...big, view: 'izq', col: C('guardia') }, 'c7': { ...big, view: 'der', col: C('guardia') },
   // retrato de busto
   'cara': { size: 800, half: 8, zc: 39, view: 'frente', col: C('guardia') }, 'cara2': { size: 800, half: 8, zc: 39, view: 'frente', col: C('asombro') },
+  't1': { size: 800, half: 30, zc: 25, view: 'izq', pose: 'test', col: C('guardia') }, 't2': { size: 800, half: 30, zc: 25, view: 'frente', pose: 'test', col: C('guardia') },
+  'wS0': { ...cell, view: 'frente', pose: 'w0', ground: true, col: C('guardia') },
+  'wS1': { ...cell, view: 'frente', pose: 'w1', ground: true, col: C('guardia') },
+  'wS2': { ...cell, view: 'frente', pose: 'w2', ground: true, col: C('guardia') },
+  'wS3': { ...cell, view: 'frente', pose: 'w3', ground: true, col: C('guardia') },
+  'wN0': { ...cell, view: 'atras', pose: 'w0', ground: true, col: C('guardia') },
+  'wN1': { ...cell, view: 'atras', pose: 'w1', ground: true, col: C('guardia') },
+  'wN2': { ...cell, view: 'atras', pose: 'w2', ground: true, col: C('guardia') },
+  'wN3': { ...cell, view: 'atras', pose: 'w3', ground: true, col: C('guardia') },
+  'wE0': { ...cell, view: 'izq', pose: 'w0', ground: true, col: C('guardia') },
+  'wE1': { ...cell, view: 'izq', pose: 'w1', ground: true, col: C('guardia') },
+  'wE2': { ...cell, view: 'izq', pose: 'w2', ground: true, col: C('guardia') },
+  'wE3': { ...cell, view: 'izq', pose: 'w3', ground: true, col: C('guardia') },
+  'wO0': { ...cell, view: 'der', pose: 'w0', ground: true, col: C('guardia') },
+  'wO1': { ...cell, view: 'der', pose: 'w1', ground: true, col: C('guardia') },
+  'wO2': { ...cell, view: 'der', pose: 'w2', ground: true, col: C('guardia') },
+  'wO3': { ...cell, view: 'der', pose: 'w3', ground: true, col: C('guardia') },
   'retrato': { size: 640, half: 13.5, zc: 38.5, view: 'frente', col: C('guardia') },
 };
 const only = process.argv.slice(2);

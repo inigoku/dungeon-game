@@ -3,6 +3,12 @@ from PIL import Image, ImageDraw
 O='/tmp/claude-0/stl/out/'
 def load(n): return Image.open(O+n+'.png').convert('RGBA')
 atlas=Image.new('RGBA',(1024,1024),(0,0,0,0))
+import os
+walk={'S':26,'N':32,'E':36,'O':40}
+for d,base in walk.items():
+    for k in range(4):
+        f=load(f'w{d}{k}').resize((128,128),Image.LANCZOS)
+        r,c=divmod(base+k,8); atlas.alpha_composite(f,(c*128,r*128))
 for i in [0,1,2,12,17,20,24,25,48,49,50,51,56,57]:
     f=load(f'a{i}').resize((128,128),Image.LANCZOS)
     r,c=divmod(i,8); atlas.alpha_composite(f,(c*128,r*128))

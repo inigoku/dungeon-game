@@ -25,6 +25,8 @@ export interface AtlasLayout {
   dying: readonly [number, number, number, number];
   stumble: number;
   fall: number;
+  /** Ciclo de paso por dirección (si la hoja lo tiene): cuatro fotogramas, pasando-apoyo-pasando-apoyo. */
+  walk?: Record<'N' | 'E' | 'S' | 'O', readonly number[]>;
 }
 
 export const LAYOUTS: Record<string, AtlasLayout> = {
@@ -66,6 +68,7 @@ export const LAYOUTS: Record<string, AtlasLayout> = {
     dying: [48, 49, 50, 51],
     stumble: 56,
     fall: 57,
+    walk: { S: [26, 27, 28, 29], N: [32, 33, 34, 35], E: [36, 37, 38, 39], O: [40, 41, 42, 43] },
   },
 };
 
@@ -94,6 +97,13 @@ export interface FramePick {
  */
 export function pickFrame(layout: AtlasLayout, look: Pick<WarriorLook, 'facing' | 'moving' | 'walkAngle' | 'hurt' | 'alerted' | 'pose'>): FramePick {
   if (look.pose !== undefined) return { index: look.pose, mirror: false, hop: 0 };
+  if (look.moving && layout.walk) {
+    const cycle = layout.walk[look.facing];
+    // Un paso completo (dos apoyos) por cada giro de `walkAngle`·2; el cuerpo sube al pasar la pierna y baja al apoyar
+    const phase = (((look.walkAngle * 2) / (Math.PI * 2)) % 1 + 1) % 1;
+    const step = Math.floor(phase * cycle.length + 0.5) % cycle.length;
+    return { index: cycle[step], mirror: false, hop: Math.abs(Math.cos(phase * Math.PI * 2)) * 0.03 };
+  }
   if (look.moving) {
     const icon = layout.move[look.facing];
     return { index: icon.index, mirror: icon.mirror, hop: Math.abs(Math.sin(look.walkAngle * 2)) * 0.035 };

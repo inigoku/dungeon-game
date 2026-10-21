@@ -35,6 +35,16 @@ describe('pickFrame', () => {
       expect([east.mirror, west.mirror]).toEqual([false, false]);
     }
   });
+  it('la duelista camina con un ciclo de cuatro fotogramas por dirección', () => {
+    const seen = new Set<number>();
+    for (let a = 0; a < Math.PI; a += 0.05) {
+      const pick = pickFrame(duelista, { ...base, facing: 'E', moving: true, walkAngle: a });
+      expect(duelista.walk?.E).toContain(pick.index);
+      expect(pick.hop).toBeGreaterThanOrEqual(0);
+      seen.add(pick.index);
+    }
+    expect(seen.size).toBe(4);
+  });
   it('el salto del paso es pequeño y no negativo', () => {
     for (const a of [0, 1, 2, 3, 4, 5, 6]) {
       const hop = pickFrame(barbaro, { ...base, moving: true, walkAngle: a }).hop;
