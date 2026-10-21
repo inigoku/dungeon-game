@@ -7,6 +7,7 @@ N=len(t); V=t.reshape(-1,3); x,y,z=V.T
 tl=np.repeat(label,3)
 def clamp01(a): return np.clip(a,0,1)
 def smooth(a): a=clamp01(a); return a*a*(3-2*a)
+AD=0.38
 HIP_Z=21.0; KNEE_Z=10.8
 W={}
 for side,sg in (('L',-1),('R',1)):
@@ -29,7 +30,9 @@ for side,sg in (('L',-1),('R',1)):
     warm=np.maximum(warm,np.maximum(blade,hand).astype(float))
     warm=np.where(tl==2,0.0,warm)
     wleg=np.where(warm>0.5,0.0,wleg)
-    W[side]=(wleg,wshin,warm)
+    wfoot=smooth((4.8-z)/1.6)
+    wfore=np.where((blade|hand),1.0,smooth((tt-0.45)/0.2))*(warm>0)
+    W[side]=(wleg,wshin,warm,wfoot,wfore)
 def rot(P,Pivot,ang,w):
     dy=P[:,1]-Pivot[1]; dz=P[:,2]-Pivot[2]
     c,s=np.cos(ang*w),np.sin(ang*w)
@@ -37,16 +40,34 @@ def rot(P,Pivot,ang,w):
     Q[:,1]=Pivot[1]+dy*c-dz*s
     Q[:,2]=Pivot[2]+dy*s+dz*c
     return Q
-def pose(name,legL,legR,kneeL,kneeR,armL,armR):
+def pose(name,hipL,hipR,kneeL,kneeR,ankL,ankR,swL,swR,flL,flR):
     P=V.copy()
-    for side,sg,hip,knee,arm in (('L',-1,legL,kneeL,armL),('R',1,legR,kneeR,armR)):
-        wleg,wshin,warm=W[side]
-        # la rodilla gira solo la parte baja de la pierna; luego toda la pierna gira en la cadera
+    for side,sg,hip,knee,ank,sw,fl in (('L',-1,hipL,kneeL,ankL,swL,flL),('R',1,hipR,kneeR,ankR,swR,flR)):
+        wleg,wshin,warm,wfoot,wfore=W[side]
         sel=wleg>0
-        P[sel]=rot(P[sel],np.array([sg*5.2,-1.2,KNEE_Z]),knee,(wshin*np.ones_like(wleg))[sel])
+        P[sel]=rot(P[sel],np.array([sg*5.2,-1.4,3.0]),ank,(wfoot)[sel])
+        P[sel]=rot(P[sel],np.array([sg*5.2,-1.2,KNEE_Z]),knee,(wshin)[sel])
         P[sel]=rot(P[sel],np.array([sg*5.2,-0.8,HIP_Z]),hip,wleg[sel])
         sel=warm>0
-        P[sel]=rot(P[sel],np.array([sg*8.0,-0.8,32.0]),arm,warm[sel])
+        P[sel]=rot(P[sel],np.array([sg*11.7,-1.1,26.7]),fl,wfore[sel])
+        P[sel]=rot(P[sel],np.array([sg*8.0,-0.8,32.0]),sw,warm[sel])
+        # los brazos pegados al cuerpo (en la T original parecen de muñeca)
+        Q=P[sel]; w=warm[sel]; piv=np.array([sg*8.0,-0.8,32.0]); a=sg*AD*w
+        dx=Q[:,0]-piv[0]; dz=Q[:,2]-piv[2]
+        Q[:,0]=piv[0]+dx*np.cos(a)+dz*np.sin(a); Q[:,2]=piv[2]-dx*np.sin(a)+dz*np.cos(a)
+        P[sel]=Q
     P.astype(np.float32).tofile(f'/tmp/claude-0/r3d/pos_{name}.bin')
+def walk_params(phi,A=0.5,K=0.95,B=0.42):
+    import math
+    s,c=math.sin(phi),math.cos(phi)
+    hipR,hipL=-A*s,A*s
+    kneeR=K*max(0,c)+0.12; kneeL=K*max(0,-c)+0.12
+    # pie plano en el suelo; al despegar la punta baja un poco
+    ankR=-(hipR+kneeR)*0.85+0.25*max(0,hipR); ankL=-(hipL+kneeL)*0.85+0.25*max(0,hipL)
+    swR,swL=B*s,-B*s
+    flR=-0.35-0.3*max(0,-swR/B); flL=-0.35-0.3*max(0,-swL/B)
+    return hipL,hipR,kneeL,kneeR,ankL,ankR,swL,swR,flL,flR
 if __name__=='__main__':
-    a=sys.argv; pose(a[1],*[float(v) for v in a[2:8]])
+    import math
+    for i in range(8): pose(f'w{i}',*walk_params(i*math.pi/4))
+    pose('idle',0.0,0.0,0.1,0.1,-0.09,-0.09,0.12,0.12,-0.55,-0.55)
