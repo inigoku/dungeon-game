@@ -57,6 +57,16 @@ export const LAYOUTS: Record<string, AtlasLayout> = {
     stumble: 56,
     fall: 57,
   },
+  // Duelista: modelo 3D de dos espadas prerrenderizado; cada pose tiene su vista, y la caída se ve de perfil
+  duelista: {
+    guard: 0,
+    rest: 1,
+    hurt: { guard: 24, rest: 25 },
+    move: { N: { index: 12, mirror: false }, E: { index: 17, mirror: false }, S: { index: 2, mirror: false }, O: { index: 20, mirror: false } },
+    dying: [48, 49, 50, 51],
+    stumble: 56,
+    fall: 57,
+  },
 };
 
 const atlases = new Map<string, HTMLImageElement>();

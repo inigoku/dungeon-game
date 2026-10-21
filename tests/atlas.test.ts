@@ -5,6 +5,7 @@ const base = { facing: 'S' as const, moving: false, walkAngle: 0, hurt: false, a
 const barbaro = LAYOUTS.barbaro;
 const guerrero = LAYOUTS.guerrero;
 const exploradora = LAYOUTS.exploradora;
+const duelista = LAYOUTS.duelista;
 
 describe('pickFrame', () => {
   it('en guardia o en reposo cuando está parado', () => {
@@ -26,8 +27,8 @@ describe('pickFrame', () => {
     expect(icons.map((i) => i.index)).toEqual([12, 17, 20, 2]);
     expect(icons.every((i) => !i.mirror)).toBe(true);
   });
-  it('el caballero y la exploradora tienen oeste propio, sin reflejar', () => {
-    for (const layout of [guerrero, exploradora]) {
+  it('el caballero, la exploradora y la duelista tienen oeste propio, sin reflejar', () => {
+    for (const layout of [guerrero, exploradora, duelista]) {
       const east = pickFrame(layout, { ...base, facing: 'E', moving: true });
       const west = pickFrame(layout, { ...base, facing: 'O', moving: true });
       expect(west.index).not.toBe(east.index);

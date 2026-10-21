@@ -1,0 +1,59 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#888">
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+const geo = await new Promise(r => new STLLoader().load('model.stl', r));
+const n = geo.attributes.position.count / 3;
+async function loadCol(name) {
+  const colBuf = new Uint8Array(await (await fetch(name)).arrayBuffer());
+  const colors = new Float32Array(n * 9);
+  for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) for (let c = 0; c < 3; c++) colors[i * 9 + k * 3 + c] = colBuf[i * 3 + c] / 255;
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+await loadCol('col_guardia.bin');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setClearColor(0x000000, 0);
+document.body.append(renderer.domElement);
+const scene = new THREE.Scene();
+const tones = new Uint8Array([90, 170, 255]);
+const gradient = new THREE.DataTexture(tones, tones.length, 1, THREE.RedFormat); gradient.needsUpdate = true;
+gradient.minFilter = gradient.magFilter = THREE.NearestFilter;
+const body = new THREE.Mesh(geo, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: gradient }));
+// Contorno: la malla suavizada e hinchada, dibujada solo por detrás
+const sg = geo.clone(); sg.deleteAttribute('normal'); sg.deleteAttribute('color');
+const merged = mergeVertices(sg, 0.01); merged.computeVertexNormals();
+const pos = merged.attributes.position, nor = merged.attributes.normal;
+const WIDTH = 0.3;
+for (let i = 0; i < pos.count; i++) pos.setXYZ(i, pos.getX(i) + nor.getX(i) * WIDTH, pos.getY(i) + nor.getY(i) * WIDTH, pos.getZ(i) + nor.getZ(i) * WIDTH);
+const outline = new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ color: 0x140c07, side: THREE.BackSide }));
+scene.add(body, outline);
+scene.add(new THREE.AmbientLight(0xffffff, 1.1));
+const dl = new THREE.DirectionalLight(0xffffff, 2.2); dl.position.set(-40, -60, 80); scene.add(dl);
+const group = new THREE.Group(); scene.remove(body, outline); group.add(body, outline); scene.add(group);
+const SIDE = { frente: [0, -100], atras: [0, 100], izq: [-100, 0], der: [100, 0] };
+// o = { col, view, size, half, zc, rot:[x,y,z], ground, center, cx }
+window.render = async (o) => {
+  if (o.col) await loadCol(o.col);
+  renderer.setSize(o.size, o.size);
+  group.rotation.set(0, 0, 0); group.position.set(0, 0, 0);
+  const [rx, ry, rz] = o.rot || [0, 0, 0];
+  group.rotation.set(rx, ry, rz, 'XYZ'); group.updateMatrixWorld(true);
+  const horiz = o.view === 'izq' || o.view === 'der' ? 'y' : 'x';
+  if (o.ground || o.center) {
+    const box = new THREE.Box3().setFromObject(body);
+    if (o.ground) group.position.z -= box.min.z;
+    if (o.center) group.position[horiz] -= (box.min[horiz] + box.max[horiz]) / 2;
+    group.updateMatrixWorld(true);
+  }
+  const h = o.half, cam = new THREE.OrthographicCamera(-h, h, h, -h, 0.1, 500);
+  const [px, py] = SIDE[o.view || 'frente'];
+  cam.position.set(px + (o.cx || 0) * (horiz === 'x' ? 1 : 0), py + (o.cx || 0) * (horiz === 'y' ? 1 : 0), o.zc);
+  cam.position.set(horiz === 'x' ? (o.cx || 0) : px, horiz === 'y' ? (o.cx || 0) : py, o.zc);
+  cam.up.set(0, 0, 1); cam.lookAt(cam.position.x + (horiz === 'y' ? 1 : 0) * Math.sign(-px), cam.position.y + (horiz === 'x' ? 1 : 0) * Math.sign(-py), o.zc);
+  renderer.render(scene, cam);
+  return renderer.domElement.toDataURL('image/png');
+};
+window.ready = true;
+</script>

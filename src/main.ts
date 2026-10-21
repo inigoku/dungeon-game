@@ -145,6 +145,8 @@ async function boot(): Promise<void> {
   setAtlas('retrato_guerrero', assets.images['retrato_guerrero'] ?? null);
   setAtlas('exploradora', assets.images['atlas_exploradora'] ?? null);
   setAtlas('retrato_exploradora', assets.images['retrato_exploradora'] ?? null);
+  setAtlas('duelista', assets.images['atlas_duelista'] ?? null);
+  setAtlas('retrato_duelista', assets.images['retrato_duelista'] ?? null);
   if (new URLSearchParams(location.search).has('audio')) showAudioPanel(assets);
   // Los navegadores solo dejan sonar el audio tras un gesto del usuario
   buildClassPicker();

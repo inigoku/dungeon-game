@@ -5,7 +5,7 @@ import { drawBarbarian } from './barbarian';
 import type { WeaponKind } from './scenes';
 import { drawWarrior, type WarriorLook } from './warrior';
 
-export type PlayerClass = 'guerrero' | 'barbaro' | 'exploradora';
+export type PlayerClass = 'guerrero' | 'barbaro' | 'exploradora' | 'duelista';
 
 export interface ClassSheetData {
   /** Nombre del personaje. */
@@ -219,6 +219,61 @@ export const CLASSES: Record<PlayerClass, ClassInfo> = {
       ],
       powerOff: '⚔ Flecha de luz: dormida. Vuelve al inicio tras ver la salida para despertarla.',
       powerOn: '⚔ Flecha de luz: ¡activa! Los monstruos huyen y caen a su paso.',
+    },
+  },
+  duelista: {
+    id: 'duelista',
+    label: 'Duelista',
+    // Sin dibujo vectorial propio: si no carga su hoja de bitmaps se muestra al caballero
+    draw: bitmapOrVector('duelista', drawWarrior),
+    hearts: 3,
+    weapon: 'daga',
+    portrait: 'retrato_duelista',
+    sheet: {
+      name: 'Aldara, la Duelista',
+      classLevel: 'Pícara 1',
+      background: 'Mercenaria',
+      race: 'Humana',
+      alignment: 'Caótica neutral',
+      abilities: [
+        ['FUE', 'Fuerza', 11, false],
+        ['DES', 'Destreza', 17, true],
+        ['CON', 'Constitución', 13, false],
+        ['INT', 'Inteligencia', 12, true],
+        ['SAB', 'Sabiduría', 10, false],
+        ['CAR', 'Carisma', 14, false],
+      ],
+      skills: [
+        ['Acrobacias', 'DES', true],
+        ['Sigilo', 'DES', true],
+        ['Atletismo', 'FUE', false],
+        ['Percepción', 'SAB', true],
+        ['Engaño', 'CAR', true],
+        ['Intimidación', 'CAR', false],
+        ['Investigación', 'INT', false],
+        ['Juego de manos', 'DES', false],
+      ],
+      armorClass: 15,
+      speed: '9 m',
+      hitDie: '1d8',
+      attacks: [
+        ['Espada corta (mano derecha)', '+5', '1d6+3 perforante'],
+        ['Espada corta (mano izquierda)', '+5', '1d6 perforante'],
+      ],
+      equipment: ['Dos espadas cortas', 'Armadura oscura con faldón carmesí', 'Yelmo con penacho rojo', 'Herramientas de ladrón', 'Cantimplora y raciones'],
+      personality: [
+        ['Rasgo', 'Sonríe justo antes de atacar.'],
+        ['Ideal', 'Un buen duelo se gana con ritmo, no con fuerza.'],
+        ['Vínculo', 'Jamás ha perdido una espada y no piensa empezar ahora.'],
+        ['Defecto', 'No sabe retirarse, ni siquiera cuando debe.'],
+      ],
+      features: [
+        '<b>Ataque furtivo.</b> +1d6 de daño si el enemigo no la espera o tiene un aliado cerca.',
+        '<b>Dos armas.</b> Ataca con la otra espada como acción adicional.',
+        '<b>Acción astuta.</b> Puede correr o desengancharse como acción adicional.',
+      ],
+      powerOff: '⚔ Danza de espadas: dormida. Vuelve al inicio tras ver la salida para despertarla.',
+      powerOn: '⚔ Danza de espadas: ¡activa! Los monstruos huyen y caen a su paso.',
     },
   },
 };
