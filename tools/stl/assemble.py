@@ -3,14 +3,10 @@ from PIL import Image, ImageDraw
 O='/tmp/claude-0/stl/out/'
 def load(n): return Image.open(O+n+'.png').convert('RGBA')
 atlas=Image.new('RGBA',(1024,1024),(0,0,0,0))
-WALK={'S':list(range(26,34)),'N':list(range(34,42)),'E':list(range(3,11)),'O':[42,43,44,45,46,47,52,53]}
-for d,idx in WALK.items():
-    for k,i in enumerate(idx):
-        f=load(f'w{d}{k}').resize((128,128),Image.LANCZOS)
-        r,c=divmod(i,8); atlas.alpha_composite(f,(c*128,r*128))
-for i in [0,1,2,12,17,20,24,25,48,49,50,51,56,57]:
-    f=load(f'i{i}' if i in (0,1,2,12,17,20) else f'a{i}').resize((128,128),Image.LANCZOS)
-    r,c=divmod(i,8); atlas.alpha_composite(f,(c*128,r*128))
+import json
+for i,n in json.load(open('/tmp/claude-0/r3d/atlas.json')).items():
+    f=load(n).resize((128,128),Image.LANCZOS)
+    r,c=divmod(int(i),8); atlas.alpha_composite(f,(c*128,r*128))
 atlas.save('/tmp/claude-0/stl/atlas_duelista.png')
 strip=Image.new('RGBA',(2048,256),(0,0,0,0))
 for i in range(8):

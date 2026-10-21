@@ -40,34 +40,48 @@ def rot(P,Pivot,ang,w):
     Q[:,1]=Pivot[1]+dy*c-dz*s
     Q[:,2]=Pivot[2]+dy*s+dz*c
     return Q
-def pose(name,hipL,hipR,kneeL,kneeR,ankL,ankR,swL,swR,flL,flR):
+def roty(P,Pivot,ang,w):
+    dx=P[:,0]-Pivot[0]; dz=P[:,2]-Pivot[2]
+    c,s=np.cos(ang*w),np.sin(ang*w)
+    Q=P.copy()
+    Q[:,0]=Pivot[0]+dx*c+dz*s
+    Q[:,2]=Pivot[2]-dx*s+dz*c
+    return Q
+# tela del faldón (adorno rojo bajo la cintura), pelo y cuerpo superior
+cloth_mask=(label.repeat(3)==0)&(z>8.0)&(z<28.5)
+cloth_w=smooth((27.0-z)/12.0)*cloth_mask
+hair_w=(tl==2)*smooth((37.0-z)/14.0)*smooth((y+4.0)/6.0)
+upper_w=smooth((z-23.0)/4.0)
+DEF=dict(hipL=0,hipR=0,kneeL=0,kneeR=0,ankL=0,ankR=0,swL=0,swR=0,flL=0,flR=0,adL=AD,adR=AD,lean=0.0,hx=0.0,hy=0.0)
+def pose(name,**kw):
+    p=dict(DEF); p.update(kw)
     P=V.copy()
-    for side,sg,hip,knee,ank,sw,fl in (('L',-1,hipL,kneeL,ankL,swL,flL),('R',1,hipR,kneeR,ankR,swR,flR)):
+    hips={'L':p['hipL'],'R':p['hipR']}
+    cw=np.zeros(len(V))
+    for side,sg in (('L',-1),('R',1)):
         wleg,wshin,warm,wfoot,wfore=W[side]
         sel=wleg>0
-        P[sel]=rot(P[sel],np.array([sg*5.2,-1.4,3.0]),ank,(wfoot)[sel])
-        P[sel]=rot(P[sel],np.array([sg*5.2,-1.2,KNEE_Z]),knee,(wshin)[sel])
-        P[sel]=rot(P[sel],np.array([sg*5.2,-0.8,HIP_Z]),hip,wleg[sel])
+        P[sel]=rot(P[sel],np.array([sg*5.2,-1.4,3.0]),p['ank'+side],wfoot[sel])
+        P[sel]=rot(P[sel],np.array([sg*5.2,-1.2,KNEE_Z]),p['knee'+side],wshin[sel])
+        P[sel]=rot(P[sel],np.array([sg*5.2,-0.8,HIP_Z]),p['hip'+side],wleg[sel])
         sel=warm>0
-        P[sel]=rot(P[sel],np.array([sg*11.7,-1.1,26.7]),fl,wfore[sel])
-        P[sel]=rot(P[sel],np.array([sg*8.0,-0.8,32.0]),sw,warm[sel])
-        # los brazos pegados al cuerpo (en la T original parecen de muñeca)
-        Q=P[sel]; w=warm[sel]; piv=np.array([sg*8.0,-0.8,32.0]); a=sg*AD*w
-        dx=Q[:,0]-piv[0]; dz=Q[:,2]-piv[2]
-        Q[:,0]=piv[0]+dx*np.cos(a)+dz*np.sin(a); Q[:,2]=piv[2]-dx*np.sin(a)+dz*np.cos(a)
-        P[sel]=Q
+        P[sel]=rot(P[sel],np.array([sg*11.7,-1.1,26.7]),p['fl'+side],wfore[sel])
+        P[sel]=rot(P[sel],np.array([sg*8.0,-0.8,32.0]),p['sw'+side],warm[sel])
+        P[sel]=roty(P[sel],np.array([sg*8.0,-0.8,32.0]),sg*p['ad'+side],warm[sel])
+    # faldón: sigue a la pierna de su lado (la mitad), el centro al promedio
+    mean=(hips['L']+hips['R'])/2
+    b=smooth((np.abs(x)-1.0)/4.0)
+    ang=0.5*(b*np.where(x<0,hips['L'],hips['R'])+(1-b)*mean)
+    wl=(wleg_all:=np.maximum(W['L'][0],W['R'][0]))
+    wc=cloth_w*(1-np.clip(wl,0,1))*(np.maximum(W['L'][2],W['R'][2])<0.5)
+    sel=wc>0
+    P[sel]=rot(P[sel],np.array([0,-0.8,HIP_Z+3]),1.0,(wc*ang)[sel])
+    # pelo: se balancea desde la nuca
+    sel=hair_w>0
+    P[sel]=rot(P[sel],np.array([0,3.0,37.0]),p['hx'],hair_w[sel])
+    P[sel]=roty(P[sel],np.array([0,3.0,37.0]),p['hy'],hair_w[sel])
+    # cuerpo superior: se inclina desde la cintura (negativo = hacia atrás)
+    wu=upper_w*(1-np.clip(np.maximum(W['L'][0],W['R'][0]),0,1))
+    sel=wu>0
+    P[sel]=rot(P[sel],np.array([0,-0.5,24.0]),p['lean'],wu[sel])
     P.astype(np.float32).tofile(f'/tmp/claude-0/r3d/pos_{name}.bin')
-def walk_params(phi,A=0.5,K=0.95,B=0.42):
-    import math
-    s,c=math.sin(phi),math.cos(phi)
-    hipR,hipL=-A*s,A*s
-    kneeR=K*max(0,c)+0.12; kneeL=K*max(0,-c)+0.12
-    # pie plano en el suelo; al despegar la punta baja un poco
-    ankR=-(hipR+kneeR)*0.85+0.25*max(0,hipR); ankL=-(hipL+kneeL)*0.85+0.25*max(0,hipL)
-    swR,swL=B*s,-B*s
-    flR=-0.35-0.3*max(0,-swR/B); flL=-0.35-0.3*max(0,-swL/B)
-    return hipL,hipR,kneeL,kneeR,ankL,ankR,swL,swR,flL,flR
-if __name__=='__main__':
-    import math
-    for i in range(8): pose(f'w{i}',*walk_params(i*math.pi/4))
-    pose('idle',0.0,0.0,0.1,0.1,-0.09,-0.09,0.12,0.12,-0.55,-0.55)
