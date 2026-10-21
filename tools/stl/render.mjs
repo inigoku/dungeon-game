@@ -72,6 +72,7 @@ const jobs = {
   'i20': { ...cell, view: 'der', pose: 'idle', ground: true, col: C('guardia') },
   'retrato': { size: 640, half: 13.5, zc: 38.5, view: 'frente', col: C('guardia') },
 };
+Object.assign(jobs, JSON.parse(fs.readFileSync('jobs.json', 'utf8')));
 const only = process.argv.slice(2);
 for (const [n, o] of Object.entries(jobs)) {
   if (only.length && !only.includes(n)) continue;

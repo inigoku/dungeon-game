@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dyingFrame, fallFrame, LAYOUTS, pickFrame } from '../src/atlas';
 
-const base = { facing: 'S' as const, moving: false, walkAngle: 0, hurt: false, alerted: false };
+const base = { facing: 'S' as const, moving: false, walkAngle: 0, hurt: false, alerted: false, now: 0 };
 const barbaro = LAYOUTS.barbaro;
 const guerrero = LAYOUTS.guerrero;
 const exploradora = LAYOUTS.exploradora;
@@ -37,13 +37,20 @@ describe('pickFrame', () => {
   });
   it('la duelista camina con un ciclo de ocho fotogramas por dirección', () => {
     const seen = new Set<number>();
-    for (let a = 0; a < Math.PI; a += 0.05) {
+    for (let a = 0; a < Math.PI * 2; a += 0.05) {
       const pick = pickFrame(duelista, { ...base, facing: 'E', moving: true, walkAngle: a });
       expect(duelista.walk?.E).toContain(pick.index);
       expect(pick.hop).toBeGreaterThanOrEqual(0);
       seen.add(pick.index);
     }
     expect(seen.size).toBe(8);
+  });
+  it('la duelista parada respira con su ciclo de reposo y herida se encorva', () => {
+    const idle = new Set<number>();
+    for (let now = 0; now < 2000; now += 50) idle.add(pickFrame(duelista, { ...base, now }).index);
+    expect([...idle].sort()).toEqual([...(duelista.idle ?? [])].sort());
+    expect(pickFrame(duelista, { ...base, hurt: true }).index).toBe(25);
+    expect(pickFrame(duelista, { ...base, hurt: true, alerted: true }).index).toBe(24);
   });
   it('el salto del paso es pequeño y no negativo', () => {
     for (const a of [0, 1, 2, 3, 4, 5, 6]) {
