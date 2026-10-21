@@ -21,13 +21,26 @@ const tones = new Uint8Array([90, 170, 255]);
 const gradient = new THREE.DataTexture(tones, tones.length, 1, THREE.RedFormat); gradient.needsUpdate = true;
 gradient.minFilter = gradient.magFilter = THREE.NearestFilter;
 const body = new THREE.Mesh(geo, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: gradient }));
-// Contorno: la malla suavizada e hinchada, dibujada solo por detrás
-const sg = geo.clone(); sg.deleteAttribute('normal'); sg.deleteAttribute('color');
-const merged = mergeVertices(sg, 0.01); merged.computeVertexNormals();
-const pos = merged.attributes.position, nor = merged.attributes.normal;
 const WIDTH = 0.3;
-for (let i = 0; i < pos.count; i++) pos.setXYZ(i, pos.getX(i) + nor.getX(i) * WIDTH, pos.getY(i) + nor.getY(i) * WIDTH, pos.getZ(i) + nor.getZ(i) * WIDTH);
-const outline = new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ color: 0x140c07, side: THREE.BackSide }));
+const basePos = geo.attributes.position.array.slice();
+let outline = null;
+function buildOutline() {
+  const sg = geo.clone(); sg.deleteAttribute('normal'); sg.deleteAttribute('color');
+  const merged = mergeVertices(sg, 0.01); merged.computeVertexNormals();
+  const pos = merged.attributes.position, nor = merged.attributes.normal;
+  for (let i = 0; i < pos.count; i++) pos.setXYZ(i, pos.getX(i) + nor.getX(i) * WIDTH, pos.getY(i) + nor.getY(i) * WIDTH, pos.getZ(i) + nor.getZ(i) * WIDTH);
+  const m = new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ color: 0x140c07, side: THREE.BackSide }));
+  return m;
+}
+outline = buildOutline();
+let curPos = 'base';
+async function setPose(name) {
+  if (name === curPos) return;
+  const arr = name === 'base' ? basePos : new Float32Array(await (await fetch(`pos_${name}.bin`)).arrayBuffer());
+  geo.attributes.position.array.set(arr); geo.attributes.position.needsUpdate = true; geo.computeVertexNormals();
+  group.remove(outline); outline.geometry.dispose();
+  outline = buildOutline(); group.add(outline); curPos = name;
+}
 scene.add(body, outline);
 scene.add(new THREE.AmbientLight(0xffffff, 1.1));
 const dl = new THREE.DirectionalLight(0xffffff, 2.2); dl.position.set(-40, -60, 80); scene.add(dl);
@@ -36,6 +49,7 @@ const SIDE = { frente: [0, -100], atras: [0, 100], izq: [-100, 0], der: [100, 0]
 // o = { col, view, size, half, zc, rot:[x,y,z], ground, center, cx }
 window.render = async (o) => {
   if (o.col) await loadCol(o.col);
+  await setPose(o.pose || 'base');
   renderer.setSize(o.size, o.size);
   group.rotation.set(0, 0, 0); group.position.set(0, 0, 0);
   const [rx, ry, rz] = o.rot || [0, 0, 0];
